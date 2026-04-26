@@ -6,9 +6,14 @@ import {
   ScrollRestoration,
   isRouteErrorResponse,
 } from "react-router"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import * as React from "react"
 
 import type { Route } from "./+types/root"
+import { AppShell } from "./components/app-shell"
 import "./app.css"
+
+const queryClient = new QueryClient()
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +34,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </QueryClientProvider>
+  )
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

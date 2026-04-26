@@ -28,6 +28,27 @@ The Tauri backend will try to auto-start a bundled Ollama binary from:
 
 - `src-tauri/resources/bin/ollama` (macOS/Linux)
 - `src-tauri/resources/bin/ollama.exe` (Windows)
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+- `src-tauri/resources/bin/macos/arm64/ollama` (macOS Apple Silicon)
+- `src-tauri/resources/bin/macos/x86_64/ollama` (macOS Intel)
+- `src-tauri/resources/bin/windows/ollama.exe` (Windows)
+
+> A single installer cannot run on both Windows and macOS.  
+> You must ship separate desktop bundles per OS, each with its matching Ollama binary.
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 
 ### Which Ollama package to download
 
@@ -47,6 +68,23 @@ Recommended artifacts:
 3. Ensure executable bit on macOS binary: `chmod +x src-tauri/resources/bin/ollama`.
 4. Build Tauri bundle; `tauri.conf.json` already includes `resources/bin/**`.
 5. On first app start, app will spawn `ollama serve` automatically when needed.
+<<<<<<< Updated upstream
+=======
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< Updated upstream
+=======
+<<<<<<< ours
+=======
+>>>>>>> Stashed changes
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+>>>>>>> Stashed changes
 
 ### Helper script
 
@@ -56,4 +94,26 @@ You can automate step 1-3 with:
 scripts/fetch-ollama-binaries.sh --platform windows
 scripts/fetch-ollama-binaries.sh --platform macos-apple
 scripts/fetch-ollama-binaries.sh --platform macos-intel
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 ```
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> theirs
+>>>>>>> Stashed changes
+=======
+scripts/fetch-ollama-binaries.sh --platform all
+```
+>>>>>>> theirs
+=======
+scripts/fetch-ollama-binaries.sh --platform all
+```
+>>>>>>> theirs
+=======
+scripts/fetch-ollama-binaries.sh --platform all
+```
+>>>>>>> theirs
+>>>>>>> Stashed changes

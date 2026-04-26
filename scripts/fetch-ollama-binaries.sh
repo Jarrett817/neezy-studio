@@ -10,7 +10,6 @@ set -euo pipefail
 #   scripts/fetch-ollama-binaries.sh --platform windows
 #   scripts/fetch-ollama-binaries.sh --platform macos-apple
 #   scripts/fetch-ollama-binaries.sh --platform macos-intel
-#   scripts/fetch-ollama-binaries.sh --platform all
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${REPO_ROOT}/src-tauri/resources/bin"
@@ -30,7 +29,7 @@ Usage: $(basename "$0") [--version <version>] [--platform <platform>]
 
 Options:
   --version   Ollama release version without leading v. Default: ${VERSION}
-  --platform  One of: windows | macos-apple | macos-intel | all
+  --platform  One of: windows | macos-apple | macos-intel
               Default: auto-detect from host OS/CPU.
 USAGE
 }
@@ -71,7 +70,7 @@ if [[ -z "${PLATFORM}" ]]; then
       PLATFORM="windows"
       ;;
     Linux:*)
-      echo "Linux host detected. Please pass --platform windows|macos-apple|macos-intel|all explicitly." >&2
+      echo "Linux host detected. Please pass --platform windows|macos-apple|macos-intel explicitly." >&2
       exit 1
       ;;
     *)
@@ -92,7 +91,8 @@ fetch_asset() {
   curl -fL "${url}" -o "${output}"
 }
 
-download_windows() {
+case "${PLATFORM}" in
+  windows)
     ZIP_PATH="${TMP_DIR}/ollama-windows-amd64.zip"
     fetch_asset "ollama-windows-amd64.zip" "${ZIP_PATH}"
     unzip -o "${ZIP_PATH}" -d "${TMP_DIR}/unzip" >/dev/null
@@ -101,14 +101,11 @@ download_windows() {
       echo "Could not find ollama.exe in downloaded archive." >&2
       exit 1
     fi
-    mkdir -p "${OUT_DIR}/windows"
     cp "${BIN_PATH}" "${OUT_DIR}/ollama.exe"
-    cp "${BIN_PATH}" "${OUT_DIR}/windows/ollama.exe"
     echo "Saved: ${OUT_DIR}/ollama.exe"
-    echo "Saved: ${OUT_DIR}/windows/ollama.exe"
-}
+    ;;
 
-download_macos_apple() {
+  macos-apple)
     TGZ_PATH="${TMP_DIR}/ollama-darwin.tgz"
     fetch_asset "ollama-darwin.tgz" "${TGZ_PATH}"
     tar -xzf "${TGZ_PATH}" -C "${TMP_DIR}"
@@ -117,16 +114,12 @@ download_macos_apple() {
       echo "Could not find ollama binary in tarball." >&2
       exit 1
     fi
-    mkdir -p "${OUT_DIR}/macos/arm64"
     cp "${BIN_PATH}" "${OUT_DIR}/ollama"
-    cp "${BIN_PATH}" "${OUT_DIR}/macos/arm64/ollama"
     chmod +x "${OUT_DIR}/ollama"
-    chmod +x "${OUT_DIR}/macos/arm64/ollama"
     echo "Saved: ${OUT_DIR}/ollama"
-    echo "Saved: ${OUT_DIR}/macos/arm64/ollama"
-}
+    ;;
 
-download_macos_intel() {
+  macos-intel)
     ZIP_PATH="${TMP_DIR}/Ollama-darwin.zip"
     fetch_asset "Ollama-darwin.zip" "${ZIP_PATH}"
     unzip -o "${ZIP_PATH}" -d "${TMP_DIR}/unzip" >/dev/null
@@ -135,26 +128,9 @@ download_macos_intel() {
       echo "Could not find Ollama.app/Contents/Resources/ollama in zip archive." >&2
       exit 1
     fi
-    mkdir -p "${OUT_DIR}/macos/x86_64"
-    cp "${BIN_PATH}" "${OUT_DIR}/macos/x86_64/ollama"
-    chmod +x "${OUT_DIR}/macos/x86_64/ollama"
-    echo "Saved: ${OUT_DIR}/macos/x86_64/ollama"
-}
-
-case "${PLATFORM}" in
-  windows)
-    download_windows
-    ;;
-  macos-apple)
-    download_macos_apple
-    ;;
-  macos-intel)
-    download_macos_intel
-    ;;
-  all)
-    download_windows
-    download_macos_apple
-    download_macos_intel
+    cp "${BIN_PATH}" "${OUT_DIR}/ollama"
+    chmod +x "${OUT_DIR}/ollama"
+    echo "Saved: ${OUT_DIR}/ollama"
     ;;
 
   *)

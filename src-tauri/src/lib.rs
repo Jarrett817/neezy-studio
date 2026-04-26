@@ -483,31 +483,16 @@ fn start_bundled_ollama(app: &AppHandle) -> bool {
 }
 
 fn bundled_ollama_bin_path(app: &AppHandle) -> Option<PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
-    let bin_dir = resource_dir.join("bin");
-
-    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
-        vec![
-            bin_dir.join("windows").join("ollama.exe"),
-            bin_dir.join("ollama.exe"),
-        ]
-    } else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            vec![
-                bin_dir.join("macos").join("arm64").join("ollama"),
-                bin_dir.join("ollama"),
-            ]
-        } else {
-            vec![
-                bin_dir.join("macos").join("x86_64").join("ollama"),
-                bin_dir.join("ollama"),
-            ]
-        }
+    let file_name = if cfg!(target_os = "windows") {
+        "ollama.exe"
     } else {
-        vec![bin_dir.join("ollama")]
+        "ollama"
     };
 
-    candidates.into_iter().find(|path| path.is_file())
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|path| path.join("bin").join(file_name))
 }
 
 fn list_ollama_models() -> Result<Vec<String>, String> {

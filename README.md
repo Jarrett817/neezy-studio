@@ -28,12 +28,6 @@ The Tauri backend will try to auto-start a bundled Ollama binary from:
 
 - `src-tauri/resources/bin/ollama` (macOS/Linux)
 - `src-tauri/resources/bin/ollama.exe` (Windows)
-- `src-tauri/resources/bin/macos/arm64/ollama` (macOS Apple Silicon)
-- `src-tauri/resources/bin/macos/x86_64/ollama` (macOS Intel)
-- `src-tauri/resources/bin/windows/ollama.exe` (Windows)
-
-> A single installer cannot run on both Windows and macOS.  
-> You must ship separate desktop bundles per OS, each with its matching Ollama binary.
 
 ### Which Ollama package to download
 
@@ -62,5 +56,4 @@ You can automate step 1-3 with:
 scripts/fetch-ollama-binaries.sh --platform windows
 scripts/fetch-ollama-binaries.sh --platform macos-apple
 scripts/fetch-ollama-binaries.sh --platform macos-intel
-scripts/fetch-ollama-binaries.sh --platform all
 ```

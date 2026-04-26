@@ -19,6 +19,7 @@ import { Textarea } from "~/components/ui/textarea"
 import {
   downloadModel,
   getModelRuntimeState,
+  installOllama,
   setActiveModel,
 } from "~/services/model-runtime"
 import {
@@ -69,6 +70,10 @@ export default function SettingsRoute() {
     },
   })
 
+  const installOllamaMutation = useMutation({
+    mutationFn: installOllama,
+  })
+
   const setActiveMutation = useMutation({
     mutationFn: setActiveModel,
     onSuccess: (nextState) => {
@@ -89,8 +94,8 @@ export default function SettingsRoute() {
     <div className="space-y-5">
       <SectionHeading
         eyebrow="设置"
-        title="账号与 Ollama 模型"
-        description="账号配置保存到本机；大模型完全由本机 Ollama 管理，应用包不内置大模型。"
+        title="账号与 llama.cpp 模型"
+        description="账号配置保存到本机。若未安装 llama.cpp，可在此一键打开对应系统下载页面。"
       />
 
       <Card className="max-w-4xl">
@@ -147,17 +152,25 @@ export default function SettingsRoute() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Ollama 模型</CardTitle>
+          <CardTitle>llama.cpp 模型</CardTitle>
           <CardDescription>
-            需要本机 Ollama 运行在 127.0.0.1:11434。下载按钮会调用 Ollama pull。
+            默认连接 127.0.0.1:8080。未安装时点击“安装
+            llama.cpp”即可打开下载页。模型通过 huggingface-hub CLI 下载到本机
+            models 文件夹。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}>
-              {runtimeState?.ollamaAvailable ? "Ollama 已连接" : "Ollama 未连接"}
+            <Badge
+              variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}
+            >
+              {runtimeState?.ollamaAvailable
+                ? "llama.cpp 已连接"
+                : "llama.cpp 未连接"}
             </Badge>
-            <Badge variant="outline">应用包不包含大模型</Badge>
+            <Badge variant="outline">
+              {runtimeState?.ollamaInstallUrl ?? "https://ollama.com/download"}
+            </Badge>
           </div>
 
           {runtimeError instanceof Error ? (
@@ -166,8 +179,21 @@ export default function SettingsRoute() {
           {downloadMutation.error instanceof Error ? (
             <ErrorMessage message={downloadMutation.error.message} />
           ) : null}
+          {installOllamaMutation.error instanceof Error ? (
+            <ErrorMessage message={installOllamaMutation.error.message} />
+          ) : null}
           {setActiveMutation.error instanceof Error ? (
             <ErrorMessage message={setActiveMutation.error.message} />
+          ) : null}
+
+          {!runtimeState?.ollamaAvailable ? (
+            <Button
+              variant="secondary"
+              disabled={installOllamaMutation.isPending}
+              onClick={() => installOllamaMutation.mutate()}
+            >
+              {installOllamaMutation.isPending ? "打开中..." : "安装 llama.cpp"}
+            </Button>
           ) : null}
 
           {runtimeState?.models.map((model) => {
@@ -189,8 +215,10 @@ export default function SettingsRoute() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold">{model.name}</p>
                       <Badge variant="outline">{model.ollamaModel}</Badge>
-                      <Badge variant={model.downloaded ? "secondary" : "outline"}>
-                        {model.downloaded ? "Ollama 已安装" : "未安装"}
+                      <Badge
+                        variant={model.downloaded ? "secondary" : "outline"}
+                      >
+                        {model.downloaded ? "已就绪" : "未安装"}
                       </Badge>
                       {isActive ? <Badge>当前默认</Badge> : null}
                     </div>
@@ -223,7 +251,9 @@ export default function SettingsRoute() {
                       ) : (
                         <>
                           <Download className="mr-2 size-4" />
-                          用 Ollama 下载
+                          {runtimeState.ollamaAvailable
+                            ? "用 HuggingFace 下载"
+                            : "需先启动 llama.cpp"}
                         </>
                       )}
                     </Button>
@@ -239,7 +269,8 @@ export default function SettingsRoute() {
               管理规则
             </p>
             <p className="mt-1">
-              Ollama 是唯一的大模型管理器；Neezy Studio 只保存默认模型 ID 和运行记录，保持安装包精简。
+              Neezy Studio 不自研模型运行时：仅调用 llama.cpp HTTP
+              API。模型文件使用 GGUF，并放在本机模型目录。
             </p>
           </div>
         </CardContent>

@@ -9,13 +9,14 @@ export type LocalModelOption = {
   quantization: string
   summary: string
   downloaded: boolean
-  provider: "ollama" | "missing"
+  provider: "llama.cpp" | "missing"
 }
 
 export type ModelRuntimeState = {
   activeModelId: string | null
   allowAutoDownload: boolean
   ollamaAvailable: boolean
+  ollamaInstallUrl: string
   models: LocalModelOption[]
 }
 
@@ -33,4 +34,8 @@ export async function setActiveModel(
   modelId: string
 ): Promise<ModelRuntimeState> {
   return invoke<ModelRuntimeState>("set_active_model", { modelId })
+}
+
+export async function installOllama(): Promise<string> {
+  return invoke<string>("install_ollama")
 }

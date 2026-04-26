@@ -6,6 +6,6 @@ type AppStoreState = {
 }
 
 export const useAppStore = create<AppStoreState>((set) => ({
-  activeAccountName: "小红书主账号",
+  activeAccountName: "",
   setActiveAccountName: (name) => set({ activeAccountName: name }),
 }))

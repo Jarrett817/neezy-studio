@@ -21,7 +21,11 @@ import {
   getModelRuntimeState,
   setActiveModel,
 } from "~/services/model-runtime"
-import { getAccountProfile } from "~/services/workspace"
+import {
+  getAccountProfile,
+  saveAccountProfile,
+  type AccountProfile,
+} from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
 
 const profileSchema = z.object({
@@ -36,15 +40,26 @@ type ProfileFormValues = z.infer<typeof profileSchema>
 
 export default function SettingsRoute() {
   const queryClient = useQueryClient()
-  const setActiveAccountName = useAppStore((state) => state.setActiveAccountName)
+  const setActiveAccountName = useAppStore(
+    (state) => state.setActiveAccountName
+  )
+
   const { data: profile } = useQuery({
     queryKey: ["account-profile"],
     queryFn: getAccountProfile,
   })
 
-  const { data: runtimeState } = useQuery({
+  const { data: runtimeState, error: runtimeError } = useQuery({
     queryKey: ["model-runtime"],
     queryFn: getModelRuntimeState,
+  })
+
+  const saveProfileMutation = useMutation({
+    mutationFn: saveAccountProfile,
+    onSuccess: (nextProfile) => {
+      queryClient.setQueryData(["account-profile"], nextProfile)
+      setActiveAccountName(nextProfile.accountName)
+    },
   })
 
   const downloadMutation = useMutation({
@@ -63,31 +78,25 @@ export default function SettingsRoute() {
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    values: profile ?? {
-      accountName: "",
-      track: "",
-      persona: "",
-      toneStyle: "",
-      forbiddenWords: "",
-    },
+    values: profile ?? emptyProfile(),
   })
 
   const onSubmit = (values: ProfileFormValues) => {
-    setActiveAccountName(values.accountName)
+    saveProfileMutation.mutate(values)
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <SectionHeading
         eyebrow="设置"
-        title="先把人设、语气和禁忌词收口"
-        description="这些配置会直接影响后面的创作提示词、风格校准和风险规避，也是发文提效最值得先固化的一层。"
+        title="账号与 Ollama 模型"
+        description="账号配置保存到本机；大模型完全由本机 Ollama 管理，应用包不内置大模型。"
       />
 
       <Card className="max-w-4xl">
         <CardHeader>
           <CardTitle>账号创作配置</CardTitle>
-          <CardDescription>当前先保存到前端状态，后面接数据库表和本地持久化。</CardDescription>
+          <CardDescription>保存后会写入本地配置文件。</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
@@ -102,7 +111,10 @@ export default function SettingsRoute() {
               <Input {...form.register("track")} />
             </Field>
 
-            <Field label="人设描述" error={form.formState.errors.persona?.message}>
+            <Field
+              label="人设描述"
+              error={form.formState.errors.persona?.message}
+            >
               <Textarea {...form.register("persona")} />
             </Field>
 
@@ -120,28 +132,52 @@ export default function SettingsRoute() {
               />
             </Field>
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit">保存配置</Button>
-              <Button type="button" variant="outline">
-                清空禁忌词
-              </Button>
-            </div>
+            {saveProfileMutation.error instanceof Error ? (
+              <p className="text-sm text-destructive">
+                {saveProfileMutation.error.message}
+              </p>
+            ) : null}
+
+            <Button type="submit" disabled={saveProfileMutation.isPending}>
+              {saveProfileMutation.isPending ? "保存中" : "保存配置"}
+            </Button>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>端侧模型管理（手动下载）</CardTitle>
+          <CardTitle>Ollama 模型</CardTitle>
           <CardDescription>
-            当前默认关闭自动下载。先手动选择模型，再按需下载并设为默认。
+            需要本机 Ollama 运行在 127.0.0.1:11434。下载按钮会调用 Ollama pull。
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}>
+              {runtimeState?.ollamaAvailable ? "Ollama 已连接" : "Ollama 未连接"}
+            </Badge>
+            <Badge variant="outline">应用包不包含大模型</Badge>
+          </div>
+
+          {runtimeError instanceof Error ? (
+            <ErrorMessage message={runtimeError.message} />
+          ) : null}
+          {downloadMutation.error instanceof Error ? (
+            <ErrorMessage message={downloadMutation.error.message} />
+          ) : null}
+          {setActiveMutation.error instanceof Error ? (
+            <ErrorMessage message={setActiveMutation.error.message} />
+          ) : null}
+
           {runtimeState?.models.map((model) => {
             const isActive = runtimeState.activeModelId === model.id
-            const isDownloading = downloadMutation.isPending && downloadMutation.variables === model.id
-            const isSwitching = setActiveMutation.isPending && setActiveMutation.variables === model.id
+            const isDownloading =
+              downloadMutation.isPending &&
+              downloadMutation.variables === model.id
+            const isSwitching =
+              setActiveMutation.isPending &&
+              setActiveMutation.variables === model.id
 
             return (
               <div
@@ -152,55 +188,46 @@ export default function SettingsRoute() {
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold">{model.name}</p>
-                      <Badge variant="outline">{model.quantization}</Badge>
-                      {model.downloaded ? (
-                        <Badge variant="secondary">已下载</Badge>
-                      ) : (
-                        <Badge variant="outline">未下载</Badge>
-                      )}
+                      <Badge variant="outline">{model.ollamaModel}</Badge>
+                      <Badge variant={model.downloaded ? "secondary" : "outline"}>
+                        {model.downloaded ? "Ollama 已安装" : "未安装"}
+                      </Badge>
                       {isActive ? <Badge>当前默认</Badge> : null}
                     </div>
-                    <p className="text-sm text-muted-foreground">{model.summary}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {model.summary}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      模型体积 {model.sizeLabel} · {model.minMemoryLabel}
+                      {model.sizeLabel} · {model.minMemoryLabel}
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {model.downloaded ? (
-                      <Button
-                        variant="outline"
-                        disabled={isActive || isSwitching}
-                        onClick={() => setActiveMutation.mutate(model.id)}
-                      >
-                        {isSwitching ? (
-                          <>
-                            <LoaderCircle className="mr-2 size-4 animate-spin" />
-                            切换中
-                          </>
-                        ) : (
-                          "设为默认"
-                        )}
-                      </Button>
-                    ) : (
-                      <Button
-                        disabled={isDownloading}
-                        onClick={() => downloadMutation.mutate(model.id)}
-                      >
-                        {isDownloading ? (
-                          <>
-                            <LoaderCircle className="mr-2 size-4 animate-spin" />
-                            下载中
-                          </>
-                        ) : (
-                          <>
-                            <Download className="mr-2 size-4" />
-                            手动下载
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </div>
+                  {model.downloaded ? (
+                    <Button
+                      variant="outline"
+                      disabled={isActive || isSwitching}
+                      onClick={() => setActiveMutation.mutate(model.id)}
+                    >
+                      {isSwitching ? "切换中" : "设为默认"}
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={isDownloading || !runtimeState.ollamaAvailable}
+                      onClick={() => downloadMutation.mutate(model.id)}
+                    >
+                      {isDownloading ? (
+                        <>
+                          <LoaderCircle className="mr-2 size-4 animate-spin" />
+                          下载中
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 size-4" />
+                          用 Ollama 下载
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             )
@@ -209,16 +236,26 @@ export default function SettingsRoute() {
           <div className="rounded-lg border border-dashed border-border/70 p-3 text-sm text-muted-foreground">
             <p className="flex items-center gap-2 font-medium text-foreground">
               <CheckCircle2 className="size-4" />
-              推荐策略
+              管理规则
             </p>
             <p className="mt-1">
-              首发先提供 2~3 个可选模型档位（速度优先 / 平衡 / 质量优先），默认不自动下载，避免占用磁盘和误触发大流量下载。
+              Ollama 是唯一的大模型管理器；Neezy Studio 只保存默认模型 ID 和运行记录，保持安装包精简。
             </p>
           </div>
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function emptyProfile(): AccountProfile {
+  return {
+    accountName: "",
+    track: "",
+    persona: "",
+    toneStyle: "",
+    forbiddenWords: "",
+  }
 }
 
 function Field({
@@ -236,5 +273,13 @@ function Field({
       {children}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </label>
+  )
+}
+
+function ErrorMessage({ message }: { message: string }) {
+  return (
+    <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      {message}
+    </p>
   )
 }

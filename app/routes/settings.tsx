@@ -90,7 +90,7 @@ export default function SettingsRoute() {
       <SectionHeading
         eyebrow="设置"
         title="账号与 Ollama 模型"
-        description="账号配置保存到本机；大模型完全由本机 Ollama 管理，应用包不内置大模型。"
+        description="账号配置保存到本机；应用会优先启动内置打包的 Ollama（若可用），你也可以使用系统已安装的 Ollama。"
       />
 
       <Card className="max-w-4xl">
@@ -149,15 +149,20 @@ export default function SettingsRoute() {
         <CardHeader>
           <CardTitle>Ollama 模型</CardTitle>
           <CardDescription>
-            需要本机 Ollama 运行在 127.0.0.1:11434。下载按钮会调用 Ollama pull。
+            默认连接 127.0.0.1:11434。若安装包内含
+            Ollama，可自动拉起；也兼容你本机已安装的 Ollama。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}>
-              {runtimeState?.ollamaAvailable ? "Ollama 已连接" : "Ollama 未连接"}
+            <Badge
+              variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}
+            >
+              {runtimeState?.ollamaAvailable
+                ? "Ollama 已连接"
+                : "Ollama 未连接"}
             </Badge>
-            <Badge variant="outline">应用包不包含大模型</Badge>
+            <Badge variant="outline">优先使用打包 Ollama</Badge>
           </div>
 
           {runtimeError instanceof Error ? (
@@ -189,8 +194,10 @@ export default function SettingsRoute() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold">{model.name}</p>
                       <Badge variant="outline">{model.ollamaModel}</Badge>
-                      <Badge variant={model.downloaded ? "secondary" : "outline"}>
-                        {model.downloaded ? "Ollama 已安装" : "未安装"}
+                      <Badge
+                        variant={model.downloaded ? "secondary" : "outline"}
+                      >
+                        {model.downloaded ? "已就绪" : "未安装"}
                       </Badge>
                       {isActive ? <Badge>当前默认</Badge> : null}
                     </div>
@@ -223,7 +230,9 @@ export default function SettingsRoute() {
                       ) : (
                         <>
                           <Download className="mr-2 size-4" />
-                          用 Ollama 下载
+                          {runtimeState.ollamaAvailable
+                            ? "用 Ollama 下载"
+                            : "需先启动 Ollama"}
                         </>
                       )}
                     </Button>
@@ -239,7 +248,8 @@ export default function SettingsRoute() {
               管理规则
             </p>
             <p className="mt-1">
-              Ollama 是唯一的大模型管理器；Neezy Studio 只保存默认模型 ID 和运行记录，保持安装包精简。
+              Neezy Studio 不自研模型运行时：仅调用 Ollama
+              API。建议在发布包中附带 Ollama 二进制以实现开箱即用。
             </p>
           </div>
         </CardContent>

@@ -4,6 +4,8 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     path::PathBuf,
+    process::Command,
+    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -182,6 +184,7 @@ fn get_model_runtime_state(app: AppHandle) -> Result<ModelRuntimeState, String> 
 #[tauri::command]
 fn download_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeState, String> {
     let spec = model_spec(&model_id).ok_or_else(|| "Model does not exist".to_string())?;
+    ensure_ollama_ready(&app);
     pull_ollama_model(spec.ollama_model)?;
     build_model_runtime_state(&app)
 }
@@ -198,7 +201,7 @@ fn set_active_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeStat
         .ok_or_else(|| "Model does not exist".to_string())?;
 
     if !model.downloaded {
-        return Err("This model is not installed in Ollama.".to_string());
+        return Err("This model is not ready yet. Download it first.".to_string());
     }
 
     write_model_config(
@@ -312,6 +315,7 @@ pub fn run() {
 }
 
 fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, String> {
+    ensure_ollama_ready(app);
     let config = read_model_config(app)?;
     let ollama_models = list_ollama_models().unwrap_or_default();
     let ollama_available = !ollama_models.is_empty() || ollama_healthcheck();
@@ -344,14 +348,10 @@ fn model_catalog(ollama_models: &[String]) -> Result<Vec<LocalModelOption>, Stri
     Ok(model_specs()
         .iter()
         .map(|spec| {
-            let ollama_available = ollama_models.iter().any(|name| {
+            let downloaded = ollama_models.iter().any(|name| {
                 name == spec.ollama_model || name.starts_with(&format!("{}:", spec.ollama_model))
             });
-            let provider = if ollama_available {
-                "ollama"
-            } else {
-                "missing"
-            };
+            let provider = if downloaded { "ollama" } else { "missing" };
 
             LocalModelOption {
                 id: spec.id.to_string(),
@@ -361,7 +361,7 @@ fn model_catalog(ollama_models: &[String]) -> Result<Vec<LocalModelOption>, Stri
                 min_memory_label: spec.min_memory_label.to_string(),
                 quantization: spec.quantization.to_string(),
                 summary: spec.summary.to_string(),
-                downloaded: ollama_available,
+                downloaded,
                 provider: provider.to_string(),
             }
         })
@@ -452,6 +452,62 @@ fn model_spec(model_id: &str) -> Option<ModelSpec> {
 
 fn ollama_healthcheck() -> bool {
     ollama_request("GET", "/api/tags", None, Duration::from_secs(2)).is_ok()
+}
+
+fn ensure_ollama_ready(app: &AppHandle) {
+    if ollama_healthcheck() {
+        return;
+    }
+
+    if !start_bundled_ollama(app) {
+        return;
+    }
+
+    for _ in 0..10 {
+        if ollama_healthcheck() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
+fn start_bundled_ollama(app: &AppHandle) -> bool {
+    let Some(bin_path) = bundled_ollama_bin_path(app) else {
+        return false;
+    };
+    if !bin_path.is_file() {
+        return false;
+    }
+
+    Command::new(bin_path).arg("serve").spawn().is_ok()
+}
+
+fn bundled_ollama_bin_path(app: &AppHandle) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let bin_dir = resource_dir.join("bin");
+
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        vec![
+            bin_dir.join("windows").join("ollama.exe"),
+            bin_dir.join("ollama.exe"),
+        ]
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            vec![
+                bin_dir.join("macos").join("arm64").join("ollama"),
+                bin_dir.join("ollama"),
+            ]
+        } else {
+            vec![
+                bin_dir.join("macos").join("x86_64").join("ollama"),
+                bin_dir.join("ollama"),
+            ]
+        }
+    } else {
+        vec![bin_dir.join("ollama")]
+    };
+
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn list_ollama_models() -> Result<Vec<String>, String> {

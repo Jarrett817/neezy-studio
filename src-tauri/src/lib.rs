@@ -323,6 +323,7 @@ pub fn run() {
 }
 
 fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, String> {
+    ensure_ollama_ready(app);
     let config = read_model_config(app)?;
     let local_models = list_local_model_files(app).unwrap_or_default();
     let ollama_available = llama_cpp_healthcheck();

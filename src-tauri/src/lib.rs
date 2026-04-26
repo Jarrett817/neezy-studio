@@ -22,7 +22,7 @@ struct BuildInfo {
 #[serde(rename_all = "camelCase")]
 struct LocalModelOption {
     id: String,
-    ollama_model: String,
+    model_file: String,
     name: String,
     size_label: String,
     min_memory_label: String,
@@ -37,8 +37,8 @@ struct LocalModelOption {
 struct ModelRuntimeState {
     active_model_id: Option<String>,
     allow_auto_download: bool,
-    ollama_available: bool,
-    ollama_install_url: String,
+    server_available: bool,
+    install_url: String,
     models: Vec<LocalModelOption>,
 }
 
@@ -182,8 +182,8 @@ fn get_model_runtime_state(app: AppHandle) -> Result<ModelRuntimeState, String> 
 }
 
 #[tauri::command]
-fn install_ollama() -> Result<String, String> {
-    let url = ollama_install_url();
+fn install_server() -> Result<String, String> {
+    let url = server_install_url();
     open_external_url(&url)?;
     Ok(format!("Installer opened: {url}"))
 }
@@ -310,7 +310,7 @@ pub fn run() {
             get_account_profile,
             save_account_profile,
             get_model_runtime_state,
-            install_ollama,
+            install_server,
             download_model,
             set_active_model,
             list_import_jobs,
@@ -667,4 +667,11 @@ fn now_stamp() -> String {
         .unwrap_or_default();
 
     millis.to_string()
+}
+
+fn ensure_ollama_ready(app: &AppHandle) {
+    // 确保数据目录和模型目录存在
+    if let Ok(dir) = app_data_dir(app) {
+        let _ = fs::create_dir_all(dir.join("models"));
+    }
 }

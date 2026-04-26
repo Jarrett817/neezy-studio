@@ -4,6 +4,7 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     path::PathBuf,
+    process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -37,6 +38,7 @@ struct ModelRuntimeState {
     active_model_id: Option<String>,
     allow_auto_download: bool,
     ollama_available: bool,
+    ollama_install_url: String,
     models: Vec<LocalModelOption>,
 }
 
@@ -180,6 +182,13 @@ fn get_model_runtime_state(app: AppHandle) -> Result<ModelRuntimeState, String> 
 }
 
 #[tauri::command]
+fn install_ollama() -> Result<String, String> {
+    let url = ollama_install_url();
+    open_external_url(&url)?;
+    Ok(format!("Installer opened: {url}"))
+}
+
+#[tauri::command]
 fn download_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeState, String> {
     let spec = model_spec(&model_id).ok_or_else(|| "Model does not exist".to_string())?;
     pull_ollama_model(spec.ollama_model)?;
@@ -198,7 +207,7 @@ fn set_active_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeStat
         .ok_or_else(|| "Model does not exist".to_string())?;
 
     if !model.downloaded {
-        return Err("This model is not installed in Ollama.".to_string());
+        return Err("This model is not ready yet. Download it first.".to_string());
     }
 
     write_model_config(
@@ -300,6 +309,7 @@ pub fn run() {
             get_account_profile,
             save_account_profile,
             get_model_runtime_state,
+            install_ollama,
             download_model,
             set_active_model,
             list_import_jobs,
@@ -336,6 +346,7 @@ fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, Strin
         active_model_id,
         allow_auto_download: true,
         ollama_available,
+        ollama_install_url: ollama_install_url(),
         models,
     })
 }
@@ -344,14 +355,10 @@ fn model_catalog(ollama_models: &[String]) -> Result<Vec<LocalModelOption>, Stri
     Ok(model_specs()
         .iter()
         .map(|spec| {
-            let ollama_available = ollama_models.iter().any(|name| {
+            let downloaded = ollama_models.iter().any(|name| {
                 name == spec.ollama_model || name.starts_with(&format!("{}:", spec.ollama_model))
             });
-            let provider = if ollama_available {
-                "ollama"
-            } else {
-                "missing"
-            };
+            let provider = if downloaded { "ollama" } else { "missing" };
 
             LocalModelOption {
                 id: spec.id.to_string(),
@@ -361,7 +368,7 @@ fn model_catalog(ollama_models: &[String]) -> Result<Vec<LocalModelOption>, Stri
                 min_memory_label: spec.min_memory_label.to_string(),
                 quantization: spec.quantization.to_string(),
                 summary: spec.summary.to_string(),
-                downloaded: ollama_available,
+                downloaded,
                 provider: provider.to_string(),
             }
         })
@@ -452,6 +459,35 @@ fn model_spec(model_id: &str) -> Option<ModelSpec> {
 
 fn ollama_healthcheck() -> bool {
     ollama_request("GET", "/api/tags", None, Duration::from_secs(2)).is_ok()
+}
+
+fn ollama_install_url() -> String {
+    if cfg!(target_os = "windows") {
+        "https://ollama.com/download/OllamaSetup.exe".to_string()
+    } else if cfg!(target_os = "macos") {
+        "https://ollama.com/download/Ollama-darwin.zip".to_string()
+    } else {
+        "https://ollama.com/download".to_string()
+    }
+}
+
+fn open_external_url(url: &str) -> Result<(), String> {
+    let mut command = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    } else if cfg!(target_os = "macos") {
+        let mut cmd = Command::new("open");
+        cmd.arg(url);
+        cmd
+    } else {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+
+    command.spawn().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn list_ollama_models() -> Result<Vec<String>, String> {

@@ -9,7 +9,7 @@ export type LocalModelOption = {
   quantization: string
   summary: string
   downloaded: boolean
-  provider: "ollama" | "missing"
+  provider: "llama.cpp" | "missing"
 }
 
 export type ModelRuntimeState = {

@@ -191,8 +191,8 @@ fn install_ollama() -> Result<String, String> {
 #[tauri::command]
 fn download_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeState, String> {
     let spec = model_spec(&model_id).ok_or_else(|| "Model does not exist".to_string())?;
-    ensure_ollama_ready(&app);
-    pull_ollama_model(spec.ollama_model)?;
+    let models_dir = app_data_dir(&app)?.join("models");
+    download_model_from_huggingface(spec.hf_repo, spec.hf_filename, &models_dir)?;
     build_model_runtime_state(&app)
 }
 
@@ -325,9 +325,9 @@ pub fn run() {
 fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, String> {
     ensure_ollama_ready(app);
     let config = read_model_config(app)?;
-    let ollama_models = list_ollama_models().unwrap_or_default();
-    let ollama_available = !ollama_models.is_empty() || ollama_healthcheck();
-    let mut models = model_catalog(&ollama_models)?;
+    let local_models = list_local_model_files(app).unwrap_or_default();
+    let ollama_available = llama_cpp_healthcheck();
+    let mut models = model_catalog(&local_models)?;
     let configured_active_model_id = config.active_model_id.clone();
     let active_model_id = configured_active_model_id
         .clone()
@@ -353,14 +353,14 @@ fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, Strin
     })
 }
 
-fn model_catalog(ollama_models: &[String]) -> Result<Vec<LocalModelOption>, String> {
+fn model_catalog(local_models: &[String]) -> Result<Vec<LocalModelOption>, String> {
     Ok(model_specs()
         .iter()
         .map(|spec| {
-            let downloaded = ollama_models.iter().any(|name| {
+            let downloaded = local_models.iter().any(|name| {
                 name == spec.ollama_model || name.starts_with(&format!("{}:", spec.ollama_model))
             });
-            let provider = if downloaded { "ollama" } else { "missing" };
+            let provider = if downloaded { "llama.cpp" } else { "missing" };
 
             LocalModelOption {
                 id: spec.id.to_string(),
@@ -416,6 +416,8 @@ fn write_account_profile(app: &AppHandle, profile: &AccountProfile) -> Result<()
 struct ModelSpec {
     id: &'static str,
     ollama_model: &'static str,
+    hf_repo: &'static str,
+    hf_filename: &'static str,
     name: &'static str,
     size_label: &'static str,
     min_memory_label: &'static str,
@@ -427,30 +429,36 @@ fn model_specs() -> [ModelSpec; 3] {
     [
         ModelSpec {
             id: "gemma4-e2b",
-            ollama_model: "gemma4:e2b",
+            ollama_model: "gemma-3-4b-it-q4_k_m.gguf",
+            hf_repo: "google/gemma-3-4b-it-gguf",
+            hf_filename: "gemma-3-4b-it-q4_k_m.gguf",
             name: "Gemma 4 E2B",
-            size_label: "~3.2GB memory",
+            size_label: "~3GB model file",
             min_memory_label: "8GB memory",
-            quantization: "Ollama managed",
-            summary: "Default local model for edge and desktop use.",
+            quantization: "GGUF Q4_K_M",
+            summary: "Default llama.cpp model for edge and desktop use.",
         },
         ModelSpec {
             id: "gemma4-e4b",
-            ollama_model: "gemma4:e4b",
+            ollama_model: "gemma-3-12b-it-q4_k_m.gguf",
+            hf_repo: "google/gemma-3-12b-it-gguf",
+            hf_filename: "gemma-3-12b-it-q4_k_m.gguf",
             name: "Gemma 4 E4B",
-            size_label: "~5GB memory",
+            size_label: "~7GB model file",
             min_memory_label: "12GB memory",
-            quantization: "Ollama managed",
-            summary: "Higher quality Gemma option managed by Ollama.",
+            quantization: "GGUF Q4_K_M",
+            summary: "Higher quality Gemma option for llama.cpp.",
         },
         ModelSpec {
             id: "qwen2.5-3b",
-            ollama_model: "qwen2.5:3b",
-            name: "Qwen2.5 3B",
-            size_label: "Ollama managed",
+            ollama_model: "qwen2.5-3b-instruct-q4_k_m.gguf",
+            hf_repo: "Qwen/Qwen2.5-3B-Instruct-GGUF",
+            hf_filename: "qwen2.5-3b-instruct-q4_k_m.gguf",
+            name: "Qwen2.5 3B Instruct",
+            size_label: "~2GB model file",
             min_memory_label: "8GB memory",
-            quantization: "Ollama managed",
-            summary: "Chinese writing option managed by Ollama.",
+            quantization: "GGUF Q4_K_M",
+            summary: "Chinese writing option for llama.cpp.",
         },
     ]
 }
@@ -459,18 +467,35 @@ fn model_spec(model_id: &str) -> Option<ModelSpec> {
     model_specs().into_iter().find(|spec| spec.id == model_id)
 }
 
-fn ollama_healthcheck() -> bool {
-    ollama_request("GET", "/api/tags", None, Duration::from_secs(2)).is_ok()
+fn llama_cpp_healthcheck() -> bool {
+    llama_cpp_request("GET", "/health", None, Duration::from_secs(2)).is_ok()
 }
 
 fn ollama_install_url() -> String {
     if cfg!(target_os = "windows") {
-        "https://ollama.com/download/OllamaSetup.exe".to_string()
+        "https://github.com/ggerganov/llama.cpp/releases/latest".to_string()
     } else if cfg!(target_os = "macos") {
-        "https://ollama.com/download/Ollama-darwin.zip".to_string()
+        "https://github.com/ggerganov/llama.cpp/releases/latest".to_string()
     } else {
-        "https://ollama.com/download".to_string()
+        "https://github.com/ggerganov/llama.cpp/releases/latest".to_string()
     }
+}
+
+fn list_local_model_files(app: &AppHandle) -> Result<Vec<String>, String> {
+    let model_dir = app_data_dir(app)?.join("models");
+    if !model_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut result = Vec::new();
+    for entry in fs::read_dir(model_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            result.push(name.to_string());
+        }
+    }
+    Ok(result)
 }
 
 fn open_external_url(url: &str) -> Result<(), String> {
@@ -492,55 +517,60 @@ fn open_external_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn list_ollama_models() -> Result<Vec<String>, String> {
-    let body = ollama_request("GET", "/api/tags", None, Duration::from_secs(3))?;
-    let parsed: serde_json::Value =
-        serde_json::from_str(&body).map_err(|error| error.to_string())?;
-    let models = parsed
-        .get("models")
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.get("name").and_then(|name| name.as_str()))
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+fn download_model_from_huggingface(
+    repo: &str,
+    filename: &str,
+    models_dir: &PathBuf,
+) -> Result<(), String> {
+    fs::create_dir_all(models_dir).map_err(|error| error.to_string())?;
+    let local_dir = models_dir.to_string_lossy().to_string();
 
-    Ok(models)
-}
+    let candidates: [(&str, Vec<&str>); 2] = [
+        (
+            "huggingface-cli",
+            vec![
+                "download",
+                repo,
+                filename,
+                "--local-dir",
+                &local_dir,
+                "--local-dir-use-symlinks",
+                "False",
+            ],
+        ),
+        (
+            "hf",
+            vec!["download", repo, filename, "--local-dir", &local_dir],
+        ),
+    ];
 
-fn pull_ollama_model(model_name: &str) -> Result<(), String> {
-    let body = serde_json::json!({
-        "name": model_name,
-        "stream": false
-    })
-    .to_string();
-    let response = ollama_request(
-        "POST",
-        "/api/pull",
-        Some(&body),
-        Duration::from_secs(60 * 60),
-    )?;
-    let parsed: serde_json::Value =
-        serde_json::from_str(&response).map_err(|error| error.to_string())?;
-
-    if let Some(error) = parsed.get("error").and_then(|value| value.as_str()) {
-        return Err(error.to_string());
+    let mut last_error = String::new();
+    for (program, args) in candidates {
+        match Command::new(program).args(args).output() {
+            Ok(output) if output.status.success() => return Ok(()),
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                last_error = format!("{program} failed: {stderr}");
+            }
+            Err(error) => {
+                last_error = format!("{program} not available: {error}");
+            }
+        }
     }
 
-    Ok(())
+    Err(format!(
+        "无法通过 huggingface-hub 下载模型。请先安装 huggingface_hub CLI（`pip install -U \"huggingface_hub[cli]\"`）并登录（如模型受限）。详情: {last_error}"
+    ))
 }
 
-fn ollama_request(
+fn llama_cpp_request(
     method: &str,
     path: &str,
     body: Option<&str>,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut stream = TcpStream::connect("127.0.0.1:11434")
-        .map_err(|_| "Ollama is not running on 127.0.0.1:11434.".to_string())?;
+    let mut stream = TcpStream::connect("127.0.0.1:8080")
+        .map_err(|_| "llama.cpp server is not running on 127.0.0.1:8080.".to_string())?;
     stream
         .set_read_timeout(Some(timeout))
         .map_err(|error| error.to_string())?;
@@ -550,7 +580,7 @@ fn ollama_request(
 
     let body = body.unwrap_or("");
     let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.as_bytes().len(),
         body
     );
@@ -565,7 +595,7 @@ fn ollama_request(
 
     let (head, body) = response
         .split_once("\r\n\r\n")
-        .ok_or_else(|| "Invalid Ollama HTTP response.".to_string())?;
+        .ok_or_else(|| "Invalid llama.cpp HTTP response.".to_string())?;
 
     if !head.contains(" 200 ") {
         return Err(body.trim().to_string());

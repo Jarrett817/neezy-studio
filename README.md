@@ -20,45 +20,23 @@ To use the components in your app, import them as follows:
 import { Button } from "@/components/ui/button"
 ```
 
-## Ollama install flow (desktop)
+## llama.cpp install flow (desktop)
 
-Neezy Studio **does not implement its own LLM runtime**. It calls Ollama’s local API at `127.0.0.1:11434`.
+Neezy Studio **does not implement its own LLM runtime**. It calls llama.cpp local HTTP API at `127.0.0.1:8080`.
 
-When Ollama is not available, the Settings page now shows an **Install Ollama** button.
-Clicking it opens the platform-specific installer URL:
+When llama.cpp is not available, the Settings page shows an **Install llama.cpp** button.
+Clicking it opens llama.cpp release downloads:
 
-- Windows: `https://ollama.com/download/OllamaSetup.exe`
-- macOS: `https://ollama.com/download/Ollama-darwin.zip`
-- Other: `https://ollama.com/download`
+- All platforms: `https://github.com/ggerganov/llama.cpp/releases/latest`
 
-> A single installer cannot run on both Windows and macOS.  
-> You must ship separate desktop bundles per OS, each with its matching Ollama binary.
+### Model files
 
-### Which Ollama package to download
+The app downloads GGUF models via **huggingface-hub CLI** into app data `models` directory.
 
-> As of **2026-04-26**, Ollama latest release is **v0.21.0**.  
-> Prefer pinning a specific version in your build pipeline (avoid “latest” floating tags).
-
-Recommended artifacts:
-
-- **Windows desktop app**: `ollama-windows-amd64.zip` (extract `ollama.exe` to `src-tauri/resources/bin/ollama.exe`)
-- **macOS Apple Silicon (M1/M2/M3/M4)**: `ollama-darwin.tgz` (extract CLI binary `ollama` to `src-tauri/resources/bin/ollama`)
-- **macOS Intel**: use the macOS app/zip distribution (`Ollama-darwin.zip`) and export the CLI binary from `Ollama.app/Contents/Resources/ollama` into `src-tauri/resources/bin/ollama`
-
-### Release checklist
-
-1. Download pinned Ollama release assets from `ollama/ollama` GitHub Releases.
-2. Place binaries in `src-tauri/resources/bin/`.
-3. Ensure executable bit on macOS binary: `chmod +x src-tauri/resources/bin/ollama`.
-4. Build Tauri bundle; `tauri.conf.json` already includes `resources/bin/**`.
-5. On first app start, app will spawn `ollama serve` automatically when needed.
-
-### Helper script
-
-You can automate step 1-3 with:
+Install CLI:
 
 ```bash
-scripts/fetch-ollama-binaries.sh --platform windows
-scripts/fetch-ollama-binaries.sh --platform macos-apple
-scripts/fetch-ollama-binaries.sh --platform macos-intel
+pip install -U "huggingface_hub[cli]"
 ```
+
+If model repo is gated, run `huggingface-cli login` first.

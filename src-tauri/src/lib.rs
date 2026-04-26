@@ -5,7 +5,6 @@ use std::{
     net::TcpStream,
     path::PathBuf,
     process::Command,
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -39,6 +38,7 @@ struct ModelRuntimeState {
     active_model_id: Option<String>,
     allow_auto_download: bool,
     ollama_available: bool,
+    ollama_install_url: String,
     models: Vec<LocalModelOption>,
 }
 
@@ -182,6 +182,13 @@ fn get_model_runtime_state(app: AppHandle) -> Result<ModelRuntimeState, String> 
 }
 
 #[tauri::command]
+fn install_ollama() -> Result<String, String> {
+    let url = ollama_install_url();
+    open_external_url(&url)?;
+    Ok(format!("Installer opened: {url}"))
+}
+
+#[tauri::command]
 fn download_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeState, String> {
     let spec = model_spec(&model_id).ok_or_else(|| "Model does not exist".to_string())?;
     ensure_ollama_ready(&app);
@@ -303,6 +310,7 @@ pub fn run() {
             get_account_profile,
             save_account_profile,
             get_model_runtime_state,
+            install_ollama,
             download_model,
             set_active_model,
             list_import_jobs,
@@ -340,6 +348,7 @@ fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, Strin
         active_model_id,
         allow_auto_download: true,
         ollama_available,
+        ollama_install_url: ollama_install_url(),
         models,
     })
 }
@@ -454,45 +463,33 @@ fn ollama_healthcheck() -> bool {
     ollama_request("GET", "/api/tags", None, Duration::from_secs(2)).is_ok()
 }
 
-fn ensure_ollama_ready(app: &AppHandle) {
-    if ollama_healthcheck() {
-        return;
-    }
-
-    if !start_bundled_ollama(app) {
-        return;
-    }
-
-    for _ in 0..10 {
-        if ollama_healthcheck() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn start_bundled_ollama(app: &AppHandle) -> bool {
-    let Some(bin_path) = bundled_ollama_bin_path(app) else {
-        return false;
-    };
-    if !bin_path.is_file() {
-        return false;
-    }
-
-    Command::new(bin_path).arg("serve").spawn().is_ok()
-}
-
-fn bundled_ollama_bin_path(app: &AppHandle) -> Option<PathBuf> {
-    let file_name = if cfg!(target_os = "windows") {
-        "ollama.exe"
+fn ollama_install_url() -> String {
+    if cfg!(target_os = "windows") {
+        "https://ollama.com/download/OllamaSetup.exe".to_string()
+    } else if cfg!(target_os = "macos") {
+        "https://ollama.com/download/Ollama-darwin.zip".to_string()
     } else {
-        "ollama"
+        "https://ollama.com/download".to_string()
+    }
+}
+
+fn open_external_url(url: &str) -> Result<(), String> {
+    let mut command = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    } else if cfg!(target_os = "macos") {
+        let mut cmd = Command::new("open");
+        cmd.arg(url);
+        cmd
+    } else {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
     };
 
-    app.path()
-        .resource_dir()
-        .ok()
-        .map(|path| path.join("bin").join(file_name))
+    command.spawn().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn list_ollama_models() -> Result<Vec<String>, String> {

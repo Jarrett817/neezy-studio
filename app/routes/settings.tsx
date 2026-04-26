@@ -19,6 +19,7 @@ import { Textarea } from "~/components/ui/textarea"
 import {
   downloadModel,
   getModelRuntimeState,
+  installOllama,
   setActiveModel,
 } from "~/services/model-runtime"
 import {
@@ -69,6 +70,10 @@ export default function SettingsRoute() {
     },
   })
 
+  const installOllamaMutation = useMutation({
+    mutationFn: installOllama,
+  })
+
   const setActiveMutation = useMutation({
     mutationFn: setActiveModel,
     onSuccess: (nextState) => {
@@ -90,7 +95,7 @@ export default function SettingsRoute() {
       <SectionHeading
         eyebrow="设置"
         title="账号与 Ollama 模型"
-        description="账号配置保存到本机；应用会优先启动内置打包的 Ollama（若可用），你也可以使用系统已安装的 Ollama。"
+        description="账号配置保存到本机。若未安装 Ollama，可在此一键打开对应系统安装包。"
       />
 
       <Card className="max-w-4xl">
@@ -149,8 +154,8 @@ export default function SettingsRoute() {
         <CardHeader>
           <CardTitle>Ollama 模型</CardTitle>
           <CardDescription>
-            默认连接 127.0.0.1:11434。若安装包内含
-            Ollama，可自动拉起；也兼容你本机已安装的 Ollama。
+            默认连接 127.0.0.1:11434。未安装时点击“安装
+            Ollama”即可打开系统对应安装包。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -162,7 +167,9 @@ export default function SettingsRoute() {
                 ? "Ollama 已连接"
                 : "Ollama 未连接"}
             </Badge>
-            <Badge variant="outline">优先使用打包 Ollama</Badge>
+            <Badge variant="outline">
+              {runtimeState?.ollamaInstallUrl ?? "https://ollama.com/download"}
+            </Badge>
           </div>
 
           {runtimeError instanceof Error ? (
@@ -171,8 +178,21 @@ export default function SettingsRoute() {
           {downloadMutation.error instanceof Error ? (
             <ErrorMessage message={downloadMutation.error.message} />
           ) : null}
+          {installOllamaMutation.error instanceof Error ? (
+            <ErrorMessage message={installOllamaMutation.error.message} />
+          ) : null}
           {setActiveMutation.error instanceof Error ? (
             <ErrorMessage message={setActiveMutation.error.message} />
+          ) : null}
+
+          {!runtimeState?.ollamaAvailable ? (
+            <Button
+              variant="secondary"
+              disabled={installOllamaMutation.isPending}
+              onClick={() => installOllamaMutation.mutate()}
+            >
+              {installOllamaMutation.isPending ? "打开中..." : "安装 Ollama"}
+            </Button>
           ) : null}
 
           {runtimeState?.models.map((model) => {
@@ -249,7 +269,7 @@ export default function SettingsRoute() {
             </p>
             <p className="mt-1">
               Neezy Studio 不自研模型运行时：仅调用 Ollama
-              API。建议在发布包中附带 Ollama 二进制以实现开箱即用。
+              API。若本机未安装，会提示并引导一键安装。
             </p>
           </div>
         </CardContent>

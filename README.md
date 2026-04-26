@@ -47,6 +47,11 @@ Recommended artifacts:
 3. Ensure executable bit on macOS binary: `chmod +x src-tauri/resources/bin/ollama`.
 4. Build Tauri bundle; `tauri.conf.json` already includes `resources/bin/**`.
 5. On first app start, app will spawn `ollama serve` automatically when needed.
+<<<<<<< Updated upstream
+=======
+<<<<<<< ours
+=======
+>>>>>>> Stashed changes
 
 ### Helper script
 
@@ -57,3 +62,7 @@ scripts/fetch-ollama-binaries.sh --platform windows
 scripts/fetch-ollama-binaries.sh --platform macos-apple
 scripts/fetch-ollama-binaries.sh --platform macos-intel
 ```
+<<<<<<< Updated upstream
+=======
+>>>>>>> theirs
+>>>>>>> Stashed changes

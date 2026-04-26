@@ -2,6 +2,7 @@ import {
   BookOpenText,
   ChartNoAxesColumn,
   FilePenLine,
+  FolderInput,
   Home,
   Settings2,
 } from "lucide-react"
@@ -30,6 +31,12 @@ export const appNavigation = [
     label: "数据复盘",
     description: "回看发文节奏与内容效果",
     icon: ChartNoAxesColumn,
+  },
+  {
+    href: "/import",
+    label: "截图导入",
+    description: "半自动提取并人工确认入库",
+    icon: FolderInput,
   },
   {
     href: "/settings",

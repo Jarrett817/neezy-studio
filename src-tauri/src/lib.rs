@@ -191,6 +191,7 @@ fn install_ollama() -> Result<String, String> {
 #[tauri::command]
 fn download_model(app: AppHandle, model_id: String) -> Result<ModelRuntimeState, String> {
     let spec = model_spec(&model_id).ok_or_else(|| "Model does not exist".to_string())?;
+    ensure_ollama_ready(&app);
     pull_ollama_model(spec.ollama_model)?;
     build_model_runtime_state(&app)
 }
@@ -322,6 +323,7 @@ pub fn run() {
 }
 
 fn build_model_runtime_state(app: &AppHandle) -> Result<ModelRuntimeState, String> {
+    ensure_ollama_ready(app);
     let config = read_model_config(app)?;
     let ollama_models = list_ollama_models().unwrap_or_default();
     let ollama_available = !ollama_models.is_empty() || ollama_healthcheck();

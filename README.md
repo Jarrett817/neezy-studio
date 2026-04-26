@@ -30,3 +30,35 @@ Clicking it opens the platform-specific installer URL:
 - Windows: `https://ollama.com/download/OllamaSetup.exe`
 - macOS: `https://ollama.com/download/Ollama-darwin.zip`
 - Other: `https://ollama.com/download`
+
+> A single installer cannot run on both Windows and macOS.  
+> You must ship separate desktop bundles per OS, each with its matching Ollama binary.
+
+### Which Ollama package to download
+
+> As of **2026-04-26**, Ollama latest release is **v0.21.0**.  
+> Prefer pinning a specific version in your build pipeline (avoid “latest” floating tags).
+
+Recommended artifacts:
+
+- **Windows desktop app**: `ollama-windows-amd64.zip` (extract `ollama.exe` to `src-tauri/resources/bin/ollama.exe`)
+- **macOS Apple Silicon (M1/M2/M3/M4)**: `ollama-darwin.tgz` (extract CLI binary `ollama` to `src-tauri/resources/bin/ollama`)
+- **macOS Intel**: use the macOS app/zip distribution (`Ollama-darwin.zip`) and export the CLI binary from `Ollama.app/Contents/Resources/ollama` into `src-tauri/resources/bin/ollama`
+
+### Release checklist
+
+1. Download pinned Ollama release assets from `ollama/ollama` GitHub Releases.
+2. Place binaries in `src-tauri/resources/bin/`.
+3. Ensure executable bit on macOS binary: `chmod +x src-tauri/resources/bin/ollama`.
+4. Build Tauri bundle; `tauri.conf.json` already includes `resources/bin/**`.
+5. On first app start, app will spawn `ollama serve` automatically when needed.
+
+### Helper script
+
+You can automate step 1-3 with:
+
+```bash
+scripts/fetch-ollama-binaries.sh --platform windows
+scripts/fetch-ollama-binaries.sh --platform macos-apple
+scripts/fetch-ollama-binaries.sh --platform macos-intel
+```

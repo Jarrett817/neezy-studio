@@ -1,0 +1,12 @@
+{
+  "name": "neezy-sidecar",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@langchain/langgraph": "^1.2.9",
+    "node-llama-cpp": "^3.18.1"
+  },
+  "trustedDependencies": [
+    "node-llama-cpp"
+  ]
+}

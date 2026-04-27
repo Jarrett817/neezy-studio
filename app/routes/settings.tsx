@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, Download, LoaderCircle } from "lucide-react"
+import { AlertCircle, CheckCircle2, Download, Plus, Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { SectionHeading } from "~/components/section-heading"
-import { Badge } from "~/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert"
 import { Button } from "~/components/ui/button"
 import {
   Card,
@@ -15,16 +16,22 @@ import {
   CardTitle,
 } from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
+import { Progress } from "~/components/ui/progress"
 import { Textarea } from "~/components/ui/textarea"
 import {
-  downloadModel,
-  getModelRuntimeState,
-  installOllama,
-  setActiveModel,
-} from "~/services/model-runtime"
-import {
+  getModelDownloadTasks,
   getAccountProfile,
+  getModelDownloadOptions,
+  getModelDownloadSuites,
+  getRuntimeMetrics,
+  getRuntimeSettings,
+  saveRuntimeSettings,
   saveAccountProfile,
+  startModelDownload,
+  startModelSuiteDownload,
+  type ModelConfig,
+  type ModelDownloadTask,
+  type RuntimeSettings,
   type AccountProfile,
 } from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
@@ -49,11 +56,36 @@ export default function SettingsRoute() {
     queryKey: ["account-profile"],
     queryFn: getAccountProfile,
   })
-
-  const { data: runtimeState, error: runtimeError } = useQuery({
-    queryKey: ["model-runtime"],
-    queryFn: getModelRuntimeState,
+  const { data: runtimeSettings } = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: getRuntimeSettings,
   })
+  const { data: metrics } = useQuery({
+    queryKey: ["runtime-metrics"],
+    queryFn: getRuntimeMetrics,
+    refetchInterval: 3000,
+  })
+  const { data: downloadOptions } = useQuery({
+    queryKey: ["model-download-options"],
+    queryFn: getModelDownloadOptions,
+  })
+  const { data: downloadSuites } = useQuery({
+    queryKey: ["model-download-suites"],
+    queryFn: getModelDownloadSuites,
+  })
+  const { data: downloadTasks } = useQuery({
+    queryKey: ["model-download-tasks"],
+    queryFn: getModelDownloadTasks,
+    refetchInterval: (query) =>
+      query.state.data?.some((task) => task.status === "running")
+        ? 1000
+        : false,
+  })
+  const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings | null>(null)
+
+  useEffect(() => {
+    if (runtimeSettings) setRuntimeDraft(runtimeSettings)
+  }, [runtimeSettings])
 
   const saveProfileMutation = useMutation({
     mutationFn: saveAccountProfile,
@@ -62,24 +94,31 @@ export default function SettingsRoute() {
       setActiveAccountName(nextProfile.accountName)
     },
   })
-
-  const downloadMutation = useMutation({
-    mutationFn: downloadModel,
-    onSuccess: (nextState) => {
-      queryClient.setQueryData(["model-runtime"], nextState)
+  const saveRuntimeMutation = useMutation({
+    mutationFn: saveRuntimeSettings,
+    onSuccess: (nextSettings) => {
+      queryClient.setQueryData(["runtime-settings"], nextSettings)
+      setRuntimeDraft(nextSettings)
+    },
+  })
+  const startDownloadMutation = useMutation({
+    mutationFn: startModelDownload,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["model-download-tasks"] })
+    },
+  })
+  const startSuiteDownloadMutation = useMutation({
+    mutationFn: startModelSuiteDownload,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["model-download-tasks"] })
     },
   })
 
-  const installOllamaMutation = useMutation({
-    mutationFn: installOllama,
-  })
-
-  const setActiveMutation = useMutation({
-    mutationFn: setActiveModel,
-    onSuccess: (nextState) => {
-      queryClient.setQueryData(["model-runtime"], nextState)
-    },
-  })
+  useEffect(() => {
+    if (!downloadTasks?.some((task) => task.status === "done")) return
+    queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
+    queryClient.invalidateQueries({ queryKey: ["runtime-metrics"] })
+  }, [downloadTasks, queryClient])
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -94,8 +133,8 @@ export default function SettingsRoute() {
     <div className="space-y-5">
       <SectionHeading
         eyebrow="设置"
-        title="账号与 llama.cpp 模型"
-        description="账号配置保存到本机。若未安装 llama.cpp，可在此一键打开对应系统下载页面。"
+        title="账号与记忆配置"
+        description="仅保留账号记忆配置。模型调用由 Bun + node-llama-cpp 在创作页直接执行。"
       />
 
       <Card className="max-w-4xl">
@@ -150,133 +189,286 @@ export default function SettingsRoute() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="max-w-4xl">
         <CardHeader>
-          <CardTitle>llama.cpp 模型</CardTitle>
+          <CardTitle>端侧模型与性能调度</CardTitle>
           <CardDescription>
-            默认连接 127.0.0.1:8080。未安装时点击“安装
-            llama.cpp”即可打开下载页。模型通过 huggingface-hub CLI 下载到本机
-            models 文件夹。
+            登记已下载的 GGUF 模型后，创作页会根据 CPU、内存和负载自动选择。
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={runtimeState?.ollamaAvailable ? "secondary" : "outline"}
-            >
-              {runtimeState?.ollamaAvailable
-                ? "llama.cpp 已连接"
-                : "llama.cpp 未连接"}
-            </Badge>
-            <Badge variant="outline">
-              {runtimeState?.ollamaInstallUrl ?? "https://ollama.com/download"}
-            </Badge>
+        <CardContent className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-3">
+            <RuntimeStat
+              label="CPU"
+              value={`${metrics?.cpuUsagePercent.toFixed(0) ?? "--"}%`}
+            />
+            <RuntimeStat
+              label="可用内存"
+              value={`${metrics?.availableMemoryGb.toFixed(1) ?? "--"} GB`}
+            />
+            <RuntimeStat label="压力" value={metrics?.pressure ?? "--"} />
           </div>
 
-          {runtimeError instanceof Error ? (
-            <ErrorMessage message={runtimeError.message} />
-          ) : null}
-          {downloadMutation.error instanceof Error ? (
-            <ErrorMessage message={downloadMutation.error.message} />
-          ) : null}
-          {installOllamaMutation.error instanceof Error ? (
-            <ErrorMessage message={installOllamaMutation.error.message} />
-          ) : null}
-          {setActiveMutation.error instanceof Error ? (
-            <ErrorMessage message={setActiveMutation.error.message} />
-          ) : null}
+          {runtimeDraft ? (
+            <div className="space-y-4">
+              <Field label="Hugging Face 镜像地址">
+                <Input
+                  value={runtimeDraft.hfEndpoint}
+                  onChange={(event) =>
+                    setRuntimeDraft({
+                      ...runtimeDraft,
+                      hfEndpoint: event.target.value,
+                    })
+                  }
+                />
+              </Field>
 
-          {!runtimeState?.ollamaAvailable ? (
-            <Button
-              variant="secondary"
-              disabled={installOllamaMutation.isPending}
-              onClick={() => installOllamaMutation.mutate()}
-            >
-              {installOllamaMutation.isPending ? "打开中..." : "安装 llama.cpp"}
-            </Button>
-          ) : null}
-
-          {runtimeState?.models.map((model) => {
-            const isActive = runtimeState.activeModelId === model.id
-            const isDownloading =
-              downloadMutation.isPending &&
-              downloadMutation.variables === model.id
-            const isSwitching =
-              setActiveMutation.isPending &&
-              setActiveMutation.variables === model.id
-
-            return (
-              <div
-                key={model.id}
-                className="rounded-lg border border-border/70 bg-background/70 p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold">{model.name}</p>
-                      <Badge variant="outline">{model.ollamaModel}</Badge>
-                      <Badge
-                        variant={model.downloaded ? "secondary" : "outline"}
-                      >
-                        {model.downloaded ? "已就绪" : "未安装"}
-                      </Badge>
-                      {isActive ? <Badge>当前默认</Badge> : null}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {model.summary}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {model.sizeLabel} · {model.minMemoryLabel}
-                    </p>
-                  </div>
-
-                  {model.downloaded ? (
-                    <Button
-                      variant="outline"
-                      disabled={isActive || isSwitching}
-                      onClick={() => setActiveMutation.mutate(model.id)}
-                    >
-                      {isSwitching ? "切换中" : "设为默认"}
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={isDownloading || !runtimeState.ollamaAvailable}
-                      onClick={() => downloadMutation.mutate(model.id)}
-                    >
-                      {isDownloading ? (
-                        <>
-                          <LoaderCircle className="mr-2 size-4 animate-spin" />
-                          下载中
-                        </>
-                      ) : (
-                        <>
-                          <Download className="mr-2 size-4" />
-                          {runtimeState.ollamaAvailable
-                            ? "用 HuggingFace 下载"
-                            : "需先启动 llama.cpp"}
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="CPU 上限">
+                  <Input
+                    type="number"
+                    min={30}
+                    max={95}
+                    value={runtimeDraft.maxCpuPercent}
+                    onChange={(event) =>
+                      setRuntimeDraft({
+                        ...runtimeDraft,
+                        maxCpuPercent: Number(event.target.value),
+                      })
+                    }
+                  />
+                </Field>
+                <label className="flex items-center gap-2 pt-7 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={runtimeDraft.preferLowPower}
+                    onChange={(event) =>
+                      setRuntimeDraft({
+                        ...runtimeDraft,
+                        preferLowPower: event.target.checked,
+                      })
+                    }
+                  />
+                  优先低功耗，避免 7B 占满笔记本
+                </label>
               </div>
-            )
-          })}
 
-          <div className="rounded-lg border border-dashed border-border/70 p-3 text-sm text-muted-foreground">
-            <p className="flex items-center gap-2 font-medium text-foreground">
-              <CheckCircle2 className="size-4" />
-              管理规则
-            </p>
-            <p className="mt-1">
-              Neezy Studio 不自研模型运行时：仅调用 llama.cpp HTTP
-              API。模型文件使用 GGUF，并放在本机模型目录。
-            </p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">已下载模型</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() =>
+                      setRuntimeDraft({
+                        ...runtimeDraft,
+                        models: [...runtimeDraft.models, emptyModel()],
+                      })
+                    }
+                  >
+                    <Plus className="size-4" />
+                    添加
+                  </Button>
+                </div>
+
+                {runtimeDraft.models.map((model, index) => (
+                  <ModelRow
+                    key={`${model.id}-${index}`}
+                    model={model}
+                    onChange={(nextModel) => {
+                      const models = [...runtimeDraft.models]
+                      models[index] = nextModel
+                      setRuntimeDraft({ ...runtimeDraft, models })
+                    }}
+                    onRemove={() =>
+                      setRuntimeDraft({
+                        ...runtimeDraft,
+                        models: runtimeDraft.models.filter(
+                          (_, itemIndex) => itemIndex !== index
+                        ),
+                      })
+                    }
+                  />
+                ))}
+              </div>
+
+              {saveRuntimeMutation.error instanceof Error ? (
+                <p className="text-sm text-destructive">
+                  {saveRuntimeMutation.error.message}
+                </p>
+              ) : null}
+
+              <Button
+                type="button"
+                disabled={saveRuntimeMutation.isPending}
+                onClick={() => saveRuntimeMutation.mutate(runtimeDraft)}
+              >
+                {saveRuntimeMutation.isPending ? "保存中" : "保存模型设置"}
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            <p className="text-sm font-medium">推荐模型套装</p>
+            <div className="grid gap-3">
+              {(downloadSuites ?? []).map((suite) => (
+                <div
+                  key={suite.id}
+                  className="rounded-lg border border-border/70 p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">{suite.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {suite.note}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {suite.models.join(" / ")}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      disabled={startSuiteDownloadMutation.isPending}
+                      onClick={() =>
+                        startSuiteDownloadMutation.mutate(suite.id)
+                      }
+                    >
+                      <Download className="size-4" />
+                      下载套装
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-sm font-medium">推荐下载选项</p>
+            <DownloadAlerts tasks={downloadTasks ?? []} />
+            <div className="grid gap-3">
+              {(downloadOptions ?? []).map((option) => (
+                <div
+                  key={option.id}
+                  className="rounded-lg border border-border/70 p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">{option.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {option.sizeGb} GB · {option.quant} ·{" "}
+                        {capabilityLabel(option.capability)} ·{" "}
+                        {option.note}
+                      </p>
+                    </div>
+                    <DownloadButton
+                      optionId={option.id}
+                      tasks={downloadTasks ?? []}
+                      disabled={startDownloadMutation.isPending}
+                      onDownload={() => startDownloadMutation.mutate(option.id)}
+                    />
+                  </div>
+                  <DownloadProgress
+                    task={(downloadTasks ?? []).find(
+                      (task) => task.optionId === option.id
+                    )}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function DownloadButton({
+  optionId,
+  tasks,
+  disabled,
+  onDownload,
+}: {
+  optionId: string
+  tasks: ModelDownloadTask[]
+  disabled: boolean
+  onDownload: () => void
+}) {
+  const task = tasks.find((item) => item.optionId === optionId)
+  const running = task?.status === "running"
+  const done = task?.status === "done"
+
+  return (
+    <Button
+      type="button"
+      variant={done ? "secondary" : "outline"}
+      className="gap-2"
+      disabled={disabled || running || done}
+      onClick={onDownload}
+    >
+      {done ? (
+        <CheckCircle2 className="size-4" />
+      ) : (
+        <Download className="size-4" />
+      )}
+      {running ? "下载中" : done ? "已下载" : "下载"}
+    </Button>
+  )
+}
+
+function DownloadProgress({ task }: { task?: ModelDownloadTask }) {
+  if (!task) return null
+
+  return (
+    <div className="mt-3 space-y-2">
+      <Progress value={task.progress} />
+      <p className="text-xs text-muted-foreground">
+        {task.status === "running"
+          ? `${task.progress.toFixed(1)}% · ${formatBytes(task.downloadedBytes)} / ${
+              task.totalBytes ? formatBytes(task.totalBytes) : "未知大小"
+            }`
+          : task.status === "done"
+            ? `已保存到 ${task.targetPath}`
+            : task.errorMessage}
+      </p>
+    </div>
+  )
+}
+
+function DownloadAlerts({ tasks }: { tasks: ModelDownloadTask[] }) {
+  const latest = [...tasks]
+    .reverse()
+    .find((task) => task.status === "done" || task.status === "failed")
+  if (!latest) return null
+
+  const failed = latest.status === "failed"
+  return (
+    <Alert variant={failed ? "destructive" : "default"}>
+      {failed ? (
+        <AlertCircle className="size-4" />
+      ) : (
+        <CheckCircle2 className="size-4" />
+      )}
+      <AlertTitle>{failed ? "模型下载失败" : "模型下载完成"}</AlertTitle>
+      <AlertDescription>
+        {failed
+          ? latest.errorMessage
+          : `${latest.label} 已保存并登记到本地模型列表。`}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+function formatBytes(value: number) {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MB`
+  return `${Math.round(value / 1024)} KB`
+}
+
+function capabilityLabel(capability: ModelConfig["capability"]) {
+  if (capability === "vision") return "视觉"
+  if (capability === "embedding") return "语义向量"
+  return "文本"
 }
 
 function emptyProfile(): AccountProfile {
@@ -287,6 +479,91 @@ function emptyProfile(): AccountProfile {
     toneStyle: "",
     forbiddenWords: "",
   }
+}
+
+function RuntimeStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/70 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function emptyModel(): ModelConfig {
+  return {
+    id: `model-${Date.now()}`,
+    label: "",
+    path: "",
+    paramsB: 3,
+    quant: "Q4_K_M",
+    sizeGb: 2.2,
+    enabled: true,
+    capability: "text",
+  }
+}
+
+function ModelRow({
+  model,
+  onChange,
+  onRemove,
+}: {
+  model: ModelConfig
+  onChange: (model: ModelConfig) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border border-border/70 p-3 md:grid-cols-[1fr_1fr_90px_90px_110px_auto]">
+      <Input
+        placeholder="Qwen2.5 3B Q4"
+        value={model.label}
+        onChange={(event) => onChange({ ...model, label: event.target.value })}
+      />
+      <Input
+        placeholder="D:\\models\\xxx.gguf"
+        value={model.path}
+        onChange={(event) => onChange({ ...model, path: event.target.value })}
+      />
+      <Input
+        type="number"
+        step="0.5"
+        value={model.paramsB}
+        onChange={(event) =>
+          onChange({ ...model, paramsB: Number(event.target.value) })
+        }
+      />
+      <Input
+        value={model.quant}
+        onChange={(event) => onChange({ ...model, quant: event.target.value })}
+      />
+      <select
+        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        value={model.capability ?? "text"}
+        onChange={(event) =>
+          onChange({
+            ...model,
+            capability: event.target.value as ModelConfig["capability"],
+          })
+        }
+      >
+        <option value="text">文本</option>
+        <option value="vision">视觉</option>
+        <option value="embedding">语义向量</option>
+      </select>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={model.enabled}
+          onChange={(event) =>
+            onChange({ ...model, enabled: event.target.checked })
+          }
+        />
+        <Button type="button" variant="outline" size="icon" onClick={onRemove}>
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function Field({
@@ -304,13 +581,5 @@ function Field({
       {children}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </label>
-  )
-}
-
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-      {message}
-    </p>
   )
 }

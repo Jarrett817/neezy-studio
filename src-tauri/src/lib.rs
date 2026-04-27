@@ -7,10 +7,9 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::Emitter;
-use tauri::{path::BaseDirectory, AppHandle, Manager};
-use tauri_plugin_shell::process::CommandEvent;
-use tauri_plugin_shell::ShellExt;
+use tauri::{AppHandle, Manager};
+
+mod llm_runtime;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,15 +38,6 @@ struct ContentAgentInput {
     references: String,
     model_path: Option<String>,
     model_id: Option<String>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ContentAgentOutput {
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    trace: serde_json::Value,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -85,6 +75,29 @@ struct ModelConfig {
     enabled: bool,
     #[serde(default = "default_text_capability")]
     capability: String,
+    #[serde(default)]
+    repo: Option<String>,
+    #[serde(default)]
+    file: Option<String>,
+    #[serde(default)]
+    tokenizer_repo: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LlmMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateTextInput {
+    model_id: Option<String>,
+    model_path: Option<String>,
+    messages: Vec<LlmMessage>,
+    max_tokens: Option<usize>,
+    stream: Option<bool>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -119,6 +132,7 @@ struct ModelDownloadOption {
     source: String,
     url: String,
     mirror_url: String,
+    repo: String,
     note: String,
     capability: String,
 }
@@ -252,7 +266,7 @@ fn get_workspace_snapshot(app: AppHandle) -> Result<WorkspaceSnapshot, String> {
             title: item.title,
             category: item.category,
             content: item.content,
-            last_used_at: "未使用".to_string(),
+            last_used_at: "unused".to_string(),
         })
         .collect();
 
@@ -314,7 +328,7 @@ fn get_model_download_suites() -> Vec<ModelDownloadSuite> {
     vec![
         build_suite(
             "balanced-agent-suite",
-            "均衡 Agent 套装",
+            "Balanced Agent Suite",
             &[
                 "qwen3-1.7b-q4",
                 "qwen3-4b-q4",
@@ -322,31 +336,30 @@ fn get_model_download_suites() -> Vec<ModelDownloadSuite> {
                 "qwen2.5-vl-3b-q4",
                 "qwen3-embedding-0.6b-q8",
             ],
-            "轻量规划 + 主写作 + 复核 + 视觉理解，适合 16GB 内存机器。",
+            "Planner + writer + reviewer + vision + embedding for 16GB RAM laptops.",
             &options,
         ),
         build_suite(
             "low-power-agent-suite",
-            "低功耗 Agent 套装",
+            "Low Power Agent Suite",
             &[
                 "qwen3-1.7b-q4",
                 "qwen2.5-1.5b-q4",
                 "qwen2-vl-2b-q4",
                 "qwen3-embedding-0.6b-q8",
             ],
-            "更适合轻薄本，优先降低 CPU/内存压力。",
+            "Lower CPU and memory pressure for thin laptops.",
             &options,
         ),
     ]
 }
-
 #[tauri::command]
 fn start_model_download(app: AppHandle, option_id: String) -> Result<ModelDownloadTask, String> {
     let settings = read_runtime_settings(&app)?;
     let option = model_download_options(&settings.hf_endpoint)
         .into_iter()
         .find(|item| item.id == option_id)
-        .ok_or_else(|| "模型下载选项不存在。".to_string())?;
+        .ok_or_else(|| "model download option not found".to_string())?;
     let target_dir = models_dir(&app)?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let target_path = target_dir.join(download_filename(&option));
@@ -383,7 +396,7 @@ fn start_model_suite_download(
     let suite = get_model_download_suites()
         .into_iter()
         .find(|item| item.id == suite_id)
-        .ok_or_else(|| "模型套装不存在。".to_string())?;
+        .ok_or_else(|| "model suite not found".to_string())?;
     suite
         .option_ids
         .into_iter()
@@ -400,108 +413,63 @@ fn get_model_download_tasks() -> Result<Vec<ModelDownloadTask>, String> {
 }
 
 #[tauri::command]
-async fn run_content_agent(
-    app: AppHandle,
-    input: ContentAgentInput,
-) -> Result<ContentAgentOutput, String> {
-    let profile = read_account_profile(&app)?;
+async fn generate_text_stream(app: AppHandle, input: GenerateTextInput) -> Result<String, String> {
     let settings = read_runtime_settings(&app)?;
     let metrics = build_runtime_metrics(&settings);
-    let model_suite = resolve_agent_model_suite(&settings, &metrics, &input)?;
-    let knowledge = retrieve_relevant_knowledge(&app, &settings, &metrics, &input).await?;
-    let sidecar_entry_path = resolve_sidecar_entry_path(&app)?;
-    let payload = serde_json::json!({
-        "kind": "content",
-        "topic": input.topic,
-        "goal": input.goal,
-        "references": input.references,
-        "model": model_suite["writer"].clone(),
-        "modelSuite": model_suite,
-        "runtime": runtime_plan(&metrics, &settings),
-        "memory": {
-            "accountName": profile.account_name,
-            "track": profile.track,
-            "persona": profile.persona,
-            "toneStyle": profile.tone_style,
-            "forbiddenWords": profile.forbidden_words
-        },
-        "knowledge": knowledge.iter().map(|entry| serde_json::json!({
-            "id": entry.item.id.clone(),
-            "title": entry.item.title.clone(),
-            "content": entry.item.content.clone(),
-            "category": entry.item.category.clone(),
-            "similarity": entry.similarity
-        })).collect::<Vec<_>>(),
-        "skills": [
-            "HookTitleSkill",
-            "PersonaToneSkill",
-            "KnowledgeGroundingSkill",
-            "StructureSkill",
-            "RiskWordAvoidSkill"
-        ]
-    });
-
-    let payload_path = write_agent_payload(&app, &payload)?;
-    let (mut rx, _child) = app
-        .shell()
-        .sidecar("bun")
-        .map_err(|error| format!("无法创建 Bun 侧车命令：{error}"))?
-        .args([
-            sidecar_entry_path.to_string_lossy().as_ref(),
-            payload_path.to_string_lossy().as_ref(),
-        ])
-        .spawn()
-        .map_err(|error| format!("无法启动 Bun Agent 侧车进程：{error}"))?;
-    let mut stderr = String::new();
-    let mut final_output: Option<ContentAgentOutput> = None;
-    let mut exit_code: Option<i32> = None;
-
-    while let Some(event) = rx.recv().await {
-        match event {
-            CommandEvent::Stdout(line) => {
-                let line = String::from_utf8_lossy(&line).trim().to_string();
-                if line.is_empty() {
-                    continue;
-                }
-                let value: serde_json::Value = serde_json::from_str(&line)
-                    .map_err(|error| format!("解析 Agent 流式事件失败：{error}: {line}"))?;
-                if value.get("type").and_then(|item| item.as_str()) == Some("final") {
-                    let output = value
-                        .get("output")
-                        .cloned()
-                        .ok_or_else(|| "Agent final 事件缺少 output".to_string())?;
-                    final_output = Some(
-                        serde_json::from_value(output)
-                            .map_err(|error| format!("解析 Agent 最终输出失败：{error}"))?,
-                    );
-                } else {
-                    let _ = app.emit("content-agent-event", value);
-                }
-            }
-            CommandEvent::Stderr(line) => {
-                stderr.push_str(&String::from_utf8_lossy(&line));
-            }
-            CommandEvent::Error(error) => {
-                stderr.push_str(&error);
-            }
-            CommandEvent::Terminated(payload) => {
-                exit_code = payload.code;
-                break;
-            }
-            _ => {}
+    let model = resolve_llm_model(
+        &settings,
+        &metrics,
+        input.model_id.as_deref(),
+        input.model_path.as_deref(),
+    )?;
+    let runtime = runtime_plan(&metrics, &settings);
+    let max_tokens = input.max_tokens.unwrap_or_else(|| {
+        if metrics.pressure == "high" {
+            512
+        } else {
+            1024
         }
-    }
-    remove_file_if_exists(&payload_path);
+    });
+    let stream = input.stream.unwrap_or(true);
 
-    if exit_code.unwrap_or(1) != 0 {
-        let stderr = stderr.trim().to_string();
-        return Err(format!("Agent 运行失败：{stderr}"));
-    }
+    llm_runtime::generate_text_stream(
+        app,
+        llm_runtime::RuntimeModel {
+            path: model.path.clone(),
+            repo: model.repo.clone(),
+            file: model.file.clone(),
+            tokenizer_repo: model.tokenizer_repo.clone(),
+        },
+        input.messages,
+        runtime,
+        max_tokens,
+        stream,
+    )
+    .await
+}
 
-    let stdout =
-        serde_json::to_string(&final_output.ok_or_else(|| "Agent 没有返回最终草稿。".to_string())?)
-            .map_err(|error| error.to_string())?;
-    serde_json::from_str(&stdout).map_err(|error| format!("解析 Agent 输出失败：{error}"))
+#[tauri::command]
+async fn get_relevant_knowledge(
+    app: AppHandle,
+    input: ContentAgentInput,
+) -> Result<Vec<KnowledgePreview>, String> {
+    let _manual_model_hint = (&input.model_path, &input.model_id);
+    let settings = read_runtime_settings(&app)?;
+    let metrics = build_runtime_metrics(&settings);
+    let items = retrieve_relevant_knowledge(&app, &settings, &metrics, &input).await?;
+    Ok(items
+        .into_iter()
+        .map(|entry| KnowledgePreview {
+            id: entry.item.id.unwrap_or_default(),
+            title: entry.item.title,
+            category: entry.item.category,
+            content: entry.item.content,
+            last_used_at: entry
+                .similarity
+                .map(|score| format!("score {:.3}", score))
+                .unwrap_or_else(|| "keyword".to_string()),
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -612,7 +580,6 @@ pub fn run() {
             }
             Ok(())
         })
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_build_info,
             get_workspace_snapshot,
@@ -626,7 +593,8 @@ pub fn run() {
             start_model_download,
             start_model_suite_download,
             get_model_download_tasks,
-            run_content_agent,
+            generate_text_stream,
+            get_relevant_knowledge,
             add_knowledge_item,
             list_import_jobs,
             create_import_job,
@@ -635,15 +603,6 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-fn write_agent_payload(app: &AppHandle, payload: &serde_json::Value) -> Result<PathBuf, String> {
-    let path = app_data_dir(app)?.join(format!("agent-input-{}.json", now_stamp()));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    fs::write(&path, payload.to_string()).map_err(|error| error.to_string())?;
-    Ok(path)
 }
 
 fn read_account_profile(app: &AppHandle) -> Result<AccountProfile, String> {
@@ -874,9 +833,9 @@ async fn ensure_knowledge_embeddings(
 }
 
 async fn embed_texts(
-    app: &AppHandle,
+    _app: &AppHandle,
     model: &ModelConfig,
-    metrics: &RuntimeMetrics,
+    _metrics: &RuntimeMetrics,
     texts: Vec<String>,
 ) -> Result<EmbeddingSidecarOutput, String> {
     if texts.is_empty() {
@@ -887,41 +846,22 @@ async fn embed_texts(
         });
     }
 
-    let sidecar_entry_path = resolve_sidecar_entry_path(app)?;
-    let payload = serde_json::json!({
-        "kind": "embed",
-        "model": model_json(model, "embedding", "semantic memory embedding"),
-        "runtime": {
-            "maxThreads": metrics.cpu_count.min(4).max(1),
-            "contextSize": 2048,
-            "batchSize": 128,
-            "gpu": false,
-            "cpuLimitPercent": 50,
-            "pressure": metrics.pressure,
+    let embeddings = llm_runtime::embed_texts(
+        llm_runtime::RuntimeModel {
+            path: model.path.clone(),
+            repo: model.repo.clone(),
+            file: model.file.clone(),
+            tokenizer_repo: model.tokenizer_repo.clone(),
         },
-        "texts": texts,
-    });
-    let payload_path = write_agent_payload(app, &payload)?;
-    let output = app
-        .shell()
-        .sidecar("bun")
-        .map_err(|error| format!("无法创建 Bun embedding 侧车命令：{error}"))?
-        .args([
-            sidecar_entry_path.to_string_lossy().as_ref(),
-            payload_path.to_string_lossy().as_ref(),
-        ])
-        .output()
-        .await
-        .map_err(|error| format!("无法启动 Bun embedding 侧车进程：{error}"))?;
-    remove_file_if_exists(&payload_path);
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("Embedding 运行失败：{stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    serde_json::from_str(&stdout).map_err(|error| format!("解析 Embedding 输出失败：{error}"))
+        texts,
+    )
+    .await?;
+    let dimension = embeddings.first().map(Vec::len).unwrap_or(0);
+    Ok(EmbeddingSidecarOutput {
+        model_id: model.id.clone(),
+        dimension,
+        embeddings,
+    })
 }
 
 #[derive(Clone)]
@@ -1015,7 +955,7 @@ fn select_embedding_model(settings: &RuntimeSettings) -> Option<&ModelConfig> {
 
 fn knowledge_embedding_text(item: &KnowledgeItem) -> String {
     format!(
-        "标题：{}\n分类：{}\n内容：{}",
+        "title: {}\ncategory: {}\ncontent: {}",
         item.title, item.category, item.content
     )
 }
@@ -1183,36 +1123,6 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|error| error.to_string())
 }
 
-fn resolve_sidecar_entry_path(app: &AppHandle) -> Result<PathBuf, String> {
-    #[cfg(debug_assertions)]
-    {
-        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .ok_or_else(|| "无法解析项目根目录".to_string())?
-            .join("sidecar-app")
-            .join("index.ts");
-        if dev_path.is_file() {
-            return Ok(dev_path);
-        }
-    }
-
-    app.path()
-        .resolve("sidecar-app/index.ts", BaseDirectory::Resource)
-        .map_err(|error| format!("无法解析 Bun 侧车脚本路径：{error}"))
-}
-
-fn remove_file_if_exists(path: &PathBuf) {
-    if let Err(error) = fs::remove_file(path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            log::warn!(
-                "failed to remove sidecar payload {}: {}",
-                path.display(),
-                error
-            );
-        }
-    }
-}
-
 fn default_runtime_settings() -> RuntimeSettings {
     RuntimeSettings {
         hf_endpoint: "https://hf-mirror.com".to_string(),
@@ -1321,10 +1231,9 @@ where
             }
         }
     }
-
     Err(format!(
-        "模型下载失败，镜像和官方源都不可用：{}",
-        errors.join("；")
+        "model download failed; mirror and official source are unavailable: {}",
+        errors.join("; ")
     ))
 }
 
@@ -1340,7 +1249,7 @@ where
         .map_err(|error| error.to_string())?;
     let mut response = client.get(url).send().map_err(|error| error.to_string())?;
     if !response.status().is_success() {
-        return Err(format!("下载失败：HTTP {}", response.status()));
+        return Err(format!("download failed: HTTP {}", response.status()));
     }
 
     let total = response.content_length();
@@ -1381,6 +1290,9 @@ fn register_downloaded_model(
         size_gb: option.size_gb,
         enabled: true,
         capability: option.capability.clone(),
+        repo: Some(option.repo.clone()),
+        file: Some(download_filename(option)),
+        tokenizer_repo: tokenizer_repo_for_option(option),
     });
     write_runtime_settings(app, &settings)
 }
@@ -1416,7 +1328,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             3.43,
             "lmstudio-community/gemma-4-E2B-it-GGUF",
             "gemma-4-E2B-it-Q4_K_M.gguf",
-            "Gemma 4 E2B，Apache 2.0，适合作为规划/复核模型。",
+            "Gemma 4 lightweight text model for planning and review.",
             "text",
         ),
         (
@@ -1427,7 +1339,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             5.34,
             "lmstudio-community/gemma-4-E4B-it-GGUF",
             "gemma-4-E4B-it-Q4_K_M.gguf",
-            "Gemma 4 E4B，质量更强但体积更大，建议 16GB+ 且低负载使用。",
+            "Gemma 4 higher quality text model, recommended for 16GB+ RAM.",
             "text",
         ),
         (
@@ -1438,7 +1350,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             1.23,
             "QuantFactory/Qwen3-1.7B-GGUF",
             "Qwen3-1.7B.Q4_0.gguf",
-            "Qwen3 轻量选项，适合低功耗和快速草稿。",
+            "Lightweight Chinese text model for low power drafting.",
             "text",
         ),
         (
@@ -1449,7 +1361,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             0.64,
             "Qwen/Qwen3-Embedding-0.6B-GGUF",
             "Qwen3-Embedding-0.6B-Q8_0.gguf",
-            "语义向量记忆/RAG 专用 embedding 模型，中文检索优先。",
+            "Embedding model for semantic memory and RAG.",
             "embedding",
         ),
         (
@@ -1460,7 +1372,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             2.6,
             "ggml-org/Qwen3-4B-GGUF",
             "Qwen3-4B-Q4_K_M.gguf",
-            "质量和速度更均衡，适合 16GB 内存机器。",
+            "Balanced Chinese text model for 16GB RAM machines.",
             "text",
         ),
         (
@@ -1471,7 +1383,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             4.45,
             "Antigma/Qwen3-8B-GGUF",
             "qwen3-8b-q4_0.gguf",
-            "质量更高，但会明显吃 CPU/内存，只建议高配机器低负载使用。",
+            "Higher quality text model; use only on high memory and low pressure.",
             "text",
         ),
         (
@@ -1482,7 +1394,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             2.2,
             "second-state/Qwen2.5-VL-3B-Instruct-GGUF",
             "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
-            "视觉理解模型，后续图片解析节点优先使用。",
+            "Vision model for image and cover understanding.",
             "vision",
         ),
         (
@@ -1493,7 +1405,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             1.6,
             "second-state/Qwen2-VL-2B-Instruct-GGUF",
             "Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
-            "轻量视觉模型，适合截图/封面理解的低功耗套装。",
+            "Low power vision model.",
             "vision",
         ),
         (
@@ -1504,7 +1416,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             1.2,
             "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
             "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            "轻量模式，适合 8GB 内存或边写边做别的事。",
+            "Small text model for low memory machines.",
             "text",
         ),
         (
@@ -1515,7 +1427,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             2.2,
             "Qwen/Qwen2.5-3B-Instruct-GGUF",
             "qwen2.5-3b-instruct-q4_k_m.gguf",
-            "均衡模式，适合多数轻薄本。",
+            "General balanced text model.",
             "text",
         ),
         (
@@ -1526,7 +1438,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             2.1,
             "bartowski/Llama-3.2-3B-Instruct-GGUF",
             "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-            "英文理解更稳，中文创作优先级低于 Qwen。",
+            "English-oriented fallback text model.",
             "text",
         ),
         (
@@ -1537,7 +1449,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
             4.7,
             "Qwen/Qwen2.5-7B-Instruct-GGUF",
             "qwen2.5-7b-instruct-q4_k_m.gguf",
-            "质量更好，但只建议 16GB+ 内存且负载较低时使用。",
+            "Higher quality text model for 16GB+ RAM and low pressure.",
             "text",
         ),
     ]
@@ -1554,6 +1466,7 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
                 source: "Hugging Face".to_string(),
                 url: format!("https://huggingface.co/{path}"),
                 mirror_url: format!("{endpoint}/{path}"),
+                repo: repo.to_string(),
                 note: note.to_string(),
                 capability: capability.to_string(),
             }
@@ -1561,94 +1474,80 @@ fn model_download_options(endpoint: &str) -> Vec<ModelDownloadOption> {
     )
     .collect()
 }
+fn tokenizer_repo_for_option(option: &ModelDownloadOption) -> Option<String> {
+    if option.capability != "text" && option.capability != "vision" {
+        return None;
+    }
 
-fn resolve_agent_model_suite(
+    if option.repo.contains("Qwen3") {
+        if option.repo.contains("1.7B") {
+            return Some("Qwen/Qwen3-1.7B".to_string());
+        }
+        if option.repo.contains("4B") {
+            return Some("Qwen/Qwen3-4B".to_string());
+        }
+        if option.repo.contains("8B") {
+            return Some("Qwen/Qwen3-8B".to_string());
+        }
+    }
+    if option.id.starts_with("qwen2.5-1.5b") {
+        return Some("Qwen/Qwen2.5-1.5B-Instruct".to_string());
+    }
+    if option.id.starts_with("qwen2.5-3b") {
+        return Some("Qwen/Qwen2.5-3B-Instruct".to_string());
+    }
+    if option.id.starts_with("qwen2.5-7b") {
+        return Some("Qwen/Qwen2.5-7B-Instruct".to_string());
+    }
+    if option.id.starts_with("gemma4-e2b") {
+        return Some("google/gemma-4-E2B-it".to_string());
+    }
+    if option.id.starts_with("gemma4-e4b") {
+        return Some("google/gemma-4-E4B-it".to_string());
+    }
+    if option.id.starts_with("llama3.2-3b") {
+        return Some("meta-llama/Llama-3.2-3B-Instruct".to_string());
+    }
+    None
+}
+
+fn resolve_llm_model(
     settings: &RuntimeSettings,
     metrics: &RuntimeMetrics,
-    input: &ContentAgentInput,
-) -> Result<serde_json::Value, String> {
-    if let Some(path) = input
-        .model_path
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        let model = serde_json::json!({
-            "id": input.model_id.clone().unwrap_or_else(|| "manual".to_string()),
-            "label": "手动指定模型",
-            "path": path,
-            "paramsB": infer_params_from_path(path),
-            "quant": "unknown",
-            "selectedBy": "manual"
+    model_id: Option<&str>,
+    model_path: Option<&str>,
+) -> Result<ModelConfig, String> {
+    if let Some(path) = model_path.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(ModelConfig {
+            id: model_id.unwrap_or("manual").to_string(),
+            label: "Manual model".to_string(),
+            path: path.to_string(),
+            params_b: infer_params_from_path(path),
+            quant: "unknown".to_string(),
+            size_gb: 0.0,
+            enabled: true,
+            capability: "text".to_string(),
+            repo: None,
+            file: PathBuf::from(path)
+                .file_name()
+                .map(|value| value.to_string_lossy().to_string()),
+            tokenizer_repo: None,
         });
-        return Ok(serde_json::json!({
-            "planner": model,
-            "writer": model,
-            "reviewer": model,
-            "mode": "manual-single-model"
-        }));
     }
 
-    let available: Vec<&ModelConfig> = settings
-        .models
-        .iter()
-        .filter(|model| {
-            model.enabled
-                && model.capability == "text"
-                && !model.path.trim().is_empty()
-                && PathBuf::from(&model.path).is_file()
-        })
-        .collect();
-
-    if available.is_empty() {
-        return Err("请先在设置页登记至少一个已下载的 GGUF 模型路径。".to_string());
-    }
-
-    let writer = available
-        .iter()
-        .copied()
-        .filter(|model| Some(model.id.as_str()) == metrics.recommended_model_id.as_deref())
-        .next()
+    let selected = model_id
+        .and_then(|id| settings.models.iter().find(|model| model.id == id))
         .or_else(|| {
-            available
-                .iter()
-                .copied()
-                .min_by(|a, b| a.params_b.total_cmp(&b.params_b))
+            metrics
+                .recommended_model_id
+                .as_deref()
+                .and_then(|id| settings.models.iter().find(|model| model.id == id))
         })
-        .ok_or_else(|| "没有可用模型。".to_string())?;
-    let planner = available
-        .iter()
-        .copied()
-        .min_by(|a, b| a.params_b.total_cmp(&b.params_b))
-        .unwrap_or(writer);
-    let reviewer = available
-        .iter()
-        .copied()
-        .filter(|model| model.params_b <= writer.params_b)
-        .max_by(|a, b| a.params_b.total_cmp(&b.params_b))
-        .unwrap_or(writer);
+        .or_else(|| recommend_model(settings, &metrics.pressure, metrics.available_memory_gb))
+        .ok_or_else(|| "no available text model; download or register a GGUF model first".to_string())?;
 
-    Ok(serde_json::json!({
-        "planner": model_json(planner, "planner", &metrics.recommended_reason),
-        "writer": model_json(writer, "writer", &metrics.recommended_reason),
-        "reviewer": model_json(reviewer, "reviewer", &metrics.recommended_reason),
-        "mode": if planner.id == writer.id && writer.id == reviewer.id { "auto-single-model" } else { "auto-suite" }
-    }))
+    Ok(selected.clone())
 }
-
-fn model_json(model: &ModelConfig, role: &str, reason: &str) -> serde_json::Value {
-    serde_json::json!({
-        "id": model.id,
-        "label": model.label,
-        "path": model.path,
-        "paramsB": model.params_b,
-        "quant": model.quant,
-        "selectedBy": "auto",
-        "role": role,
-        "reason": reason
-    })
-}
-
 fn runtime_plan(metrics: &RuntimeMetrics, settings: &RuntimeSettings) -> serde_json::Value {
     let cpu_count = metrics.cpu_count.max(1);
     let pressure_high = metrics.pressure == "high";
@@ -1679,15 +1578,14 @@ fn build_runtime_metrics(settings: &RuntimeSettings) -> RuntimeMetrics {
         .unwrap_or(1);
     let memory = memory_snapshot();
     let cpu_usage_percent = cpu_usage_percent();
-    let pressure =
-        if cpu_usage_percent >= settings.max_cpu_percent as f32 || memory.available_gb < 4.0 {
-            "high"
-        } else if cpu_usage_percent >= 45.0 || memory.available_gb < 8.0 {
-            "medium"
-        } else {
-            "low"
-        }
-        .to_string();
+    let pressure = if cpu_usage_percent >= settings.max_cpu_percent as f32 || memory.available_gb < 4.0 {
+        "high"
+    } else if cpu_usage_percent >= 45.0 || memory.available_gb < 8.0 {
+        "medium"
+    } else {
+        "low"
+    }
+    .to_string();
 
     let recommended = recommend_model(settings, &pressure, memory.available_gb);
     RuntimeMetrics {
@@ -1700,14 +1598,13 @@ fn build_runtime_metrics(settings: &RuntimeSettings) -> RuntimeMetrics {
         recommended_reason: recommended
             .map(|model| {
                 format!(
-                    "当前负载下推荐 {}，参数 {:.1}B，量化 {}。",
+                    "recommended {} ({:.1}B, {}) for current load",
                     model.label, model.params_b, model.quant
                 )
             })
-            .unwrap_or_else(|| "尚未登记可用模型，先在设置页添加 GGUF 路径。".to_string()),
+            .unwrap_or_else(|| "no available model registered; download or add a GGUF model first".to_string()),
     }
 }
-
 fn recommend_model<'a>(
     settings: &'a RuntimeSettings,
     pressure: &str,
@@ -1889,3 +1786,4 @@ fn now_stamp() -> String {
 
     millis.to_string()
 }
+

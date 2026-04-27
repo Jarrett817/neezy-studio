@@ -134,7 +134,7 @@ export default function SettingsRoute() {
       <SectionHeading
         eyebrow="设置"
         title="账号与记忆配置"
-        description="仅保留账号记忆配置。模型调用由 Bun + node-llama-cpp 在创作页直接执行。"
+        description="管理账号信息、本地模型和下载任务。"
       />
 
       <Card className="max-w-4xl">

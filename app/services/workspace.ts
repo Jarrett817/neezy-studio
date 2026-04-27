@@ -51,6 +51,11 @@ export type ContentAgentInput = {
   modelId?: string
 }
 
+export type LlmMessage = {
+  role: "system" | "user" | "assistant" | "tool" | string
+  content: string
+}
+
 export type ContentAgentOutput = {
   title: string
   body: string
@@ -94,6 +99,9 @@ export type ModelConfig = {
   sizeGb: number
   enabled: boolean
   capability?: "text" | "vision" | "embedding"
+  repo?: string
+  file?: string
+  tokenizerRepo?: string
 }
 
 export type RuntimeSettings = {
@@ -122,6 +130,7 @@ export type ModelDownloadOption = {
   source: string
   url: string
   mirrorUrl: string
+  repo: string
   note: string
   capability: "text" | "vision" | "embedding"
 }
@@ -155,6 +164,12 @@ export type KnowledgeItem = {
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
   return invoke<WorkspaceSnapshot>("get_workspace_snapshot")
+}
+
+export async function getRelevantKnowledge(
+  input: ContentAgentInput
+): Promise<KnowledgePreview[]> {
+  return invoke<KnowledgePreview[]>("get_relevant_knowledge", { input })
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
@@ -215,8 +230,12 @@ export async function addKnowledgeItem(input: {
   return invoke<KnowledgeItem>("add_knowledge_item", input)
 }
 
-export async function runContentAgent(
-  input: ContentAgentInput
-): Promise<ContentAgentOutput> {
-  return invoke<ContentAgentOutput>("run_content_agent", { input })
+export async function generateTextStream(input: {
+  modelId?: string
+  modelPath?: string
+  messages: LlmMessage[]
+  maxTokens?: number
+  stream?: boolean
+}): Promise<string> {
+  return invoke<string>("generate_text_stream", { input })
 }

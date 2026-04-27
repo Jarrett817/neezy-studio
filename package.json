@@ -7,8 +7,7 @@
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
-    "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "build:sidecar": "node -e \"const {copyFileSync,mkdirSync,rmSync}=require('node:fs');const path=require('node:path');const triples={'win32:x64':'x86_64-pc-windows-msvc','win32:arm64':'aarch64-pc-windows-msvc','darwin:x64':'x86_64-apple-darwin','darwin:arm64':'aarch64-apple-darwin','linux:x64':'x86_64-unknown-linux-gnu','linux:arm64':'aarch64-unknown-linux-gnu'};const key=process.platform+':'+process.arch;const triple=triples[key];if(!triple) throw new Error('unsupported target triple for '+key);const ext=process.platform==='win32'?'.exe':'';const source=process.env.BUN_INSTALL_BIN||path.join(process.env.USERPROFILE||'','.bun','bin','bun'+ext);const target=path.join('src-tauri','binaries','bun-'+triple+ext);mkdirSync(path.dirname(target),{recursive:true});rmSync(target,{force:true});copyFileSync(source,target);\""
+    "format": "prettier --write \"**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

@@ -1,31 +1,31 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { listen } from "@tauri-apps/api/event"
-import { Activity, Cpu, Gauge, Sparkles } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Bot, Cpu, Send, Square, User } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 import { runContentAgent } from "~/agents/content-agent"
-import { SectionHeading } from "~/components/section-heading"
 import { Button } from "~/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
 import { Textarea } from "~/components/ui/textarea"
-import { getRuntimeMetrics, getRuntimeSettings } from "~/services/workspace"
+import {
+  cancelGeneration,
+  getRuntimeMetrics,
+  getRuntimeSettings,
+} from "~/services/workspace"
 
-type AgentStreamEvent = { type: "token"; text: string }
+type ChatMessage = {
+  id: string
+  role: "user" | "assistant" | "error"
+  content: string
+}
+
+type AgentStreamEvent = { type: "token"; text?: string }
 
 export default function CreatorRoute() {
-  const [topic, setTopic] = useState("")
-  const [goal, setGoal] = useState("")
-  const [references, setReferences] = useState("")
-  const [modelPath, setModelPath] = useState("")
-  const [useManualModel, setUseManualModel] = useState(false)
-  const [streamText, setStreamText] = useState("")
+  const [input, setInput] = useState("")
+  const [imagePath, setImagePath] = useState("")
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const activeAssistantId = useRef<string | null>(null)
 
   const { data: settings } = useQuery({
     queryKey: ["runtime-settings"],
@@ -36,205 +36,179 @@ export default function CreatorRoute() {
     queryFn: getRuntimeMetrics,
     refetchInterval: 3000,
   })
-  const agentMutation = useMutation({
+
+  const mutation = useMutation({
     mutationFn: runContentAgent,
+    onSuccess: (output) => {
+      const id = activeAssistantId.current
+      if (!id) return
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                content:
+                  item.content.trim() ||
+                  `${output.title}\n\n${output.body}`.trim(),
+              }
+            : item
+        )
+      )
+      activeAssistantId.current = null
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "生成失败，请检查模型配置。"
+      setMessages((items) => [
+        ...items,
+        { id: crypto.randomUUID(), role: "error", content: message },
+      ])
+      activeAssistantId.current = null
+    },
   })
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
-    listen<AgentStreamEvent | { type: string; text?: string }>(
-      "content-agent-event",
-      (event) => {
-        const payload = event.payload
-        if (payload.type === "token" && payload.text) {
-          setStreamText((text) => `${text}${payload.text}`)
-        }
-      }
-    ).then((handler) => {
+    listen<AgentStreamEvent>("content-agent-event", (event) => {
+      const activeId = activeAssistantId.current
+      const token = event.payload.text
+      if (!activeId || event.payload.type !== "token" || !token) return
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === activeId
+            ? { ...item, content: `${item.content}${token}` }
+            : item
+        )
+      )
+    }).then((handler) => {
       unlisten = handler
     })
-
-    return () => {
-      unlisten?.()
-    }
+    return () => unlisten?.()
   }, [])
 
-  const startAgent = () => {
-    setStreamText("")
-    agentMutation.reset()
-    agentMutation.mutate({
-      topic,
-      goal,
-      references,
-      modelPath: useManualModel ? modelPath : undefined,
+  const send = () => {
+    const text = input.trim()
+    if (!text || mutation.isPending) return
+    const userId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+    activeAssistantId.current = assistantId
+    setMessages((items) => [
+      ...items,
+      {
+        id: userId,
+        role: "user",
+        content: imagePath.trim() ? `${text}\n\n图片：${imagePath.trim()}` : text,
+      },
+      { id: assistantId, role: "assistant", content: "" },
+    ])
+    setInput("")
+    mutation.mutate({
+      topic: text.slice(0, 80),
+      goal: text,
+      references: "",
       modelId: metrics?.recommendedModelId,
+      imagePath: imagePath.trim() || undefined,
     })
   }
 
-  return (
-    <div className="space-y-5">
-      <SectionHeading
-        eyebrow="创作中心"
-        title="生成草稿"
-        description="输入主题和要求，生成可编辑草稿。"
-      />
+  const stop = async () => {
+    await cancelGeneration()
+    activeAssistantId.current = null
+  }
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard
-          icon={Cpu}
-          label="CPU"
-          value={`${metrics?.cpuUsagePercent.toFixed(0) ?? "--"}%`}
-          hint={`${metrics?.cpuCount ?? "--"} 线程`}
-        />
-        <MetricCard
-          icon={Activity}
-          label="内存"
-          value={`${metrics?.availableMemoryGb.toFixed(1) ?? "--"} GB 可用`}
-          hint={`${metrics?.totalMemoryGb.toFixed(1) ?? "--"} GB 总量`}
-        />
-        <MetricCard
-          icon={Gauge}
-          label="建议模型"
-          value={metrics?.recommendedModelId ?? "--"}
-          hint={metrics?.pressure ?? "--"}
-        />
+  return (
+    <div className="flex h-[calc(100svh-120px)] flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+        <div>
+          <h1 className="text-base font-semibold">Agent 对话</h1>
+          <p className="text-sm text-muted-foreground">
+            已启用模型 {settings?.models.filter((model) => model.enabled).length ?? 0} 个
+          </p>
+        </div>
+        <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+          <Cpu className="size-4" />
+          {metrics?.recommendedModelId ?? "未选择模型"} ·{" "}
+          {metrics?.pressure ?? "--"}
+        </div>
       </div>
 
-      <Card className="max-w-4xl">
-        <CardHeader>
-          <CardTitle>创作输入</CardTitle>
-          <CardDescription>支持引用素材和手动指定模型。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Field label="选题">
-            <Input
-              placeholder="输入选题"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-            />
-          </Field>
-          <Field label="目标">
-            <Textarea
-              placeholder="写清楚目标人群、平台、语气和限制条件"
-              value={goal}
-              onChange={(event) => setGoal(event.target.value)}
-            />
-          </Field>
-          <Field label="素材">
-            <Textarea
-              placeholder="粘贴真实素材或补充背景"
-              value={references}
-              onChange={(event) => setReferences(event.target.value)}
-            />
-          </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={useManualModel}
-              onChange={(event) => setUseManualModel(event.target.checked)}
-            />
-            手动指定模型
-          </label>
-          {useManualModel ? (
-            <Field label="模型路径">
-              <Input
-                placeholder="D:\\models\\qwen2.5-3b-instruct-q4_k_m.gguf"
-                value={modelPath}
-                onChange={(event) => setModelPath(event.target.value)}
-              />
-            </Field>
-          ) : (
-            <p className="rounded-md border border-border/70 px-3 py-2 text-sm text-muted-foreground">
-              已启用模型：
-              {settings?.models.filter((model) => model.enabled).length ?? 0}
-            </p>
-          )}
-          {agentMutation.error instanceof Error ? (
-            <p className="text-sm text-destructive">
-              {agentMutation.error.message}
-            </p>
+      <div className="min-h-0 flex-1 space-y-3 overflow-auto">
+        {messages.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+            输入需求后发送。可选图片路径会交给视觉模型链路处理。
+          </div>
+        ) : (
+          messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))
+        )}
+      </div>
+
+      <div className="grid gap-2 border-t border-border pt-3">
+        <Input
+          placeholder="图片路径，可选"
+          value={imagePath}
+          onChange={(event) => setImagePath(event.target.value)}
+        />
+        <Textarea
+          className="min-h-24 resize-none"
+          placeholder="输入需求，Ctrl/⌘ + Enter 发送"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+              send()
+            }
+          }}
+        />
+        <div className="flex justify-end gap-2">
+          {mutation.isPending ? (
+            <Button variant="outline" className="gap-2" onClick={stop}>
+              <Square className="size-4" />
+              停止
+            </Button>
           ) : null}
           <Button
             className="gap-2"
-            disabled={
-              agentMutation.isPending ||
-              !topic.trim() ||
-              !goal.trim() ||
-              (useManualModel && !modelPath.trim())
-            }
-            onClick={startAgent}
+            disabled={!input.trim() || mutation.isPending}
+            onClick={send}
           >
-            <Sparkles className="size-4" />
-            {agentMutation.isPending ? "生成中..." : "生成草稿"}
+            <Send className="size-4" />
+            发送
           </Button>
-
-          {(agentMutation.isPending || streamText) && (
-            <div className="rounded-lg border border-border/70 p-4">
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-sm">
-                {streamText}
-              </pre>
-            </div>
-          )}
-
-          {agentMutation.data ? (
-            <div className="space-y-3 rounded-lg border border-border/70 p-4">
-              <p className="text-sm font-semibold">
-                {agentMutation.data.title}
-              </p>
-              <p className="whitespace-pre-wrap text-sm">
-                {agentMutation.data.body}
-              </p>
-              {agentMutation.data.tags.length > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  标签：{agentMutation.data.tags.join(" / ")}
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                模型：{agentMutation.data.trace.modelLabel ?? "unknown"} ·{" "}
-                {agentMutation.data.trace.elapsedMs ?? 0}ms
-              </p>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: string
-  hint: string
-}) {
-  return (
-    <div className="rounded-lg border border-border/70 p-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Icon className="size-4" />
-        {label}
+        </div>
       </div>
-      <p className="mt-2 text-lg font-semibold">{value}</p>
-      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{hint}</p>
     </div>
   )
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
+function MessageBubble({ message }: { message: ChatMessage }) {
+  const isUser = message.role === "user"
+  const isError = message.role === "error"
+  const Icon = isUser ? User : Bot
   return (
-    <label className="block space-y-2">
-      <span className="text-sm font-medium">{label}</span>
-      {children}
-    </label>
+    <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser ? (
+        <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted">
+          <Icon className="size-4" />
+        </div>
+      ) : null}
+      <div
+        className={`max-w-3xl whitespace-pre-wrap rounded-lg px-4 py-3 text-sm ${
+          isUser
+            ? "bg-primary text-primary-foreground"
+            : isError
+              ? "border border-destructive/40 text-destructive"
+              : "border border-border"
+        }`}
+      >
+        {message.content || "生成中..."}
+      </div>
+      {isUser ? (
+        <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted">
+          <Icon className="size-4" />
+        </div>
+      ) : null}
+    </div>
   )
 }

@@ -1,9 +1,11 @@
 import {
   generateTextStream,
+  addMemoryEvent,
   getAccountProfile,
   getRelevantKnowledge,
   getRuntimeMetrics,
   getRuntimeSettings,
+  listSkills,
   type ContentAgentInput,
   type ContentAgentOutput,
   type ModelConfig,
@@ -21,11 +23,12 @@ export async function runContentAgent(
   input: ContentAgentInput
 ): Promise<ContentAgentOutput> {
   const startedAt = Date.now()
-  const [profile, settings, metrics, knowledge] = await Promise.all([
+  const [profile, settings, metrics, knowledge, skills] = await Promise.all([
     getAccountProfile(),
     getRuntimeSettings(),
     getRuntimeMetrics(),
     getRelevantKnowledge(input),
+    listSkills(),
   ])
   const modelSuite = resolveModelSuite(settings.models, metrics, input)
   const memory = [
@@ -63,7 +66,7 @@ export async function runContentAgent(
           `素材: ${input.references || "无"}`,
           `账号记忆:\n${memory}`,
           `知识库:\n${knowledgeText}`,
-          `技能: ${SKILLS.join(", ")}`,
+          `技能:\n${formatSkills(skills)}`,
         ].join("\n\n"),
       },
     ],
@@ -74,6 +77,7 @@ export async function runContentAgent(
     modelPath: modelSuite.writer.path,
     maxTokens: metrics.pressure === "high" ? 768 : 1400,
     stream: true,
+    imagePath: input.imagePath,
     messages: [
       {
         role: "system",
@@ -89,6 +93,7 @@ export async function runContentAgent(
           `账号记忆:\n${memory}`,
           `知识库:\n${knowledgeText}`,
           `素材:\n${input.references || "无"}`,
+          input.imagePath ? `图片路径: ${input.imagePath}` : "",
         ].join("\n\n"),
       },
     ],
@@ -113,6 +118,11 @@ export async function runContentAgent(
   })
 
   const parsed = splitDraft(draft, input.topic)
+  await addMemoryEvent({
+    layer: "conversation",
+    source: "content-agent",
+    content: `topic: ${input.topic}\ngoal: ${input.goal}\ntitle: ${parsed.title}`,
+  })
 
   return {
     title: parsed.title,
@@ -132,7 +142,7 @@ export async function runContentAgent(
       },
       knowledgeUsed: knowledge.length,
       totalKnowledge: knowledge.length,
-      skills: SKILLS,
+      skills: skills.filter((skill) => skill.enabled).map((skill) => skill.name),
       runtime: {
         maxThreads: Math.max(
           1,
@@ -156,6 +166,14 @@ export async function runContentAgent(
       stages: ["plan", "write", "review"],
     },
   }
+}
+
+function formatSkills(
+  skills: Array<{ name: string; prompt: string; enabled: boolean }>
+) {
+  const enabled = skills.filter((skill) => skill.enabled)
+  if (!enabled.length) return SKILLS.join("\n")
+  return enabled.map((skill) => `- ${skill.name}: ${skill.prompt}`).join("\n")
 }
 
 type ModelSuite = {
@@ -192,20 +210,28 @@ function resolveModelSuite(
   const available = models
     .filter(
       (model) =>
-        model.enabled && model.capability === "text" && model.path.trim()
+        model.enabled &&
+        (model.capability === "text" || model.capability === "vision") &&
+        model.path.trim()
     )
     .sort((a, b) => a.paramsB - b.paramsB)
 
-  if (!available.length) {
+  const textModels = available.filter((model) => model.capability === "text")
+  const visionModels = available.filter((model) => model.capability === "vision")
+
+  if (!textModels.length && !visionModels.length) {
     throw new Error("没有可用文本模型。请先在设置页下载或登记 GGUF 文本模型。")
   }
 
   const writer =
-    available.find((model) => model.id === metrics.recommendedModelId) ||
-    available[0]
-  const planner = available[0]
+    input.imagePath && visionModels.length
+      ? visionModels[0]
+      : textModels.find((model) => model.id === metrics.recommendedModelId) ||
+        textModels[0] ||
+        visionModels[0]
+  const planner = textModels[0] || writer
   const reviewer =
-    [...available]
+    [...textModels]
       .reverse()
       .find((model) => model.paramsB <= writer.paramsB) || writer
 

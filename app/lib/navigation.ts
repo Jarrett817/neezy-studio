@@ -1,41 +1,48 @@
 import {
   BookOpenText,
   ChartNoAxesColumn,
-  FilePenLine,
   FolderInput,
   Home,
+  MessageSquareText,
   Settings2,
+  SlidersHorizontal,
 } from "lucide-react"
 
 export const appNavigation = [
   {
     href: "/",
     label: "工作台",
-    description: "真实数据概览",
+    description: "数据概览",
     icon: Home,
   },
   {
     href: "/creator",
-    label: "创作中心",
-    description: "模型工作流入口",
-    icon: FilePenLine,
+    label: "Agent 对话",
+    description: "本地模型生成",
+    icon: MessageSquareText,
+  },
+  {
+    href: "/skills",
+    label: "Skill 管理",
+    description: "预置能力",
+    icon: SlidersHorizontal,
   },
   {
     href: "/knowledge-base",
     label: "知识库",
-    description: "真实素材管理",
+    description: "多库管理",
     icon: BookOpenText,
   },
   {
     href: "/analytics",
     label: "数据复盘",
-    description: "真实指标分析",
+    description: "指标分析",
     icon: ChartNoAxesColumn,
   },
   {
     href: "/import",
     label: "数据录入",
-    description: "真实采集任务",
+    description: "采集任务",
     icon: FolderInput,
   },
   {

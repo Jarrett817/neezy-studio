@@ -49,6 +49,7 @@ export type ContentAgentInput = {
   references: string
   modelPath?: string
   modelId?: string
+  imagePath?: string
 }
 
 export type LlmMessage = {
@@ -162,6 +163,14 @@ export type KnowledgeItem = {
   category: string
 }
 
+export type AgentSkill = {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  enabled: boolean
+}
+
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
   return invoke<WorkspaceSnapshot>("get_workspace_snapshot")
 }
@@ -230,12 +239,45 @@ export async function addKnowledgeItem(input: {
   return invoke<KnowledgeItem>("add_knowledge_item", input)
 }
 
+export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
+  return invoke<KnowledgeItem[]>("list_knowledge_items")
+}
+
+export async function deleteKnowledgeItem(id: string): Promise<void> {
+  return invoke<void>("delete_knowledge_item", { id })
+}
+
+export async function listSkills(): Promise<AgentSkill[]> {
+  return invoke<AgentSkill[]>("list_skills")
+}
+
+export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
+  return invoke<AgentSkill>("save_skill", { skill })
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  return invoke<void>("delete_skill", { id })
+}
+
+export async function addMemoryEvent(input: {
+  layer: string
+  content: string
+  source?: string
+}): Promise<void> {
+  return invoke<void>("add_memory_event", { input })
+}
+
+export async function cancelGeneration(): Promise<void> {
+  return invoke<void>("cancel_generation")
+}
+
 export async function generateTextStream(input: {
   modelId?: string
   modelPath?: string
   messages: LlmMessage[]
   maxTokens?: number
   stream?: boolean
+  imagePath?: string
 }): Promise<string> {
   return invoke<string>("generate_text_stream", { input })
 }

@@ -1,6 +1,11 @@
 use crate::LlmMessage;
-use mistralrs::{EmbeddingRequest, GgufModelBuilder, RequestBuilder, Response, TextMessageRole};
+use mistralrs::{EmbeddingRequest, GgufModelBuilder, Model, RequestBuilder, Response, TextMessageRole};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Clone)]
@@ -11,6 +16,9 @@ pub struct RuntimeModel {
     pub tokenizer_repo: Option<String>,
 }
 
+static MODEL_CACHE: OnceLock<Mutex<HashMap<String, Arc<Model>>>> = OnceLock::new();
+static CANCEL_GENERATION: AtomicBool = AtomicBool::new(false);
+
 pub async fn generate_text_stream(
     app: AppHandle,
     model: RuntimeModel,
@@ -18,21 +26,42 @@ pub async fn generate_text_stream(
     _runtime: serde_json::Value,
     max_tokens: usize,
     stream_tokens: bool,
+    image_path: Option<String>,
 ) -> Result<String, String> {
+    CANCEL_GENERATION.store(false, Ordering::SeqCst);
     let (model_id, file) = resolve_model_source(&model, false)?;
+    let cache_key = format!("text::{model_id}::{file}::{:?}", model.tokenizer_repo);
 
-    let mut builder = GgufModelBuilder::new(model_id, vec![file]).with_force_cpu();
-    if let Some(tokenizer_repo) = model.tokenizer_repo.clone() {
-        builder = builder.with_tok_model_id(tokenizer_repo);
-    }
-
-    let loaded = builder
-        .build()
-        .await
-        .map_err(|error| format!("mistral.rs failed to load model: {error}"))?;
+    let loaded = if let Some(model) = cached_model(&cache_key)? {
+        model
+    } else {
+        let mut builder = GgufModelBuilder::new(model_id, vec![file]).with_force_cpu();
+        if let Some(tokenizer_repo) = model.tokenizer_repo.clone() {
+            builder = builder.with_tok_model_id(tokenizer_repo);
+        }
+        let loaded = Arc::new(
+            builder
+                .build()
+                .await
+                .map_err(|error| format!("mistral.rs failed to load model: {error}"))?,
+        );
+        cache_model(cache_key, loaded.clone())?;
+        loaded
+    };
 
     let mut request = RequestBuilder::new().set_sampler_max_len(max_tokens);
+    let mut image_attached = false;
     for message in messages {
+        if !image_attached && message.role == "user" {
+            if let Some(path) = image_path.as_deref().filter(|value| !value.trim().is_empty()) {
+                let image = image::open(path)
+                    .map_err(|error| format!("failed to open image `{path}`: {error}"))?;
+                request =
+                    request.add_image_message(parse_role(&message.role), message.content, vec![image]);
+                image_attached = true;
+                continue;
+            }
+        }
         request = request.add_message(parse_role(&message.role), message.content);
     }
 
@@ -43,6 +72,9 @@ pub async fn generate_text_stream(
 
     let mut full_text = String::new();
     while let Some(chunk) = stream.next().await {
+        if CANCEL_GENERATION.load(Ordering::SeqCst) {
+            break;
+        }
         if let Response::Chunk(chunk) = chunk {
             if let Some(text) = chunk
                 .choices
@@ -82,6 +114,27 @@ pub async fn embed_texts(model: RuntimeModel, texts: Vec<String>) -> Result<Vec<
         .generate_embeddings(EmbeddingRequest::builder().add_prompts(texts))
         .await
         .map_err(|error| format!("mistral.rs embedding failed: {error}"))
+}
+
+pub fn cancel_generation() {
+    CANCEL_GENERATION.store(true, Ordering::SeqCst);
+}
+
+fn cached_model(key: &str) -> Result<Option<Arc<Model>>, String> {
+    MODEL_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|error| error.to_string())
+        .map(|cache| cache.get(key).cloned())
+}
+
+fn cache_model(key: String, model: Arc<Model>) -> Result<(), String> {
+    MODEL_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|error| error.to_string())?
+        .insert(key, model);
+    Ok(())
 }
 
 fn resolve_model_source(model: &RuntimeModel, embedding: bool) -> Result<(String, String), String> {

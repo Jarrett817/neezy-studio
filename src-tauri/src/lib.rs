@@ -38,6 +38,7 @@ struct ContentAgentInput {
     references: String,
     model_path: Option<String>,
     model_id: Option<String>,
+    image_path: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -47,6 +48,24 @@ struct KnowledgeItem {
     title: String,
     content: String,
     category: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentSkill {
+    id: String,
+    name: String,
+    description: String,
+    prompt: String,
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryEventInput {
+    layer: String,
+    content: String,
+    source: Option<String>,
 }
 
 #[derive(Clone)]
@@ -98,6 +117,7 @@ struct GenerateTextInput {
     messages: Vec<LlmMessage>,
     max_tokens: Option<usize>,
     stream: Option<bool>,
+    image_path: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -444,6 +464,7 @@ async fn generate_text_stream(app: AppHandle, input: GenerateTextInput) -> Resul
         runtime,
         max_tokens,
         stream,
+        input.image_path,
     )
     .await
 }
@@ -454,6 +475,7 @@ async fn get_relevant_knowledge(
     input: ContentAgentInput,
 ) -> Result<Vec<KnowledgePreview>, String> {
     let _manual_model_hint = (&input.model_path, &input.model_id);
+    let _vision_hint = &input.image_path;
     let settings = read_runtime_settings(&app)?;
     let metrics = build_runtime_metrics(&settings);
     let items = retrieve_relevant_knowledge(&app, &settings, &metrics, &input).await?;
@@ -470,6 +492,68 @@ async fn get_relevant_knowledge(
                 .unwrap_or_else(|| "keyword".to_string()),
         })
         .collect())
+}
+
+#[tauri::command]
+fn list_knowledge_items(app: AppHandle) -> Result<Vec<KnowledgeItem>, String> {
+    read_knowledge_items(&app)
+}
+
+#[tauri::command]
+fn delete_knowledge_item(app: AppHandle, id: String) -> Result<(), String> {
+    let connection = open_memory_db(&app)?;
+    connection
+        .execute("delete from knowledge_items where id = ?1", params![id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn list_skills(app: AppHandle) -> Result<Vec<AgentSkill>, String> {
+    read_skills(&app)
+}
+
+#[tauri::command]
+fn save_skill(app: AppHandle, skill: AgentSkill) -> Result<AgentSkill, String> {
+    let mut skills = read_skills(&app)?;
+    if let Some(existing) = skills.iter_mut().find(|item| item.id == skill.id) {
+        *existing = skill.clone();
+    } else {
+        skills.push(skill.clone());
+    }
+    write_skills(&app, &skills)?;
+    Ok(skill)
+}
+
+#[tauri::command]
+fn delete_skill(app: AppHandle, id: String) -> Result<(), String> {
+    let mut skills = read_skills(&app)?;
+    skills.retain(|skill| skill.id != id);
+    write_skills(&app, &skills)
+}
+
+#[tauri::command]
+fn add_memory_event(app: AppHandle, input: MemoryEventInput) -> Result<(), String> {
+    let connection = open_memory_db(&app)?;
+    connection
+        .execute(
+            "insert into memory_events (id, layer, content, source, created_at)
+             values (?1, ?2, ?3, ?4, ?5)",
+            params![
+                format!("memory-{}", now_stamp()),
+                input.layer,
+                input.content,
+                input.source,
+                now_stamp()
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_generation() {
+    llm_runtime::cancel_generation();
 }
 
 #[tauri::command]
@@ -595,6 +679,13 @@ pub fn run() {
             get_model_download_tasks,
             generate_text_stream,
             get_relevant_knowledge,
+            list_knowledge_items,
+            delete_knowledge_item,
+            list_skills,
+            save_skill,
+            delete_skill,
+            add_memory_event,
+            cancel_generation,
             add_knowledge_item,
             list_import_jobs,
             create_import_job,
@@ -1050,6 +1141,10 @@ fn runtime_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("runtime-settings.json"))
 }
 
+fn skills_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("skills.json"))
+}
+
 fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("models"))
 }
@@ -1134,6 +1229,45 @@ fn default_runtime_settings() -> RuntimeSettings {
 
 fn default_text_capability() -> String {
     "text".to_string()
+}
+
+fn read_skills(app: &AppHandle) -> Result<Vec<AgentSkill>, String> {
+    let path = skills_path(app)?;
+    if !path.is_file() {
+        return Ok(default_skills());
+    }
+    let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&raw).map_err(|error| error.to_string())
+}
+
+fn write_skills(app: &AppHandle, skills: &[AgentSkill]) -> Result<(), String> {
+    write_json(&skills_path(app)?, skills)
+}
+
+fn default_skills() -> Vec<AgentSkill> {
+    vec![
+        AgentSkill {
+            id: "content-draft".to_string(),
+            name: "内容草稿".to_string(),
+            description: "根据目标、素材、记忆和知识库生成草稿。".to_string(),
+            prompt: "直接输出可编辑成稿，不输出思考过程。".to_string(),
+            enabled: true,
+        },
+        AgentSkill {
+            id: "knowledge-grounding".to_string(),
+            name: "知识库引用".to_string(),
+            description: "优先使用知识库和用户素材，避免编造。".to_string(),
+            prompt: "引用知识库信息时保持事实一致，不补不存在的数据。".to_string(),
+            enabled: true,
+        },
+        AgentSkill {
+            id: "vision-understanding".to_string(),
+            name: "图片理解".to_string(),
+            description: "为视觉模型预留的图片理解能力。".to_string(),
+            prompt: "当用户提供图片时，先提取画面信息，再结合文本目标生成内容。".to_string(),
+            enabled: true,
+        },
+    ]
 }
 
 fn build_suite(
@@ -1786,4 +1920,3 @@ fn now_stamp() -> String {
 
     millis.to_string()
 }
-

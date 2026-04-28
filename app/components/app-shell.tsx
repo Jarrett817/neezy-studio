@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { NavLink } from "react-router"
-import { Cpu, Database, FolderSync, Sparkles } from "lucide-react"
+import { Database, Sparkles } from "lucide-react"
 
 import { Badge } from "~/components/ui/badge"
 import { appNavigation } from "~/lib/navigation"
@@ -34,7 +34,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="mt-5 grid gap-1">
             {appNavigation.map((item) => {
               const Icon = item.icon
-
               return (
                 <NavLink
                   key={item.href}
@@ -66,17 +65,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <header className="sticky top-0 z-10 border-b border-border bg-background/95">
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 lg:px-7">
               <div>
-                <p className="text-sm text-muted-foreground">V1 真实项目底座</p>
-                <h1 className="text-base font-semibold">
-                  只展示真实数据和可检测能力
-                </h1>
+                <p className="text-sm text-muted-foreground">本地优先</p>
+                <h1 className="text-base font-semibold">内容 Agent 工作台</h1>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill icon={Cpu} label="模型文件检测" />
-                <StatusPill icon={Database} label="本地持久化" />
-                <StatusPill icon={FolderSync} label="采集未配置" />
-              </div>
+              <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1">
+                <Database className="size-3.5" />
+                本地记忆
+              </Badge>
             </div>
           </header>
 
@@ -84,20 +79,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </div>
-  )
-}
-
-function StatusPill({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-}) {
-  return (
-    <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1">
-      <Icon className="size-3.5" />
-      <span>{label}</span>
-    </Badge>
   )
 }

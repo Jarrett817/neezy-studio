@@ -1,28 +1,45 @@
 import {
-  generateTextStream,
   addMemoryEvent,
+  generateTextStream,
   getAccountProfile,
   getRelevantKnowledge,
   getRuntimeMetrics,
   getRuntimeSettings,
   listSkills,
+  type AgentExecutionStep,
+  type AgentSkill,
   type ContentAgentInput,
   type ContentAgentOutput,
   type ModelConfig,
 } from "~/services/workspace"
 
-const SKILLS = [
+const FALLBACK_SKILLS = [
   "标题钩子",
   "账号语气",
-  "知识库引用",
-  "结构化表达",
-  "风险词规避",
+  "知识约束",
+  "结构表达",
+  "风险规避",
 ]
 
+type RunContentAgentOptions = {
+  onStepsChange?: (steps: AgentExecutionStep[]) => void
+}
+
 export async function runContentAgent(
-  input: ContentAgentInput
+  input: ContentAgentInput,
+  options: RunContentAgentOptions = {}
 ): Promise<ContentAgentOutput> {
   const startedAt = Date.now()
+  const updateSteps = createStepReporter(options.onStepsChange)
+
+  updateSteps([
+    step("setup", "准备上下文", "读取账号、模型、知识库和技能包", "running"),
+    step("knowledge", "召回知识", "等待知识库召回", "pending"),
+    step("plan", "生成提纲", "等待提纲", "pending"),
+    step("write", "生成正文", "等待正文", "pending"),
+    step("review", "整理结果", "等待标签和收尾", "pending"),
+  ])
+
   const [profile, settings, metrics, knowledge, skills] = await Promise.all([
     getAccountProfile(),
     getRuntimeSettings(),
@@ -30,7 +47,9 @@ export async function runContentAgent(
     getRelevantKnowledge(input),
     listSkills(),
   ])
+
   const modelSuite = resolveModelSuite(settings.models, metrics, input)
+  const enabledSkills = skills.filter((skill) => skill.enabled)
   const memory = [
     `账号: ${profile.accountName || "未配置"}`,
     `赛道: ${profile.track || "未配置"}`,
@@ -45,77 +64,178 @@ export async function runContentAgent(
             `${index + 1}. [${item.category}] ${item.title}\n${item.content}`
         )
         .join("\n\n")
-    : "暂无可用知识库素材。"
+    : "暂无可用知识。"
+  const useFastPath =
+    settings.preferLowPower ||
+    metrics.pressure !== "low" ||
+    metrics.availableMemoryGb < 8
 
-  const planner = await generateTextStream({
-    modelId: modelSuite.planner.id,
-    modelPath: modelSuite.planner.path,
-    maxTokens: metrics.pressure === "high" ? 192 : 320,
-    stream: false,
-    messages: [
-      {
-        role: "system",
-        content:
-          "你是内容规划器。只输出简洁创作提纲，不输出思考过程，不使用“我将/我们需要”等过程描述。",
-      },
-      {
-        role: "user",
-        content: [
-          `选题: ${input.topic}`,
-          `目标: ${input.goal}`,
-          `素材: ${input.references || "无"}`,
-          `账号记忆:\n${memory}`,
-          `知识库:\n${knowledgeText}`,
-          `技能:\n${formatSkills(skills)}`,
-        ].join("\n\n"),
-      },
-    ],
-  })
+  updateSteps((steps) =>
+    steps.map((item) => {
+      if (item.key === "setup") {
+        return {
+          ...item,
+          status: "done",
+          detail: `写作模型 ${modelSuite.writer.label}，启用技能 ${enabledSkills.length} 个`,
+          elapsedMs: Date.now() - startedAt,
+        }
+      }
+      if (item.key === "knowledge") {
+        return {
+          ...item,
+          status: "done",
+          detail: knowledge.length
+            ? `召回 ${knowledge.length} 条知识`
+            : "本轮未召回知识，回退到用户输入",
+          elapsedMs: Date.now() - startedAt,
+        }
+      }
+      if (item.key === "plan") {
+        return {
+          ...item,
+          status: useFastPath ? "skipped" : "running",
+          detail: useFastPath
+            ? "当前负载较高，跳过单独提纲阶段"
+            : `使用 ${modelSuite.planner.label} 生成提纲`,
+        }
+      }
+      return item
+    })
+  )
+
+  const planner =
+    useFastPath
+      ? ""
+      : await generateTextStream({
+          modelId: modelSuite.planner.id,
+          modelPath: modelSuite.planner.path,
+          maxTokens: 256,
+          stream: false,
+          messages: [
+            {
+              role: "system",
+              content:
+                "你是内容规划器。只输出简洁可执行的提纲，不输出思考过程。",
+            },
+            {
+              role: "user",
+              content: [
+                `选题: ${input.topic}`,
+                `目标: ${input.goal}`,
+                `素材: ${input.references || "无"}`,
+                `账号记忆:\n${memory}`,
+                `知识库:\n${knowledgeText}`,
+                `技能:\n${formatSkills(enabledSkills)}`,
+              ].join("\n\n"),
+            },
+          ],
+        })
+
+  if (!useFastPath) {
+    updateSteps((steps) =>
+      steps.map((item) =>
+        item.key === "plan"
+          ? {
+              ...item,
+              status: "done",
+              detail: "提纲已生成，开始写正文",
+              elapsedMs: Date.now() - startedAt,
+            }
+          : item.key === "write"
+            ? {
+                ...item,
+                status: "running",
+                detail: `使用 ${modelSuite.writer.label} 生成正文`,
+              }
+            : item
+      )
+    )
+  } else {
+    updateSteps((steps) =>
+      steps.map((item) =>
+        item.key === "write"
+          ? {
+              ...item,
+              status: "running",
+              detail: `快路径直写，使用 ${modelSuite.writer.label}`,
+            }
+          : item
+      )
+    )
+  }
 
   const draft = await generateTextStream({
     modelId: modelSuite.writer.id,
     modelPath: modelSuite.writer.path,
-    maxTokens: metrics.pressure === "high" ? 768 : 1400,
+    maxTokens: metrics.pressure === "high" ? 640 : 1200,
     stream: true,
     imagePath: input.imagePath,
     messages: [
       {
         role: "system",
         content:
-          "你是内容主笔。直接输出最终草稿，不输出分析、思考过程、执行步骤或对用户无关的说明。第一行是标题，后面是正文。必须避免禁用词，优先使用真实素材，不编造数据。",
+          "你是内容主笔。直接输出最终成稿。第一行是标题，后面是正文，不输出思考过程。",
       },
       {
         role: "user",
         content: [
           `选题: ${input.topic}`,
           `目标: ${input.goal}`,
-          `提纲:\n${planner}`,
+          planner ? `提纲:\n${planner}` : "",
           `账号记忆:\n${memory}`,
           `知识库:\n${knowledgeText}`,
+          `技能:\n${formatSkills(enabledSkills)}`,
           `素材:\n${input.references || "无"}`,
           input.imagePath ? `图片路径: ${input.imagePath}` : "",
-        ].join("\n\n"),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
       },
     ],
   })
 
-  const review = await generateTextStream({
-    modelId: modelSuite.reviewer.id,
-    modelPath: modelSuite.reviewer.path,
-    maxTokens: 160,
-    stream: false,
-    messages: [
-      {
-        role: "system",
-        content:
-          "你是内容审核器。只输出 3 到 5 个适合做标签的短词，用逗号分隔。不要输出解释。",
-      },
-      {
-        role: "user",
-        content: `目标: ${input.goal}\n账号记忆:\n${memory}\n草稿:\n${draft}`,
-      },
-    ],
-  })
+  updateSteps((steps) =>
+    steps.map((item) => {
+      if (item.key === "write") {
+        return {
+          ...item,
+          status: "done",
+          detail: `正文已生成，长度 ${draft.length} 字符`,
+          elapsedMs: Date.now() - startedAt,
+        }
+      }
+      if (item.key === "review") {
+        return {
+          ...item,
+          status: useFastPath ? "running" : "running",
+          detail: useFastPath
+            ? "快路径本地整理标签和结果"
+            : `使用 ${modelSuite.reviewer.label} 生成标签`,
+        }
+      }
+      return item
+    })
+  )
+
+  const review = useFastPath
+    ? ""
+    : await generateTextStream({
+        modelId: modelSuite.reviewer.id,
+        modelPath: modelSuite.reviewer.path,
+        maxTokens: 160,
+        stream: false,
+        messages: [
+          {
+            role: "system",
+            content:
+              "你是内容审核器。只输出 3 到 5 个适合作为标签的短词，用逗号分隔。",
+          },
+          {
+            role: "user",
+            content: `目标: ${input.goal}\n账号记忆:\n${memory}\n草稿:\n${draft}`,
+          },
+        ],
+      })
 
   const parsed = splitDraft(draft, input.topic)
   await addMemoryEvent({
@@ -124,10 +244,23 @@ export async function runContentAgent(
     content: `topic: ${input.topic}\ngoal: ${input.goal}\ntitle: ${parsed.title}`,
   })
 
+  updateSteps((steps) =>
+    steps.map((item) =>
+      item.key === "review"
+        ? {
+            ...item,
+            status: "done",
+            detail: useFastPath ? "已本地整理结果" : "标签已生成",
+            elapsedMs: Date.now() - startedAt,
+          }
+        : item
+    )
+  )
+
   return {
     title: parsed.title,
     body: parsed.body,
-    tags: buildTags(input, review),
+    tags: buildTags(input, review || parsed.title),
     trace: {
       modelId: modelSuite.writer.id,
       modelLabel: modelSuite.writer.label,
@@ -142,7 +275,7 @@ export async function runContentAgent(
       },
       knowledgeUsed: knowledge.length,
       totalKnowledge: knowledge.length,
-      skills: skills.filter((skill) => skill.enabled).map((skill) => skill.name),
+      skills: enabledSkills.map((skill) => skill.name),
       runtime: {
         maxThreads: Math.max(
           1,
@@ -163,17 +296,38 @@ export async function runContentAgent(
         pressure: metrics.pressure,
       },
       elapsedMs: Date.now() - startedAt,
-      stages: ["plan", "write", "review"],
+      stages: useFastPath ? ["setup", "knowledge", "write", "review"] : ["setup", "knowledge", "plan", "write", "review"],
     },
   }
 }
 
-function formatSkills(
-  skills: Array<{ name: string; prompt: string; enabled: boolean }>
+function createStepReporter(
+  onStepsChange?: (steps: AgentExecutionStep[]) => void
 ) {
-  const enabled = skills.filter((skill) => skill.enabled)
-  if (!enabled.length) return SKILLS.join("\n")
-  return enabled.map((skill) => `- ${skill.name}: ${skill.prompt}`).join("\n")
+  let current: AgentExecutionStep[] = []
+  return (next: AgentExecutionStep[] | ((steps: AgentExecutionStep[]) => AgentExecutionStep[])) => {
+    current = typeof next === "function" ? next(current) : next
+    onStepsChange?.(current)
+  }
+}
+
+function step(
+  key: string,
+  label: string,
+  detail: string,
+  status: AgentExecutionStep["status"]
+): AgentExecutionStep {
+  return { key, label, detail, status }
+}
+
+function formatSkills(skills: AgentSkill[]) {
+  if (!skills.length) return FALLBACK_SKILLS.join("\n")
+  return skills
+    .map(
+      (skill) =>
+        `- ${skill.name}: ${skill.description}\n${skill.instructions || skill.prompt}`
+    )
+    .join("\n\n")
 }
 
 type ModelSuite = {
@@ -261,7 +415,7 @@ function splitDraft(text: string, fallbackTitle: string) {
 
 function buildTags(input: ContentAgentInput, review: string) {
   const words = `${input.topic} ${review}`
-    .split(/[\s,，。#、/]+/)
+    .split(/[\s,，、。]+/)
     .map((word) => word.trim())
     .filter((word) => word.length >= 2 && word.length <= 12)
   return [...new Set(words)].slice(0, 5)

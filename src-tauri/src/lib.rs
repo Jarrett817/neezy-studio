@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -48,6 +48,8 @@ struct KnowledgeItem {
     title: String,
     content: String,
     category: String,
+    #[serde(default)]
+    updated_at: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -56,8 +58,43 @@ struct AgentSkill {
     id: String,
     name: String,
     description: String,
+    #[serde(default)]
+    slug: String,
+    #[serde(default)]
+    source_kind: String,
+    #[serde(default)]
+    root_path: Option<String>,
+    #[serde(default)]
+    skill_md_path: Option<String>,
+    #[serde(default)]
+    instructions: String,
     prompt: String,
     enabled: bool,
+    #[serde(default)]
+    file_count: usize,
+    #[serde(default)]
+    has_scripts: bool,
+    #[serde(default)]
+    has_references: bool,
+    #[serde(default)]
+    has_assets: bool,
+    #[serde(default)]
+    updated_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillImportFile {
+    relative_path: String,
+    bytes_base64: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavePastedImageInput {
+    file_name: Option<String>,
+    mime_type: String,
+    bytes_base64: String,
 }
 
 #[derive(Deserialize)]
@@ -500,6 +537,21 @@ fn list_knowledge_items(app: AppHandle) -> Result<Vec<KnowledgeItem>, String> {
 }
 
 #[tauri::command]
+async fn save_knowledge_item(app: AppHandle, item: KnowledgeItem) -> Result<KnowledgeItem, String> {
+    let saved = with_saved_knowledge_item(item);
+    upsert_knowledge_item(&app, &saved)?;
+    if let Ok(settings) = read_runtime_settings(&app) {
+        let metrics = build_runtime_metrics(&settings);
+        if let Err(error) =
+            ensure_knowledge_embeddings(&app, &settings, &metrics, &[saved.clone()]).await
+        {
+            log::warn!("failed to embed knowledge item: {}", error);
+        }
+    }
+    Ok(saved)
+}
+
+#[tauri::command]
 fn delete_knowledge_item(app: AppHandle, id: String) -> Result<(), String> {
     let connection = open_memory_db(&app)?;
     connection
@@ -510,24 +562,77 @@ fn delete_knowledge_item(app: AppHandle, id: String) -> Result<(), String> {
 
 #[tauri::command]
 fn list_skills(app: AppHandle) -> Result<Vec<AgentSkill>, String> {
-    read_skills(&app)
+    read_skills(&app).map(|skills| skills.into_iter().map(normalize_skill).collect())
 }
 
 #[tauri::command]
 fn save_skill(app: AppHandle, skill: AgentSkill) -> Result<AgentSkill, String> {
     let mut skills = read_skills(&app)?;
-    if let Some(existing) = skills.iter_mut().find(|item| item.id == skill.id) {
-        *existing = skill.clone();
+    let normalized = normalize_skill(skill);
+    if let Some(existing) = skills.iter_mut().find(|item| item.id == normalized.id) {
+        *existing = normalized.clone();
     } else {
-        skills.push(skill.clone());
+        skills.push(normalized.clone());
     }
     write_skills(&app, &skills)?;
-    Ok(skill)
+    Ok(normalized)
+}
+
+#[tauri::command]
+fn set_skill_enabled(app: AppHandle, id: String, enabled: bool) -> Result<AgentSkill, String> {
+    let mut skills = read_skills(&app)?;
+    let skill = skills
+        .iter_mut()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "skill not found".to_string())?;
+    skill.enabled = enabled;
+    skill.updated_at = Some(now_stamp());
+    let normalized = normalize_skill(skill.clone());
+    *skill = normalized.clone();
+    write_skills(&app, &skills)?;
+    Ok(normalized)
+}
+
+#[tauri::command]
+fn import_skill_archive(
+    app: AppHandle,
+    archive_name: String,
+    archive_base64: String,
+) -> Result<AgentSkill, String> {
+    let bytes = decode_base64_bytes(&archive_base64)?;
+    let import_dir = create_skill_import_dir(&app, &archive_name)?;
+    extract_zip_archive(&bytes, &import_dir)?;
+    let skill_root = find_skill_root(&import_dir)?
+        .ok_or_else(|| "zip 中没有找到合法的 SKILL.md".to_string())?;
+    let skill = build_skill_from_root(&skill_root, "zip")?;
+    upsert_imported_skill(&app, skill)
+}
+
+#[tauri::command]
+fn import_skill_folder(
+    app: AppHandle,
+    folder_name: String,
+    files: Vec<SkillImportFile>,
+) -> Result<AgentSkill, String> {
+    let import_dir = create_skill_import_dir(&app, &folder_name)?;
+    write_imported_files(&import_dir, &files)?;
+    let skill_root = find_skill_root(&import_dir)?
+        .ok_or_else(|| "文件夹中没有找到合法的 SKILL.md".to_string())?;
+    let skill = build_skill_from_root(&skill_root, "folder")?;
+    upsert_imported_skill(&app, skill)
 }
 
 #[tauri::command]
 fn delete_skill(app: AppHandle, id: String) -> Result<(), String> {
     let mut skills = read_skills(&app)?;
+    if let Some(skill) = skills.iter().find(|skill| skill.id == id) {
+        if let Some(root_path) = skill.root_path.as_deref() {
+            let path = PathBuf::from(root_path);
+            if path.is_dir() {
+                let _ = fs::remove_dir_all(path);
+            }
+        }
+    }
     skills.retain(|skill| skill.id != id);
     write_skills(&app, &skills)
 }
@@ -633,12 +738,13 @@ async fn add_knowledge_item(
     content: String,
     category: String,
 ) -> Result<KnowledgeItem, String> {
-    let item = KnowledgeItem {
+    let item = with_saved_knowledge_item(KnowledgeItem {
         id: Some(format!("knowledge-{}", now_stamp())),
         title,
         content,
         category,
-    };
+        updated_at: None,
+    });
     upsert_knowledge_item(&app, &item)?;
     if let Ok(settings) = read_runtime_settings(&app) {
         let metrics = build_runtime_metrics(&settings);
@@ -649,6 +755,23 @@ async fn add_knowledge_item(
         }
     }
     Ok(item)
+}
+
+#[tauri::command]
+fn save_pasted_image(app: AppHandle, input: SavePastedImageInput) -> Result<String, String> {
+    let bytes = decode_base64_bytes(&input.bytes_base64)?;
+    let dir = app_data_dir(&app)?.join("pasted-images");
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let extension = image_extension_for_mime(&input.mime_type);
+    let file_name = input
+        .file_name
+        .as_deref()
+        .map(sanitize_file_name)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("pasted-{}", now_stamp()));
+    let path = dir.join(format!("{file_name}.{extension}"));
+    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -680,13 +803,18 @@ pub fn run() {
             generate_text_stream,
             get_relevant_knowledge,
             list_knowledge_items,
+            save_knowledge_item,
             delete_knowledge_item,
             list_skills,
             save_skill,
+            set_skill_enabled,
+            import_skill_archive,
+            import_skill_folder,
             delete_skill,
             add_memory_event,
             cancel_generation,
             add_knowledge_item,
+            save_pasted_image,
             list_import_jobs,
             create_import_job,
             run_import_job,
@@ -778,7 +906,7 @@ fn read_knowledge_items(app: &AppHandle) -> Result<Vec<KnowledgeItem>, String> {
     let connection = open_memory_db(app)?;
     let mut statement = connection
         .prepare(
-            "select id, title, content, category from knowledge_items order by created_at desc",
+            "select id, title, content, category, updated_at from knowledge_items order by updated_at desc, created_at desc",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -788,6 +916,7 @@ fn read_knowledge_items(app: &AppHandle) -> Result<Vec<KnowledgeItem>, String> {
                 title: row.get(1)?,
                 content: row.get(2)?,
                 category: row.get(3)?,
+                updated_at: Some(row.get(4)?),
             })
         })
         .map_err(|error| error.to_string())?;
@@ -809,6 +938,11 @@ fn read_knowledge_items(app: &AppHandle) -> Result<Vec<KnowledgeItem>, String> {
 
 fn upsert_knowledge_item(app: &AppHandle, item: &KnowledgeItem) -> Result<(), String> {
     let connection = open_memory_db(app)?;
+    let now = now_stamp();
+    let id = item
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("knowledge-{}", now.clone()));
     connection
         .execute(
             "insert into knowledge_items (id, title, content, category, created_at, updated_at)
@@ -819,13 +953,11 @@ fn upsert_knowledge_item(app: &AppHandle, item: &KnowledgeItem) -> Result<(), St
                category = excluded.category,
                updated_at = excluded.updated_at",
             params![
-                item.id
-                    .clone()
-                    .unwrap_or_else(|| format!("knowledge-{}", now_stamp())),
+                id,
                 item.title,
                 item.content,
                 item.category,
-                now_stamp()
+                now
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -1149,6 +1281,10 @@ fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("models"))
 }
 
+fn skill_packages_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("skill-packages"))
+}
+
 fn memory_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("neezy-memory.sqlite"))
 }
@@ -1252,6 +1388,7 @@ fn default_skills() -> Vec<AgentSkill> {
             description: "根据目标、素材、记忆和知识库生成草稿。".to_string(),
             prompt: "直接输出可编辑成稿，不输出思考过程。".to_string(),
             enabled: true,
+            ..default_builtin_skill()
         },
         AgentSkill {
             id: "knowledge-grounding".to_string(),
@@ -1259,6 +1396,7 @@ fn default_skills() -> Vec<AgentSkill> {
             description: "优先使用知识库和用户素材，避免编造。".to_string(),
             prompt: "引用知识库信息时保持事实一致，不补不存在的数据。".to_string(),
             enabled: true,
+            ..default_builtin_skill()
         },
         AgentSkill {
             id: "vision-understanding".to_string(),
@@ -1266,8 +1404,290 @@ fn default_skills() -> Vec<AgentSkill> {
             description: "为视觉模型预留的图片理解能力。".to_string(),
             prompt: "当用户提供图片时，先提取画面信息，再结合文本目标生成内容。".to_string(),
             enabled: true,
+            ..default_builtin_skill()
         },
     ]
+}
+
+fn default_builtin_skill() -> AgentSkill {
+    AgentSkill {
+        id: String::new(),
+        name: String::new(),
+        description: String::new(),
+        slug: String::new(),
+        source_kind: "builtin".to_string(),
+        root_path: None,
+        skill_md_path: None,
+        instructions: String::new(),
+        prompt: String::new(),
+        enabled: true,
+        file_count: 1,
+        has_scripts: false,
+        has_references: false,
+        has_assets: false,
+        updated_at: Some(now_stamp()),
+    }
+}
+
+fn normalize_skill(mut skill: AgentSkill) -> AgentSkill {
+    if skill.slug.trim().is_empty() {
+        skill.slug = slugify(&skill.name);
+    }
+    if skill.source_kind.trim().is_empty() {
+        skill.source_kind = "legacy".to_string();
+    }
+    if skill.instructions.trim().is_empty() {
+        skill.instructions = skill.prompt.clone();
+    }
+    if skill.prompt.trim().is_empty() {
+        skill.prompt = first_nonempty_line(&skill.instructions);
+    }
+    if skill.updated_at.is_none() {
+        skill.updated_at = Some(now_stamp());
+    }
+    skill
+}
+
+fn with_saved_knowledge_item(item: KnowledgeItem) -> KnowledgeItem {
+    KnowledgeItem {
+        id: item
+            .id
+            .or_else(|| Some(format!("knowledge-{}", now_stamp()))),
+        title: item.title,
+        content: item.content,
+        category: item.category,
+        updated_at: Some(now_stamp()),
+    }
+}
+
+fn upsert_imported_skill(app: &AppHandle, skill: AgentSkill) -> Result<AgentSkill, String> {
+    let normalized = normalize_skill(skill);
+    let mut skills = read_skills(app)?
+        .into_iter()
+        .map(normalize_skill)
+        .collect::<Vec<_>>();
+    skills.retain(|existing| existing.id != normalized.id);
+    skills.push(normalized.clone());
+    write_skills(app, &skills)?;
+    Ok(normalized)
+}
+
+fn create_skill_import_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let slug = slugify(name);
+    let dir = skill_packages_dir(app)?.join(format!("{slug}-{}", now_stamp()));
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir)
+}
+
+fn write_imported_files(dir: &Path, files: &[SkillImportFile]) -> Result<(), String> {
+    for file in files {
+        let relative = sanitize_relative_path(&file.relative_path)?;
+        let output = dir.join(relative);
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let bytes = decode_base64_bytes(&file.bytes_base64)?;
+        fs::write(output, bytes).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn extract_zip_archive(bytes: &[u8], output_dir: &Path) -> Result<(), String> {
+    let reader = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader).map_err(|error| error.to_string())?;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).map_err(|error| error.to_string())?;
+        let relative = sanitize_relative_path(file.name())?;
+        let output = output_dir.join(relative);
+        if file.is_dir() {
+            fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+            continue;
+        }
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        fs::write(output, buffer).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn find_skill_root(dir: &Path) -> Result<Option<PathBuf>, String> {
+    if dir.join("SKILL.md").is_file() {
+        return Ok(Some(dir.to_path_buf()));
+    }
+
+    let entries = fs::read_dir(dir).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() {
+            if path.join("SKILL.md").is_file() {
+                return Ok(Some(path));
+            }
+            if let Some(found) = find_skill_root_recursive(&path, 2)? {
+                return Ok(Some(found));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn find_skill_root_recursive(dir: &Path, depth: usize) -> Result<Option<PathBuf>, String> {
+    if dir.join("SKILL.md").is_file() {
+        return Ok(Some(dir.to_path_buf()));
+    }
+    if depth == 0 {
+        return Ok(None);
+    }
+    let entries = fs::read_dir(dir).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() {
+            if let Some(found) = find_skill_root_recursive(&path, depth - 1)? {
+                return Ok(Some(found));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn build_skill_from_root(root: &Path, source_kind: &str) -> Result<AgentSkill, String> {
+    let skill_md_path = root.join("SKILL.md");
+    let raw = fs::read_to_string(&skill_md_path).map_err(|error| error.to_string())?;
+    let (name, description, instructions) = parse_skill_markdown(&raw)?;
+    let file_count = count_files(root)?;
+    Ok(normalize_skill(AgentSkill {
+        id: slugify(&name),
+        name: name.clone(),
+        description,
+        slug: slugify(&name),
+        source_kind: source_kind.to_string(),
+        root_path: Some(root.to_string_lossy().to_string()),
+        skill_md_path: Some(skill_md_path.to_string_lossy().to_string()),
+        instructions: instructions.trim().to_string(),
+        prompt: String::new(),
+        enabled: true,
+        file_count,
+        has_scripts: root.join("scripts").is_dir(),
+        has_references: root.join("references").is_dir(),
+        has_assets: root.join("assets").is_dir(),
+        updated_at: Some(now_stamp()),
+    }))
+}
+
+fn parse_skill_markdown(raw: &str) -> Result<(String, String, String), String> {
+    let mut parts = raw.splitn(3, "---");
+    let prefix = parts.next().unwrap_or_default();
+    if !prefix.trim().is_empty() {
+        return Err("SKILL.md frontmatter 必须以 --- 开头".to_string());
+    }
+    let frontmatter = parts
+        .next()
+        .ok_or_else(|| "SKILL.md 缺少 frontmatter".to_string())?;
+    let body = parts
+        .next()
+        .ok_or_else(|| "SKILL.md 缺少正文".to_string())?;
+    let name = frontmatter_value(frontmatter, "name")
+        .ok_or_else(|| "SKILL.md frontmatter 缺少 name".to_string())?;
+    let description = frontmatter_value(frontmatter, "description")
+        .ok_or_else(|| "SKILL.md frontmatter 缺少 description".to_string())?;
+    Ok((name, description, body.to_string()))
+}
+
+fn frontmatter_value(frontmatter: &str, key: &str) -> Option<String> {
+    frontmatter.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix(&format!("{key}:"))
+            .map(|value| value.trim().trim_matches('"').trim_matches('\'').to_string())
+    })
+}
+
+fn count_files(dir: &Path) -> Result<usize, String> {
+    let mut total = 0;
+    let entries = fs::read_dir(dir).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() {
+            total += count_files(&path)?;
+        } else {
+            total += 1;
+        }
+    }
+    Ok(total)
+}
+
+fn decode_base64_bytes(value: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+
+    base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .map_err(|error| error.to_string())
+}
+
+fn sanitize_relative_path(value: &str) -> Result<PathBuf, String> {
+    let path = Path::new(value);
+    let mut clean = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => clean.push(part),
+            Component::CurDir => {}
+            _ => return Err(format!("非法路径: {value}")),
+        }
+    }
+    if clean.as_os_str().is_empty() {
+        return Err("空路径无效".to_string());
+    }
+    Ok(clean)
+}
+
+fn slugify(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+fn first_nonempty_line(value: &str) -> String {
+    value
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn image_extension_for_mime(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "png",
+    }
+}
+
+fn sanitize_file_name(value: &str) -> String {
+    value.chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 fn build_suite(

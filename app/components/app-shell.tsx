@@ -1,12 +1,12 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { NavLink } from "react-router"
-import { Database, Sparkles } from "lucide-react"
+import { Activity, Cpu, Database, Sparkles } from "lucide-react"
 
 import { Badge } from "~/components/ui/badge"
 import { appNavigation } from "~/lib/navigation"
 import { cn } from "~/lib/utils"
-import { getAccountProfile } from "~/services/workspace"
+import { getAccountProfile, getRuntimeMetrics } from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -14,6 +14,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: profile } = useQuery({
     queryKey: ["account-profile"],
     queryFn: getAccountProfile,
+  })
+  const { data: metrics } = useQuery({
+    queryKey: ["runtime-metrics"],
+    queryFn: getRuntimeMetrics,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   })
   const accountName = activeAccountName || profile?.accountName
 
@@ -68,10 +74,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <p className="text-sm text-muted-foreground">本地优先</p>
                 <h1 className="text-base font-semibold">内容 Agent 工作台</h1>
               </div>
-              <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1">
-                <Database className="size-3.5" />
-                本地记忆
-              </Badge>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
+                  <Activity className="size-3.5" />
+                  <span>{metrics?.recommendedModelId ?? "--"}</span>
+                  <span>{metrics?.pressure ?? "--"}</span>
+                </div>
+                <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
+                  <Cpu className="size-3.5" />
+                  <span>{metrics ? `${metrics.cpuUsagePercent.toFixed(0)}% CPU` : "--"}</span>
+                  <span>
+                    {metrics ? `${metrics.availableMemoryGb.toFixed(1)} GB RAM` : "--"}
+                  </span>
+                </div>
+                <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1">
+                  <Database className="size-3.5" />
+                  本地记忆
+                </Badge>
+              </div>
             </div>
           </header>
 

@@ -161,14 +161,38 @@ export type KnowledgeItem = {
   title: string
   content: string
   category: string
+  updatedAt?: string
 }
 
 export type AgentSkill = {
   id: string
   name: string
   description: string
+  slug: string
+  sourceKind: string
+  rootPath?: string
+  skillMdPath?: string
+  instructions: string
   prompt: string
   enabled: boolean
+  fileCount: number
+  hasScripts: boolean
+  hasReferences: boolean
+  hasAssets: boolean
+  updatedAt?: string
+}
+
+export type SkillImportFile = {
+  relativePath: string
+  bytesBase64: string
+}
+
+export type AgentExecutionStep = {
+  key: string
+  label: string
+  detail: string
+  status: "pending" | "running" | "done" | "skipped" | "error"
+  elapsedMs?: number
 }
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
@@ -239,6 +263,10 @@ export async function addKnowledgeItem(input: {
   return invoke<KnowledgeItem>("add_knowledge_item", input)
 }
 
+export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
+  return invoke<KnowledgeItem>("save_knowledge_item", { item })
+}
+
 export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
   return invoke<KnowledgeItem[]>("list_knowledge_items")
 }
@@ -255,6 +283,27 @@ export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
   return invoke<AgentSkill>("save_skill", { skill })
 }
 
+export async function setSkillEnabled(
+  id: string,
+  enabled: boolean
+): Promise<AgentSkill> {
+  return invoke<AgentSkill>("set_skill_enabled", { id, enabled })
+}
+
+export async function importSkillArchive(input: {
+  archiveName: string
+  archiveBase64: string
+}): Promise<AgentSkill> {
+  return invoke<AgentSkill>("import_skill_archive", input)
+}
+
+export async function importSkillFolder(input: {
+  folderName: string
+  files: SkillImportFile[]
+}): Promise<AgentSkill> {
+  return invoke<AgentSkill>("import_skill_folder", input)
+}
+
 export async function deleteSkill(id: string): Promise<void> {
   return invoke<void>("delete_skill", { id })
 }
@@ -269,6 +318,14 @@ export async function addMemoryEvent(input: {
 
 export async function cancelGeneration(): Promise<void> {
   return invoke<void>("cancel_generation")
+}
+
+export async function savePastedImage(input: {
+  fileName?: string
+  mimeType: string
+  bytesBase64: string
+}): Promise<string> {
+  return invoke<string>("save_pasted_image", { input })
 }
 
 export async function generateTextStream(input: {

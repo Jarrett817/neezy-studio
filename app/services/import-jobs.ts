@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core"
+import { invokeTauri } from "~/services/tauri-client"
 
 export type JobStage =
   | "queued"
@@ -26,17 +26,17 @@ export type ImportJob = {
 }
 
 export async function listImportJobs(): Promise<ImportJob[]> {
-  return invoke<ImportJob[]>("list_import_jobs")
+  return invokeTauri<ImportJob[]>("list_import_jobs")
 }
 
 export async function createImportJob(sourceUrl: string): Promise<ImportJob> {
-  return invoke<ImportJob>("create_import_job", { sourceUrl })
+  return invokeTauri<ImportJob>("create_import_job", { sourceUrl })
 }
 
 export async function runNextStage(jobId: string): Promise<ImportJob> {
-  return invoke<ImportJob>("run_import_job", { jobId })
+  return invokeTauri<ImportJob>("run_import_job", { jobId })
 }
 
 export async function retryJob(jobId: string): Promise<ImportJob> {
-  return invoke<ImportJob>("retry_import_job", { jobId })
+  return invokeTauri<ImportJob>("retry_import_job", { jobId })
 }

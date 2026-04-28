@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core"
+import { invokeTauri } from "~/services/tauri-client"
 
 export type DashboardSummary = {
   draftCount: number
@@ -196,63 +196,63 @@ export type AgentExecutionStep = {
 }
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
-  return invoke<WorkspaceSnapshot>("get_workspace_snapshot")
+  return invokeTauri<WorkspaceSnapshot>("get_workspace_snapshot")
 }
 
 export async function getRelevantKnowledge(
   input: ContentAgentInput
 ): Promise<KnowledgePreview[]> {
-  return invoke<KnowledgePreview[]>("get_relevant_knowledge", { input })
+  return invokeTauri<KnowledgePreview[]>("get_relevant_knowledge", { input })
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
-  return invoke<AccountProfile>("get_account_profile")
+  return invokeTauri<AccountProfile>("get_account_profile")
 }
 
 export async function saveAccountProfile(
   profile: AccountProfile
 ): Promise<AccountProfile> {
-  return invoke<AccountProfile>("save_account_profile", { profile })
+  return invokeTauri<AccountProfile>("save_account_profile", { profile })
 }
 
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {
-  return invoke<RuntimeSettings>("get_runtime_settings")
+  return invokeTauri<RuntimeSettings>("get_runtime_settings")
 }
 
 export async function saveRuntimeSettings(
   settings: RuntimeSettings
 ): Promise<RuntimeSettings> {
-  return invoke<RuntimeSettings>("save_runtime_settings", { settings })
+  return invokeTauri<RuntimeSettings>("save_runtime_settings", { settings })
 }
 
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
-  return invoke<RuntimeMetrics>("get_runtime_metrics")
+  return invokeTauri<RuntimeMetrics>("get_runtime_metrics")
 }
 
 export async function getModelDownloadOptions(): Promise<
   ModelDownloadOption[]
 > {
-  return invoke<ModelDownloadOption[]>("get_model_download_options")
+  return invokeTauri<ModelDownloadOption[]>("get_model_download_options")
 }
 
 export async function getModelDownloadSuites(): Promise<ModelDownloadSuite[]> {
-  return invoke<ModelDownloadSuite[]>("get_model_download_suites")
+  return invokeTauri<ModelDownloadSuite[]>("get_model_download_suites")
 }
 
 export async function startModelDownload(
   optionId: string
 ): Promise<ModelDownloadTask> {
-  return invoke<ModelDownloadTask>("start_model_download", { optionId })
+  return invokeTauri<ModelDownloadTask>("start_model_download", { optionId })
 }
 
 export async function startModelSuiteDownload(
   suiteId: string
 ): Promise<ModelDownloadTask[]> {
-  return invoke<ModelDownloadTask[]>("start_model_suite_download", { suiteId })
+  return invokeTauri<ModelDownloadTask[]>("start_model_suite_download", { suiteId })
 }
 
 export async function getModelDownloadTasks(): Promise<ModelDownloadTask[]> {
-  return invoke<ModelDownloadTask[]>("get_model_download_tasks")
+  return invokeTauri<ModelDownloadTask[]>("get_model_download_tasks")
 }
 
 export async function addKnowledgeItem(input: {
@@ -260,52 +260,52 @@ export async function addKnowledgeItem(input: {
   content: string
   category: string
 }): Promise<KnowledgeItem> {
-  return invoke<KnowledgeItem>("add_knowledge_item", input)
+  return invokeTauri<KnowledgeItem>("add_knowledge_item", input)
 }
 
 export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
-  return invoke<KnowledgeItem>("save_knowledge_item", { item })
+  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item })
 }
 
 export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
-  return invoke<KnowledgeItem[]>("list_knowledge_items")
+  return invokeTauri<KnowledgeItem[]>("list_knowledge_items")
 }
 
 export async function deleteKnowledgeItem(id: string): Promise<void> {
-  return invoke<void>("delete_knowledge_item", { id })
+  return invokeTauri<void>("delete_knowledge_item", { id })
 }
 
 export async function listSkills(): Promise<AgentSkill[]> {
-  return invoke<AgentSkill[]>("list_skills")
+  return invokeTauri<AgentSkill[]>("list_skills")
 }
 
 export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
-  return invoke<AgentSkill>("save_skill", { skill })
+  return invokeTauri<AgentSkill>("save_skill", { skill })
 }
 
 export async function setSkillEnabled(
   id: string,
   enabled: boolean
 ): Promise<AgentSkill> {
-  return invoke<AgentSkill>("set_skill_enabled", { id, enabled })
+  return invokeTauri<AgentSkill>("set_skill_enabled", { id, enabled })
 }
 
 export async function importSkillArchive(input: {
   archiveName: string
   archiveBase64: string
 }): Promise<AgentSkill> {
-  return invoke<AgentSkill>("import_skill_archive", input)
+  return invokeTauri<AgentSkill>("import_skill_archive", input)
 }
 
 export async function importSkillFolder(input: {
   folderName: string
   files: SkillImportFile[]
 }): Promise<AgentSkill> {
-  return invoke<AgentSkill>("import_skill_folder", input)
+  return invokeTauri<AgentSkill>("import_skill_folder", input)
 }
 
 export async function deleteSkill(id: string): Promise<void> {
-  return invoke<void>("delete_skill", { id })
+  return invokeTauri<void>("delete_skill", { id })
 }
 
 export async function addMemoryEvent(input: {
@@ -313,11 +313,11 @@ export async function addMemoryEvent(input: {
   content: string
   source?: string
 }): Promise<void> {
-  return invoke<void>("add_memory_event", { input })
+  return invokeTauri<void>("add_memory_event", { input })
 }
 
 export async function cancelGeneration(): Promise<void> {
-  return invoke<void>("cancel_generation")
+  return invokeTauri<void>("cancel_generation")
 }
 
 export async function savePastedImage(input: {
@@ -325,7 +325,7 @@ export async function savePastedImage(input: {
   mimeType: string
   bytesBase64: string
 }): Promise<string> {
-  return invoke<string>("save_pasted_image", { input })
+  return invokeTauri<string>("save_pasted_image", { input })
 }
 
 export async function generateTextStream(input: {
@@ -336,5 +336,5 @@ export async function generateTextStream(input: {
   stream?: boolean
   imagePath?: string
 }): Promise<string> {
-  return invoke<string>("generate_text_stream", { input })
+  return invokeTauri<string>("generate_text_stream", { input })
 }

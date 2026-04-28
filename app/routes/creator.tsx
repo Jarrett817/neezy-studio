@@ -1,5 +1,4 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { listen } from "@tauri-apps/api/event"
 import {
   Bot,
   Cpu,
@@ -15,6 +14,7 @@ import { runContentAgent } from "~/agents/content-agent"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Textarea } from "~/components/ui/textarea"
+import { listenTauri } from "~/services/tauri-client"
 import {
   cancelGeneration,
   getRuntimeMetrics,
@@ -138,7 +138,7 @@ export default function CreatorRoute() {
   useEffect(() => {
     let unlisten: (() => void) | undefined
     let disposed = false
-    listen<AgentStreamEvent>("content-agent-event", (event) => {
+    listenTauri<AgentStreamEvent>("content-agent-event", (event) => {
       const activeId = activeAssistantId.current
       const token = event.payload.text
       if (!activeId || event.payload.type !== "token" || !token) return

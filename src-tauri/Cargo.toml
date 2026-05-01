@@ -26,11 +26,6 @@ hf-hub = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
-candle-core = "0.10"
-candle-transformers = "0.10"
-tokenizers = "0.20"
-futures = "0.3"
-tokio = { version = "1", features = ["sync"] }
 image = "0.25"
 windows-sys = { version = "0.61.2", features = ["Win32_System_SystemInformation", "Win32_System_Threading"] }
 base64 = "0.22"

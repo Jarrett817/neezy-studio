@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
+import { motion } from "framer-motion"
 import {
   Bot,
   ChevronDown,
@@ -20,6 +21,7 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Spinner } from "~/components/ui/spinner"
 import { Textarea } from "~/components/ui/textarea"
+import { PageTransition, FadeIn } from "~/components/animation-effects"
 import { listenTauri } from "~/services/tauri-client"
 import {
   cancelGeneration,
@@ -331,9 +333,10 @@ export default function CreatorRoute() {
   const enabledModelCount = settings?.models.filter((m) => m.enabled).length ?? 0
 
   return (
-    <div className="flex h-[calc(100svh-80px)] flex-col gap-4">
+    <PageTransition>
+    <div className="flex flex-col h-full">
       {/* 消息区 */}
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {messages.length === 0 ? (
           <EmptyState onSuggestionClick={(text) => {
             setInput(text)
@@ -364,9 +367,8 @@ export default function CreatorRoute() {
       </div>
 
       {/* 输入区 — 悬浮玻璃 */}
-      <div className="relative">
-        <div className="glass-warm rounded-2xl border border-border/10 p-4 space-y-3">
-          {/* 图片预览 */}
+      <div className="shrink-0 glass-warm rounded-2xl border border-border/10 p-4 space-y-3">
+        {/* 图片预览 */}
           {imageName && (
             <div className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -475,7 +477,7 @@ export default function CreatorRoute() {
           </div>
         </div>
       </div>
-    </div>
+    </PageTransition>
   )
 }
 

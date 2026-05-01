@@ -1,4 +1,5 @@
 import { invokeTauri } from "~/services/tauri-client"
+import ollama, { type ProgressResponse } from "ollama"
 
 export type DashboardSummary = {
   draftCount: number
@@ -22,17 +23,10 @@ export type KnowledgePreview = {
   lastUsedAt: string
 }
 
-export type MetricPoint = {
-  label: string
-  views: number
-  saves: number
-}
-
 export type WorkspaceSnapshot = {
   summary: DashboardSummary
   drafts: DraftPreview[]
   knowledge: KnowledgePreview[]
-  metrics: MetricPoint[]
 }
 
 export type AccountProfile = {
@@ -64,15 +58,8 @@ export type ContentAgentOutput = {
   trace: {
     modelId?: string
     modelLabel?: string
-    modelPath?: string
     selectedBy?: "manual" | "auto"
     selectedReason?: string
-    modelSuite?: {
-      mode: "manual-single-model" | "auto-single-model" | "auto-suite"
-      planner: string
-      writer: string
-      reviewer: string
-    }
     knowledgeUsed?: number
     totalKnowledge?: number
     skills?: string[]
@@ -91,25 +78,11 @@ export type RuntimePlan = {
   pressure: "low" | "medium" | "high"
 }
 
-export type ModelConfig = {
-  id: string
-  label: string
-  path: string
-  paramsB: number
-  quant: string
-  sizeGb: number
-  enabled: boolean
-  capability?: "text" | "vision" | "embedding"
-  repo?: string
-  file?: string
-  tokenizerRepo?: string
-}
-
 export type RuntimeSettings = {
   hfEndpoint: string
   preferLowPower: boolean
   maxCpuPercent: number
-  models: ModelConfig[]
+  ollamaModel?: string
 }
 
 export type RuntimeMetrics = {
@@ -120,61 +93,6 @@ export type RuntimeMetrics = {
   pressure: "low" | "medium" | "high"
   recommendedModelId?: string
   recommendedReason: string
-}
-
-export type ModelDownloadOption = {
-  id: string
-  label: string
-  paramsB: number
-  quant: string
-  sizeGb: number
-  source: string
-  url: string
-  mirrorUrl: string
-  repo: string
-  note: string
-  capability: "text" | "vision" | "embedding"
-}
-
-export type ModelDownloadSuite = {
-  id: string
-  label: string
-  optionIds: string[]
-  models: string[]
-  note: string
-}
-
-export type HuggingFaceFile = {
-  path: string
-}
-
-export type HuggingFaceModel = {
-  id: string
-  author: string
-  downloads?: number
-  likes?: number
-  tags: string[]
-  lastModified?: string
-}
-
-export type HfModelListResult = {
-  models: HuggingFaceModel[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
-
-export type ModelDownloadTask = {
-  id: string
-  optionId: string
-  label: string
-  targetPath: string
-  downloadedBytes: number
-  totalBytes?: number
-  progress: number
-  status: "running" | "done" | "failed"
-  errorMessage?: string
 }
 
 export type KnowledgeItem = {
@@ -216,23 +134,17 @@ export type AgentExecutionStep = {
   elapsedMs?: number
 }
 
+// ==================== Workspace API ====================
+
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
   return invokeTauri<WorkspaceSnapshot>("get_workspace_snapshot")
-}
-
-export async function getRelevantKnowledge(
-  input: ContentAgentInput
-): Promise<KnowledgePreview[]> {
-  return invokeTauri<KnowledgePreview[]>("get_relevant_knowledge", { input })
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
   return invokeTauri<AccountProfile>("get_account_profile")
 }
 
-export async function saveAccountProfile(
-  profile: AccountProfile
-): Promise<AccountProfile> {
+export async function saveAccountProfile(profile: AccountProfile): Promise<AccountProfile> {
   return invokeTauri<AccountProfile>("save_account_profile", { profile })
 }
 
@@ -240,9 +152,7 @@ export async function getRuntimeSettings(): Promise<RuntimeSettings> {
   return invokeTauri<RuntimeSettings>("get_runtime_settings")
 }
 
-export async function saveRuntimeSettings(
-  settings: RuntimeSettings
-): Promise<RuntimeSettings> {
+export async function saveRuntimeSettings(settings: RuntimeSettings): Promise<RuntimeSettings> {
   return invokeTauri<RuntimeSettings>("save_runtime_settings", { settings })
 }
 
@@ -250,67 +160,25 @@ export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
   return invokeTauri<RuntimeMetrics>("get_runtime_metrics")
 }
 
-export async function getModelDownloadOptions(): Promise<
-  ModelDownloadOption[]
-> {
-  return invokeTauri<ModelDownloadOption[]>("get_model_download_options")
-}
+// ==================== 知识库 ====================
 
-export async function getModelDownloadSuites(): Promise<ModelDownloadSuite[]> {
-  return invokeTauri<ModelDownloadSuite[]>("get_model_download_suites")
-}
-
-export async function getModelFiles(repoId: string): Promise<HuggingFaceFile[]> {
-  return invokeTauri<HuggingFaceFile[]>("get_model_files", { repoId })
-}
-
-export async function listHfModels(search?: string, sort?: string, page?: number, pageSize?: number): Promise<HfModelListResult> {
-  return invokeTauri<HfModelListResult>("list_hf_models", { search, sort, page, pageSize })
-}
-
-export async function startModelDownload(
-  optionId: string,
-  repoId: string,
-  filePath: string
-): Promise<ModelDownloadTask> {
-  return invokeTauri<ModelDownloadTask>("start_model_download", { optionId, repoId, filePath })
-}
-
-export async function getModelDownloadTasks(): Promise<ModelDownloadTask[]> {
-  return invokeTauri<ModelDownloadTask[]>("get_model_download_tasks")
-}
-
-export async function getModelStatus(): Promise<ModelStatus[]> {
-  return invokeTauri<ModelStatus[]>("get_model_status")
-}
-
-export type ModelStatus = {
-  optionId: string
-  label: string
-  ggufExists: boolean
-  tokenizerExists: boolean
-  sizeGb: number
-}
-
-export async function addKnowledgeItem(input: {
-  title: string
-  content: string
-  category: string
-}): Promise<KnowledgeItem> {
-  return invokeTauri<KnowledgeItem>("add_knowledge_item", input)
-}
-
-export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
-  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item })
+export async function getRelevantKnowledge(input: ContentAgentInput): Promise<KnowledgePreview[]> {
+  return invokeTauri<KnowledgePreview[]>("get_relevant_knowledge", { input })
 }
 
 export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
   return invokeTauri<KnowledgeItem[]>("list_knowledge_items")
 }
 
+export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
+  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item })
+}
+
 export async function deleteKnowledgeItem(id: string): Promise<void> {
   return invokeTauri<void>("delete_knowledge_item", { id })
 }
+
+// ==================== Skills ====================
 
 export async function listSkills(): Promise<AgentSkill[]> {
   return invokeTauri<AgentSkill[]>("list_skills")
@@ -320,10 +188,7 @@ export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
   return invokeTauri<AgentSkill>("save_skill", { skill })
 }
 
-export async function setSkillEnabled(
-  id: string,
-  enabled: boolean
-): Promise<AgentSkill> {
+export async function setSkillEnabled(id: string, enabled: boolean): Promise<AgentSkill> {
   return invokeTauri<AgentSkill>("set_skill_enabled", { id, enabled })
 }
 
@@ -345,6 +210,8 @@ export async function deleteSkill(id: string): Promise<void> {
   return invokeTauri<void>("delete_skill", { id })
 }
 
+// ==================== 内存事件 ====================
+
 export async function addMemoryEvent(input: {
   layer: string
   content: string
@@ -353,9 +220,7 @@ export async function addMemoryEvent(input: {
   return invokeTauri<void>("add_memory_event", { input })
 }
 
-export async function cancelGeneration(): Promise<void> {
-  return invokeTauri<void>("cancel_generation")
-}
+// ==================== 图片 ====================
 
 export async function savePastedImage(input: {
   fileName?: string
@@ -365,13 +230,118 @@ export async function savePastedImage(input: {
   return invokeTauri<string>("save_pasted_image", { input })
 }
 
-export async function generateTextStream(input: {
-  modelId?: string
-  modelPath?: string
-  messages: LlmMessage[]
+// ==================== Ollama 进程管理 ====================
+
+export async function ensureOllamaRunning(): Promise<void> {
+  return invokeTauri<void>("ensure_ollama_running")
+}
+
+export async function isOllamaRunning(): Promise<boolean> {
+  return invokeTauri<boolean>("is_ollama_running")
+}
+
+export async function stopOllama(): Promise<void> {
+  return invokeTauri<void>("stop_ollama")
+}
+
+export async function getOllamaHost(): Promise<string> {
+  return invokeTauri<string>("get_ollama_host")
+}
+
+// ==================== Ollama 模型管理（使用 npm 包） ====================
+
+export type OllamaModel = Awaited<ReturnType<typeof ollama.list>>["models"][number]
+
+// 列出已下载的模型
+export async function listOllamaModels(): Promise<OllamaModel[]> {
+  const response = await ollama.list()
+  return response.models || []
+}
+
+// 拉取模型（流式进度）
+export async function pullOllamaModel(
+  modelName: string,
+  onProgress?: (progress: ProgressResponse) => void
+): Promise<void> {
+  const response = await ollama.pull({ model: modelName, stream: true })
+  for await (const part of response) {
+    onProgress?.(part as ProgressResponse)
+  }
+}
+
+// 删除模型
+export async function deleteOllamaModel(modelName: string): Promise<void> {
+  await ollama.delete({ model: modelName })
+}
+
+// 获取模型信息
+export async function showOllamaModel(modelName: string): Promise<Awaited<ReturnType<typeof ollama.show>>> {
+  return ollama.show({ model: modelName })
+}
+
+// 生成文本（流式）
+export async function generateWithOllama(options: {
+  model: string
+  prompt: string
+  system?: string
+  temperature?: number
   maxTokens?: number
-  stream?: boolean
-  imagePath?: string
+  onChunk?: (text: string) => void
 }): Promise<string> {
-  return invokeTauri<string>("generate_text_stream", { input })
+  const response = await ollama.generate({
+    model: options.model,
+    prompt: options.prompt,
+    system: options.system,
+    stream: true,
+    options: {
+      temperature: options.temperature ?? 0.7,
+      num_predict: options.maxTokens ?? 1024,
+    },
+  })
+  let result = ""
+  for await (const part of response) {
+    result += part.response
+    options.onChunk?.(part.response)
+  }
+  return result
+}
+
+// 聊天补全（流式）
+export async function chatWithOllama(options: {
+  model: string
+  messages: LlmMessage[]
+  temperature?: number
+  maxTokens?: number
+  onChunk?: (text: string) => void
+}): Promise<string> {
+  const response = await ollama.chat({
+    model: options.model,
+    messages: options.messages.map(m => ({
+      role: m.role as "system" | "user" | "assistant",
+      content: m.content,
+    })),
+    stream: true,
+    options: {
+      temperature: options.temperature ?? 0.7,
+      num_predict: options.maxTokens ?? 1024,
+    },
+  })
+  let result = ""
+  for await (const part of response) {
+    result += part.message.content
+    options.onChunk?.(part.message.content)
+  }
+  return result
+}
+
+// 获取 embedding
+export async function getOllamaEmbedding(options: {
+  model: string
+  prompt: string
+}): Promise<number[]> {
+  const response = await ollama.embeddings({
+    model: options.model,
+    prompt: options.prompt,
+  })
+  return response.embedding
 }

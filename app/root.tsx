@@ -11,7 +11,7 @@ import * as React from "react"
 
 import type { Route } from "./+types/root"
 import { AppShell } from "./components/app-shell"
-import { WarmAmbientBg } from "./components/animated-bg"
+import { CursorGlow, SparkleBg, WarmAmbientBg } from "./components/animated-bg"
 import { Toaster } from "./components/ui/sonner"
 import "./app.css"
 
@@ -53,10 +53,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <SparkleBg />
       <WarmAmbientBg />
-      <AppShell>
-        <Outlet />
-      </AppShell>
+      <CursorGlow>
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      </CursorGlow>
     </QueryClientProvider>
   )
 }

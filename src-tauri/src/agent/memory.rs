@@ -53,7 +53,7 @@ pub fn read_knowledge_items(app: &AppHandle) -> Result<Vec<KnowledgeItem>, Strin
 
 pub fn upsert_knowledge_item(app: &AppHandle, item: &KnowledgeItem) -> Result<(), String> {
     let connection = crate::storage::db::open_memory_db(app)?;
-    let now = crate::models::download::now_stamp();
+    let now = crate::models::resolve::now_stamp();
     let id = item
         .id
         .clone()
@@ -268,7 +268,7 @@ fn write_embedding_record(
                 model_id,
                 dimension as i64,
                 vector_json,
-                crate::models::download::now_stamp()
+                crate::models::resolve::now_stamp()
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -278,7 +278,7 @@ fn write_embedding_record(
 pub async fn ensure_knowledge_embeddings(
     app: &AppHandle,
     settings: &crate::storage::settings::RuntimeSettings,
-    metrics: &crate::models::resolve::RuntimeMetrics,
+    _metrics: &crate::models::resolve::RuntimeMetrics,
     items: &[KnowledgeItem],
 ) -> Result<(), String> {
     let model = match select_embedding_model(settings) {

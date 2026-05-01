@@ -5,11 +5,7 @@ import {
   AlertCircle,
   BookOpenText,
   CheckCircle2,
-  ChartNoAxesColumn,
   Database,
-  Download,
-  FolderInput,
-  Home,
   MessageSquare,
   MessageSquareText,
   Settings2,
@@ -23,14 +19,11 @@ import { getAccountProfile, getModelStatus, getRuntimeMetrics } from "~/services
 import { useAppStore } from "~/stores/app-store"
 
 const navItems = [
-  { href: "/", label: "工作台", Icon: Home },
-  { href: "/chat", label: "模型对话", Icon: MessageSquare },
-  { href: "/creator", label: "Agent 创作", Icon: MessageSquareText },
-  { href: "/skills", label: "Skill 管理", Icon: SlidersHorizontal },
+  { href: "/", label: "对话", Icon: MessageSquare },
+  { href: "/creator", label: "创作", Icon: MessageSquareText },
   { href: "/knowledge-base", label: "知识库", Icon: BookOpenText },
-  { href: "/analytics", label: "数据复盘", Icon: ChartNoAxesColumn },
-  { href: "/import", label: "数据录入", Icon: FolderInput },
-  { href: "/settings", label: "设置中心", Icon: Settings2 },
+  { href: "/skills", label: "Skill", Icon: SlidersHorizontal },
+  { href: "/settings", label: "设置", Icon: Settings2 },
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -42,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const accountName = activeAccountName || profile?.accountName
 
   return (
-    <div className="relative min-h-svh bg-background text-foreground">
+    <div className="relative min-h-svh text-foreground">
       {/* 侧边栏 — 玻璃拟态 */}
       <aside className="fixed inset-y-0 left-0 z-30 w-16 group hover:w-56 transition-all duration-300 ease-out">
         <div className="glass-warm absolute inset-0 border-r border-border/10 flex flex-col">
@@ -95,9 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* 主内容区 */}
-      <div className="pl-16">
+      <div className="pl-16 relative overflow-hidden">
         {/* 顶栏 */}
-        <header className="sticky top-0 z-20 h-14 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md">
+        <header className="sticky top-0 z-20 h-14 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-sm font-semibold text-muted-foreground">
               {accountName || "Neezy Studio"}
@@ -109,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="px-6 pb-8">{children}</main>
+        <main className="px-6 pb-6 relative z-10 h-[100dvh] flex flex-col">{children}</main>
       </div>
     </div>
   )

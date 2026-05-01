@@ -2,22 +2,17 @@ use crate::agent::memory::KnowledgeItem;
 use crate::agent::skill::AgentSkill;
 use crate::llm;
 use crate::models;
-use crate::models::download::{ModelDownloadOption, ModelDownloadSuite, ModelDownloadTask};
-use crate::models::resolve::ModelConfig;
 use crate::storage::db::AccountProfile;
 use crate::storage::settings::RuntimeSettings;
 use crate::types::{
-    BuildInfo, ContentAgentInput, GenerateTextInput, ImportJob,
+    BuildInfo, ContentAgentInput, ImportJob,
     JobStage, KnowledgePreview, MemoryEventInput, SavePastedImageInput, SkillImportFile,
     WorkspaceSnapshot,
 };
 use rusqlite::params;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
-
-static MODEL_DOWNLOADS: OnceLock<Mutex<Vec<ModelDownloadTask>>> = OnceLock::new();
 
 #[tauri::command]
 pub fn get_build_info() -> BuildInfo {
@@ -72,7 +67,7 @@ pub fn save_runtime_settings(
 #[tauri::command]
 pub fn get_runtime_metrics(app: AppHandle) -> Result<crate::RuntimeMetrics, String> {
     let settings = crate::storage::settings::read_runtime_settings(&app)?;
-    let metrics = crate::system::build_runtime_metrics(&settings);
+    let metrics = crate::system::build_runtime_metrics(&settings, &app);
 
     // 用实时扫描的模型来做推荐
     let scanned = crate::models::resolve::scan_models_dir(&app);
@@ -91,177 +86,77 @@ pub fn get_runtime_metrics(app: AppHandle) -> Result<crate::RuntimeMetrics, Stri
                     m.label, m.params_b, m.quant
                 )
             })
-            .unwrap_or_else(|| "未检测到可用模型，请下载 GGUF 文件".to_string()),
+            .unwrap_or_else(|| "未检测到已下载模型，请在 Ollama 模型市场下载".to_string()),
+        scanned_models: scanned,
         ..metrics
     })
 }
 
-#[tauri::command]
-pub fn get_model_download_options(app: AppHandle) -> Result<Vec<ModelDownloadOption>, String> {
-    let settings = crate::storage::settings::read_runtime_settings(&app)?;
-    Ok(models::download::model_download_options(&settings.hf_endpoint))
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportModelResult {
+    pub label: String,
+    pub path: String,
+    pub size_gb: f64,
 }
 
 #[tauri::command]
-pub fn get_model_files(repo_id: String) -> Result<Vec<models::hf::HuggingFaceFile>, String> {
-    models::hf::list_repo_files(&repo_id)
-}
-
-#[tauri::command]
-pub fn list_hf_models(
-    search: Option<String>,
-    sort: Option<String>,
-    page: Option<usize>,
-    page_size: Option<usize>,
-) -> Result<models::hf::HfModelListResult, String> {
-    let page = page.unwrap_or(1).max(1);
-    let page_size = page_size.unwrap_or(20).min(50);
-    models::hf::list_models(search.as_deref(), sort.as_deref(), page, page_size)
-}
-
-#[tauri::command]
-pub fn get_model_download_suites() -> Vec<ModelDownloadSuite> {
-    let options = models::download::model_download_options("https://hf-mirror.com");
-    vec![
-        models::download::build_suite(
-            "balanced-agent-suite",
-            "Balanced Agent Suite",
-            &["qwen3-1.7b-q4", "qwen3-4b-q4", "gemma4-e2b-q4", "qwen2.5-vl-3b-q4", "qwen3-embedding-0.6b-q8"],
-            "Planner + writer + reviewer + vision + embedding for 16GB RAM laptops.",
-            &options,
-        ),
-        models::download::build_suite(
-            "low-power-agent-suite",
-            "Low Power Agent Suite",
-            &["qwen3-1.7b-q4", "qwen2.5-1.5b-q4", "qwen2-vl-2b-q4", "qwen3-embedding-0.6b-q8"],
-            "Lower CPU and memory pressure for thin laptops.",
-            &options,
-        ),
-    ]
-}
-
-#[tauri::command]
-pub fn start_model_download(app: AppHandle, option_id: String, repo_id: String, file_path: String) -> Result<ModelDownloadTask, String> {
-    // 每个模型创建独立文件夹
-    let target_dir = models::resolve::models_dir(&app)?.join(&repo_id);
-    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
-    let file_name = file_path.split('/').last().unwrap_or(&file_path);
-    let target_path = target_dir.join(file_name);
-
-    if target_path.is_file() {
-        return Err(format!("文件已存在，无需重复下载"));
-    }
-
-    let task_id = format!("download-{}", models::download::now_stamp());
-    let task = ModelDownloadTask {
-        id: task_id.clone(),
-        option_id: option_id.clone(),
-        label: file_name.to_string(),
-        target_path: target_path.to_string_lossy().to_string(),
-        downloaded_bytes: 0,
-        total_bytes: None,
-        progress: 0.0,
-        status: "running".to_string(),
-        error_message: None,
-    };
-
-    downloads().lock().map_err(|error| error.to_string())?.push(task.clone());
-
-    let task_id_clone = task_id.clone();
-    let file_path_clone = file_path.clone();
-    let target_path_clone = target_path.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let result = models::hf::download_model_file(
-            &repo_id,
-            &file_path_clone,
-            &target_path_clone,
-            |downloaded, total| {
-                update_download_task(&task_id_clone, |task| {
-                    task.downloaded_bytes = downloaded;
-                    task.total_bytes = total;
-                    task.progress = total.map(|t| downloaded as f32 / t as f32 * 100.0).unwrap_or(0.0).clamp(0.0, 99.0);
-                });
-            },
-        );
-
-        match result {
-            Ok(()) => {
-                // Download tokenizer.json if it exists
-                let tokenizer_target = target_path_clone.parent().map(|p| p.join("tokenizer.json")).unwrap_or_default();
-                if !tokenizer_target.exists() {
-                    let tokenizer_result = models::hf::download_model_file(
-                        &repo_id,
-                        "tokenizer.json",
-                        &tokenizer_target,
-                        |_, _| {},
-                    );
-                    if tokenizer_result.is_err() {
-                        log::warn!("tokenizer.json not found in repo, will be loaded from GGUF metadata");
-                    }
-                }
-                update_download_task(&task_id_clone, |task| {
-                    task.status = "done".to_string();
-                    task.progress = 100.0;
-                });
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(&target_path_clone);
-                update_download_task(&task_id_clone, |task| {
-                    task.status = "failed".to_string();
-                    task.error_message = Some(e);
-                });
-            }
-        }
-    });
-
-    Ok(task)
-}
-
-#[tauri::command]
-pub fn start_model_suite_download(
-    _app: AppHandle,
-    _suite_id: String,
-) -> Result<Vec<ModelDownloadTask>, String> {
-    Err("suite download is deprecated, use hf API to discover models".to_string())
-}
-
-#[tauri::command]
-pub fn get_model_download_tasks() -> Result<Vec<ModelDownloadTask>, String> {
-    Ok(downloads().lock().map_err(|error| error.to_string())?.clone())
-}
-
-#[tauri::command]
-pub async fn generate_text_stream(
+pub fn import_local_model(
     app: AppHandle,
-    input: GenerateTextInput,
-) -> Result<String, String> {
-    let settings = crate::storage::settings::read_runtime_settings(&app)?;
-    let metrics = crate::build_runtime_metrics(&settings);
-    let model = models::resolve::resolve_llm_model(
-        &settings,
-        &metrics,
-        input.model_id.as_deref(),
-        input.model_path.as_deref(),
-    )?;
-    let runtime = crate::runtime_plan(&metrics, &settings);
-    let max_tokens = input.max_tokens.unwrap_or_else(|| if metrics.pressure == "high" { 512 } else { 1024 });
-    let stream = input.stream.unwrap_or(true);
+    file_name: String,
+    bytes_base64: String,
+) -> Result<ImportModelResult, String> {
+    // Decode base64
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&bytes_base64)
+        .map_err(|e| format!("failed to decode base64: {}", e))?;
 
-    llm::generate_text_stream(
-        app,
-        llm::RuntimeModel {
-            path: model.path.clone(),
-            file: model.file.clone(),
-            tokenizer_repo: model.tokenizer_repo.clone(),
-        },
-        input.messages,
-        runtime,
-        max_tokens,
-        stream,
-        input.image_path,
-    )
-    .await
+    // 保存到 models 目录
+    let models_dir = models::resolve::models_dir(&app)?;
+    fs::create_dir_all(&models_dir).map_err(|e| format!("failed to create dir: {}", e))?;
+
+    let target_path = models_dir.join(&file_name);
+    std::fs::write(&target_path, &bytes)
+        .map_err(|e| format!("failed to write file: {}", e))?;
+
+    let size_gb = bytes.len() as f64 / (1024.0 * 1024.0 * 1024.0);
+
+    Ok(ImportModelResult {
+        label: file_name.clone(),
+        path: target_path.to_string_lossy().to_string(),
+        size_gb,
+    })
 }
+
+// ==================== Ollama 命令 ====================
+
+#[tauri::command]
+pub async fn ensure_ollama_running(app: AppHandle) -> Result<(), String> {
+    llm::ensure_ollama_running(&app)
+}
+
+#[tauri::command]
+pub fn is_ollama_running() -> bool {
+    llm::is_server_running()
+}
+
+#[tauri::command]
+pub fn stop_ollama() {
+    llm::stop_ollama()
+}
+
+#[tauri::command]
+pub fn get_ollama_host() -> &'static str {
+    llm::get_ollama_host()
+}
+
+#[tauri::command]
+pub fn cancel_generation() {
+    llm::cancel_generation();
+}
+
+// ==================== 知识库命令 ====================
 
 #[tauri::command]
 pub async fn get_relevant_knowledge(
@@ -269,7 +164,7 @@ pub async fn get_relevant_knowledge(
     input: ContentAgentInput,
 ) -> Result<Vec<KnowledgePreview>, String> {
     let settings = crate::storage::settings::read_runtime_settings(&app)?;
-    let metrics = crate::build_runtime_metrics(&settings);
+    let metrics = crate::build_runtime_metrics(&settings, &app);
     let items = crate::agent::memory::retrieve_relevant_knowledge(
         &app,
         &settings,
@@ -301,7 +196,7 @@ pub async fn save_knowledge_item(
     app: AppHandle,
     item: KnowledgeItem,
 ) -> Result<KnowledgeItem, String> {
-    let now = models::download::now_stamp();
+    let now = crate::models::resolve::now_stamp();
     let saved = KnowledgeItem {
         id: item.id.or_else(|| Some(format!("knowledge-{}", now))),
         title: item.title,
@@ -311,7 +206,7 @@ pub async fn save_knowledge_item(
     };
     crate::agent::memory::upsert_knowledge_item(&app, &saved)?;
     if let Ok(settings) = crate::storage::settings::read_runtime_settings(&app) {
-        let metrics = crate::build_runtime_metrics(&settings);
+        let metrics = crate::build_runtime_metrics(&settings, &app);
         if let Err(error) =
             crate::agent::memory::ensure_knowledge_embeddings(&app, &settings, &metrics, &[saved.clone()])
                 .await
@@ -330,6 +225,8 @@ pub fn delete_knowledge_item(app: AppHandle, id: String) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     Ok(())
 }
+
+// ==================== Skill 命令 ====================
 
 #[tauri::command]
 pub fn list_skills(app: AppHandle) -> Result<Vec<AgentSkill>, String> {
@@ -359,7 +256,7 @@ pub fn set_skill_enabled(app: AppHandle, id: String, enabled: bool) -> Result<Ag
         .find(|item| item.id == id)
         .ok_or_else(|| "skill not found".to_string())?;
     skill.enabled = enabled;
-    skill.updated_at = Some(models::download::now_stamp());
+    skill.updated_at = Some(crate::models::resolve::now_stamp());
     let normalized = crate::agent::skill::normalize_skill(skill.clone());
     *skill = normalized.clone();
     crate::agent::skill::write_skills(&app, &skills)?;
@@ -410,6 +307,8 @@ pub fn delete_skill(app: AppHandle, id: String) -> Result<(), String> {
     crate::agent::skill::write_skills(&app, &skills)
 }
 
+// ==================== 内存事件命令 ====================
+
 #[tauri::command]
 pub fn add_memory_event(app: AppHandle, input: MemoryEventInput) -> Result<(), String> {
     let connection = crate::storage::db::open_memory_db(&app)?;
@@ -417,21 +316,18 @@ pub fn add_memory_event(app: AppHandle, input: MemoryEventInput) -> Result<(), S
         .execute(
             "insert into memory_events (id, layer, content, source, created_at) values (?1, ?2, ?3, ?4, ?5)",
             params![
-                format!("memory-{}", models::download::now_stamp()),
+                format!("memory-{}", crate::models::resolve::now_stamp()),
                 input.layer,
                 input.content,
                 input.source,
-                models::download::now_stamp()
+                crate::models::resolve::now_stamp()
             ],
         )
         .map_err(|error| error.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
-pub fn cancel_generation() {
-    llm::cancel_generation();
-}
+// ==================== Import Job 命令 ====================
 
 #[tauri::command]
 pub fn list_import_jobs(app: AppHandle) -> Result<Vec<ImportJob>, String> {
@@ -444,7 +340,7 @@ pub fn list_import_jobs(app: AppHandle) -> Result<Vec<ImportJob>, String> {
 pub fn create_import_job(app: AppHandle, source_url: String) -> Result<ImportJob, String> {
     let note_id =
         parse_note_id(&source_url).ok_or_else(|| "Invalid xiaohongshu article URL.".to_string())?;
-    let now = models::download::now_stamp();
+    let now = crate::models::resolve::now_stamp();
 
     let job = ImportJob {
         id: format!("import-{}", now),
@@ -473,7 +369,7 @@ pub fn run_import_job(app: AppHandle, job_id: String) -> Result<ImportJob, Strin
         .ok_or_else(|| "Import job does not exist".to_string())?;
 
     target.stage = JobStage::Failed;
-    target.updated_at = models::download::now_stamp();
+    target.updated_at = crate::models::resolve::now_stamp();
     target.error_message = Some(
         "Real capture backend is not configured: no crawler, OCR pipeline, or model runner exists."
             .to_string(),
@@ -493,12 +389,14 @@ pub fn retry_import_job(app: AppHandle, job_id: String) -> Result<ImportJob, Str
         .ok_or_else(|| "Import job does not exist".to_string())?;
 
     target.stage = JobStage::Queued;
-    target.updated_at = models::download::now_stamp();
+    target.updated_at = crate::models::resolve::now_stamp();
     target.error_message = None;
     let job = target.clone();
     write_import_jobs(&app, &jobs)?;
     Ok(job)
 }
+
+// ==================== 知识库添加命令 ====================
 
 #[tauri::command]
 pub async fn add_knowledge_item(
@@ -507,7 +405,7 @@ pub async fn add_knowledge_item(
     content: String,
     category: String,
 ) -> Result<KnowledgeItem, String> {
-    let now = models::download::now_stamp();
+    let now = crate::models::resolve::now_stamp();
     let item = KnowledgeItem {
         id: Some(format!("knowledge-{}", now)),
         title,
@@ -517,7 +415,7 @@ pub async fn add_knowledge_item(
     };
     crate::agent::memory::upsert_knowledge_item(&app, &item)?;
     if let Ok(settings) = crate::storage::settings::read_runtime_settings(&app) {
-        let metrics = crate::build_runtime_metrics(&settings);
+        let metrics = crate::build_runtime_metrics(&settings, &app);
         if let Err(error) =
             crate::agent::memory::ensure_knowledge_embeddings(&app, &settings, &metrics, &[item.clone()])
                 .await
@@ -527,6 +425,8 @@ pub async fn add_knowledge_item(
     }
     Ok(item)
 }
+
+// ==================== 图片粘贴命令 ====================
 
 #[tauri::command]
 pub fn save_pasted_image(app: AppHandle, input: SavePastedImageInput) -> Result<String, String> {
@@ -539,11 +439,13 @@ pub fn save_pasted_image(app: AppHandle, input: SavePastedImageInput) -> Result<
         .as_deref()
         .map(sanitize_file_name)
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| format!("pasted-{}", models::download::now_stamp()));
+        .unwrap_or_else(|| format!("pasted-{}", crate::models::resolve::now_stamp()));
     let path = dir.join(format!("{file_name}.{extension}"));
     fs::write(&path, bytes).map_err(|error| error.to_string())?;
     Ok(path.to_string_lossy().to_string())
 }
+
+// ==================== 模型状态命令 ====================
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -574,49 +476,10 @@ pub fn get_model_status(app: AppHandle) -> Vec<ModelStatus> {
         .collect()
 }
 
-// Helper functions
-
-pub fn downloads() -> &'static Mutex<Vec<ModelDownloadTask>> {
-    MODEL_DOWNLOADS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-pub fn update_download_task<F>(task_id: &str, update: F)
-where
-    F: FnOnce(&mut ModelDownloadTask),
-{
-    if let Ok(mut tasks) = downloads().lock() {
-        if let Some(task) = tasks.iter_mut().find(|item| item.id == task_id) {
-            update(task);
-        }
-    }
-}
-
-pub fn register_downloaded_model(
-    app: &AppHandle,
-    option: &ModelDownloadOption,
-    target_path: &PathBuf,
-) -> Result<(), String> {
-    let mut settings = crate::storage::settings::read_runtime_settings(app)?;
-    settings.models.retain(|model| model.id != option.id);
-    let tokenizer_repo = models::download::tokenizer_repo_for_option(option);
-    settings.models.push(ModelConfig {
-        id: option.id.clone(),
-        label: option.label.clone(),
-        path: target_path.to_string_lossy().to_string(),
-        params_b: option.params_b,
-        quant: option.quant.clone(),
-        size_gb: option.size_gb,
-        enabled: true,
-        capability: option.capability.clone(),
-        repo: Some(option.repo.clone()),
-        file: Some(models::download::download_filename(option)),
-        tokenizer_repo,
-    });
-    crate::storage::settings::write_runtime_settings(app, &settings)
-}
+// ==================== 辅助函数 ====================
 
 fn read_import_jobs(app: &AppHandle) -> Result<Vec<ImportJob>, String> {
-    let path = models::resolve::import_jobs_path(app)?;
+    let path = crate::models::resolve::import_jobs_path(app)?;
     if !path.is_file() {
         return Ok(Vec::new());
     }
@@ -625,7 +488,7 @@ fn read_import_jobs(app: &AppHandle) -> Result<Vec<ImportJob>, String> {
 }
 
 fn write_import_jobs(app: &AppHandle, jobs: &[ImportJob]) -> Result<(), String> {
-    models::resolve::write_json(&models::resolve::import_jobs_path(app)?, jobs)
+    crate::models::resolve::write_json(&crate::models::resolve::import_jobs_path(app)?, jobs)
 }
 
 fn upsert_imported_skill(app: &AppHandle, skill: AgentSkill) -> Result<AgentSkill, String> {
@@ -642,8 +505,8 @@ fn upsert_imported_skill(app: &AppHandle, skill: AgentSkill) -> Result<AgentSkil
 
 fn create_skill_import_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     let slug = crate::agent::skill::slugify(name);
-    let dir = models::resolve::skill_packages_dir(app)?
-        .join(format!("{}-{}", slug, models::download::now_stamp()));
+    let dir = crate::models::resolve::skill_packages_dir(app)?
+        .join(format!("{}-{}", slug, crate::models::resolve::now_stamp()));
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     Ok(dir)
 }

@@ -12,20 +12,19 @@ mod types;
 
 pub use commands::{
     add_knowledge_item, add_memory_event, cancel_generation, create_import_job,
-    delete_knowledge_item, delete_skill, generate_text_stream, get_account_profile, get_build_info,
-    get_model_files, list_hf_models, get_model_download_options, get_model_download_suites,
-    get_model_download_tasks, get_model_status, get_relevant_knowledge, get_runtime_metrics,
-    get_runtime_settings, get_workspace_snapshot, import_skill_archive, import_skill_folder,
-    list_import_jobs, list_knowledge_items, list_skills, retry_import_job, run_import_job,
+    delete_knowledge_item, delete_skill, ensure_ollama_running, get_account_profile, get_build_info,
+    get_model_status, get_ollama_host, get_relevant_knowledge, get_runtime_metrics,
+    get_runtime_settings, get_workspace_snapshot, import_local_model, import_skill_archive, import_skill_folder,
+    is_ollama_running, list_import_jobs, list_knowledge_items, list_skills, retry_import_job, run_import_job,
     save_account_profile, save_knowledge_item, save_pasted_image, save_runtime_settings,
-    save_skill, set_skill_enabled, start_model_download, start_model_suite_download,
-    update_download_task,
+    save_skill, set_skill_enabled,
+    stop_ollama,
 };
 pub use models::resolve::RuntimeMetrics;
 pub use system::{build_runtime_metrics, runtime_plan};
 pub use types::{
     BuildInfo, ContentAgentInput, DashboardSummary, DraftPreview, ExtractedImport,
-    GenerateTextInput, ImportJob, JobStage, KnowledgePreview, LlmMessage, MemoryEventInput,
+    ImportJob, JobStage, KnowledgePreview, LlmMessage, MemoryEventInput,
     MetricPoint, SavePastedImageInput, SkillImportFile, WorkspaceSnapshot,
 };
 
@@ -50,14 +49,8 @@ pub fn run() {
             get_runtime_settings,
             save_runtime_settings,
             get_runtime_metrics,
-            get_model_download_options,
-            get_model_download_suites,
-            get_model_files,
-            list_hf_models,
-            start_model_download,
-            start_model_suite_download,
-            get_model_download_tasks,
             get_model_status,
+            import_local_model,
             get_relevant_knowledge,
             list_knowledge_items,
             save_knowledge_item,
@@ -75,7 +68,11 @@ pub fn run() {
             list_import_jobs,
             create_import_job,
             run_import_job,
-            retry_import_job
+            retry_import_job,
+            ensure_ollama_running,
+            is_ollama_running,
+            get_ollama_host,
+            stop_ollama
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

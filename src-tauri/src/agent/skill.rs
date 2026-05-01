@@ -89,7 +89,7 @@ fn default_builtin_skill() -> AgentSkill {
         has_scripts: false,
         has_references: false,
         has_assets: false,
-        updated_at: Some(crate::models::download::now_stamp()),
+        updated_at: Some(crate::models::resolve::now_stamp()),
     }
 }
 
@@ -107,7 +107,7 @@ pub fn normalize_skill(mut skill: AgentSkill) -> AgentSkill {
         skill.prompt = first_nonempty_line(&skill.instructions);
     }
     if skill.updated_at.is_none() {
-        skill.updated_at = Some(crate::models::download::now_stamp());
+        skill.updated_at = Some(crate::models::resolve::now_stamp());
     }
     skill
 }
@@ -203,7 +203,7 @@ pub fn build_skill_from_root(root: &PathBuf, source_kind: &str) -> Result<AgentS
         has_scripts: root.join("scripts").is_dir(),
         has_references: root.join("references").is_dir(),
         has_assets: root.join("assets").is_dir(),
-        updated_at: Some(crate::models::download::now_stamp()),
+        updated_at: Some(crate::models::resolve::now_stamp()),
     }))
 }
 

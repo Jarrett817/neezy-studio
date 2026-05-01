@@ -8,3 +8,5 @@
 /sidecar-app/bun-agent*
 /sidecar-app/node_modules/
 /src-tauri/binaries/
+.playwright-mcp
+/src-tauri/resources/**

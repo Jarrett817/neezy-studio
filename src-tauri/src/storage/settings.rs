@@ -10,6 +10,12 @@ pub struct RuntimeSettings {
     pub prefer_low_power: bool,
     pub max_cpu_percent: u8,
     pub models: Vec<crate::models::resolve::ModelConfig>,
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
+}
+
+fn default_ollama_model() -> String {
+    "qwen3".to_string()
 }
 
 impl Default for RuntimeSettings {
@@ -19,6 +25,7 @@ impl Default for RuntimeSettings {
             prefer_low_power: true,
             max_cpu_percent: 95,
             models: Vec::new(),
+            ollama_model: "qwen3".to_string(),
         }
     }
 }

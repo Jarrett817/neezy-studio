@@ -1,5 +1,6 @@
 use crate::models::resolve::RuntimeMetrics;
 use crate::storage::settings::RuntimeSettings;
+use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
@@ -110,7 +111,7 @@ fn bytes_to_gb(value: u64) -> f32 {
     value as f32 / 1024.0 / 1024.0 / 1024.0
 }
 
-pub fn build_runtime_metrics(settings: &RuntimeSettings) -> RuntimeMetrics {
+pub fn build_runtime_metrics(settings: &RuntimeSettings, app: &AppHandle) -> RuntimeMetrics {
     let cpu_count = std::thread::available_parallelism()
         .map(|count| count.get())
         .unwrap_or(1);
@@ -127,6 +128,7 @@ pub fn build_runtime_metrics(settings: &RuntimeSettings) -> RuntimeMetrics {
         .to_string();
 
     let recommended = crate::models::resolve::recommend_model(settings, &pressure, memory.available_gb);
+    let scanned_models = crate::models::resolve::scan_models_dir(app);
     RuntimeMetrics {
         cpu_count,
         cpu_usage_percent,
@@ -144,6 +146,7 @@ pub fn build_runtime_metrics(settings: &RuntimeSettings) -> RuntimeMetrics {
             .unwrap_or_else(|| {
                 "no available model registered; download or add a GGUF model first".to_string()
             }),
+        scanned_models,
     }
 }
 

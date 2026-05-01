@@ -121,7 +121,7 @@ pub fn read_account_profile(app: &AppHandle) -> Result<AccountProfile, String> {
 
 pub fn write_account_profile(app: &AppHandle, profile: &AccountProfile) -> Result<(), String> {
     let connection = open_memory_db(app)?;
-    let now = crate::models::download::now_stamp();
+    let now = crate::models::resolve::now_stamp();
     connection
         .execute(
             "insert into account_profile (id, account_name, track, persona, tone_style, forbidden_words, updated_at)

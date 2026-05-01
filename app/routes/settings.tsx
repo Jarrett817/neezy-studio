@@ -1,27 +1,25 @@
-import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { HardDrive, Settings2 } from "lucide-react"
+import { Settings2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { SectionHeading } from "~/components/section-heading"
+import { OllamaModelBrowser } from "~/components/ollama-model-browser"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
 import { cn } from "~/lib/utils"
-import { ModelBrowser } from "~/components/model-browser"
 import {
-  getModelStatus,
   getAccountProfile,
   getRuntimeMetrics,
   getRuntimeSettings,
   saveRuntimeSettings,
   saveAccountProfile,
+  isOllamaRunning,
   type RuntimeSettings,
   type AccountProfile,
-  type ModelStatus,
 } from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
 
@@ -51,9 +49,9 @@ export default function SettingsRoute() {
     queryFn: getRuntimeMetrics,
     staleTime: 5000,
   })
-  const { data: modelStatus } = useQuery({
-    queryKey: ["model-status"],
-    queryFn: getModelStatus,
+  const { data: ollamaRunning } = useQuery({
+    queryKey: ["ollama-running"],
+    queryFn: isOllamaRunning,
   })
   const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings | null>(null)
 
@@ -86,9 +84,8 @@ export default function SettingsRoute() {
   return (
     <div className="space-y-8 pt-4">
       <AccountSection form={form} onSubmit={onSubmit} isPending={saveProfileMutation.isPending} />
-      <RuntimeSection metrics={metrics} runtimeDraft={runtimeDraft} setRuntimeDraft={setRuntimeDraft} onSave={saveRuntimeMutation} />
-      <LocalModelsSection modelStatus={modelStatus ?? []} />
-      <DownloadSection />
+      <RuntimeSection metrics={metrics} ollamaRunning={ollamaRunning} runtimeDraft={runtimeDraft} setRuntimeDraft={setRuntimeDraft} onSave={saveRuntimeMutation} />
+      <OllamaModelBrowser />
     </div>
   )
 }
@@ -147,13 +144,14 @@ function AccountSection({ form, onSubmit, isPending }: {
   )
 }
 
-function RuntimeSection({ metrics, runtimeDraft, setRuntimeDraft, onSave }: {
+function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft, onSave }: {
   metrics?: {
     cpuCount: number
     availableMemoryGb: number
     totalMemoryGb: number
     pressure: string
   }
+  ollamaRunning?: boolean
   runtimeDraft: RuntimeSettings | null
   setRuntimeDraft: (settings: RuntimeSettings) => void
   onSave: ReturnType<typeof useMutation<RuntimeSettings, Error, RuntimeSettings>>
@@ -161,7 +159,7 @@ function RuntimeSection({ metrics, runtimeDraft, setRuntimeDraft, onSave }: {
   return (
     <section>
       <div className="mb-4 flex items-center gap-2">
-        <HardDrive className="size-5 text-primary" />
+        <Settings2 className="size-5 text-primary" />
         <h1 className="font-display text-2xl font-semibold tracking-tight">运行时</h1>
       </div>
 
@@ -177,6 +175,10 @@ function RuntimeSection({ metrics, runtimeDraft, setRuntimeDraft, onSave }: {
             <span className={cn("size-2 rounded-full", metrics.pressure === "low" ? "bg-green-500" : metrics.pressure === "medium" ? "bg-amber-500" : "bg-red-500")} />
             <span className="text-sm">{metrics.pressure === "low" ? "轻松" : metrics.pressure === "medium" ? "中等" : "高"}</span>
           </div>
+          <div className="flex items-center gap-2">
+            <span className={cn("size-2 rounded-full", ollamaRunning ? "bg-green-500" : "bg-gray-400")} />
+            <span className="text-sm">Ollama {ollamaRunning ? "运行中" : "未运行"}</span>
+          </div>
         </div>
       )}
 
@@ -184,13 +186,13 @@ function RuntimeSection({ metrics, runtimeDraft, setRuntimeDraft, onSave }: {
         <form className="space-y-4 rounded-2xl bg-card/60 p-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="hfEndpoint">HF Endpoint</Label>
+              <Label htmlFor="ollamaModel">Ollama 模型</Label>
               <Input
-                id="hfEndpoint"
-                value={runtimeDraft.hfEndpoint}
-                onChange={(e) => setRuntimeDraft({ ...runtimeDraft, hfEndpoint: e.target.value })}
+                id="ollamaModel"
+                value={runtimeDraft.ollamaModel || ""}
+                onChange={(e) => setRuntimeDraft({ ...runtimeDraft, ollamaModel: e.target.value })}
                 className="bg-transparent"
-                placeholder="https://hf-mirror.com"
+                placeholder="qwen3:1.7b"
               />
             </div>
             <div className="space-y-1.5">
@@ -225,50 +227,6 @@ function RuntimeSection({ metrics, runtimeDraft, setRuntimeDraft, onSave }: {
           </Button>
         </form>
       )}
-    </section>
-  )
-}
-
-function LocalModelsSection({ modelStatus }: { modelStatus: ModelStatus[] }) {
-  return (
-    <section>
-      <div className="mb-4 flex items-center gap-2">
-        <HardDrive className="size-5 text-primary" />
-        <h1 className="font-display text-2xl font-semibold tracking-tight">本地模型</h1>
-      </div>
-
-      <div className="grid gap-2">
-        {modelStatus.map((status) => (
-          <div key={status.optionId} className="rounded-2xl bg-card/60 p-3 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">{status.label}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{status.sizeGb} GB</p>
-            </div>
-            <div className="flex gap-2">
-              <span className={cn("text-xs px-2 py-0.5 rounded-full", status.ggufExists ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                GGUF {status.ggufExists ? "✓" : "✗"}
-              </span>
-              <span className={cn("text-xs px-2 py-0.5 rounded-full", status.tokenizerExists ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                Tokenizer {status.tokenizerExists ? "✓" : "✗"}
-              </span>
-            </div>
-          </div>
-        ))}
-        {modelStatus.length === 0 && <p className="text-sm text-muted-foreground">暂无已下载模型</p>}
-      </div>
-    </section>
-  )
-}
-
-function DownloadSection() {
-  return (
-    <section>
-      <div className="mb-4 flex items-center gap-2">
-        <HardDrive className="size-5 text-primary" />
-        <h1 className="font-display text-2xl font-semibold tracking-tight">下载模型</h1>
-      </div>
-
-      <ModelBrowser />
     </section>
   )
 }

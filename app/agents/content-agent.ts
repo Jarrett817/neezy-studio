@@ -1,16 +1,16 @@
 import {
   addMemoryEvent,
-  generateTextStream,
+  ensureOllamaRunning,
   getAccountProfile,
   getRelevantKnowledge,
   getRuntimeMetrics,
   getRuntimeSettings,
   listSkills,
+  chatWithOllama,
   type AgentExecutionStep,
   type AgentSkill,
   type ContentAgentInput,
   type ContentAgentOutput,
-  type ModelConfig,
 } from "~/services/workspace"
 
 const FALLBACK_SKILLS = [
@@ -23,6 +23,7 @@ const FALLBACK_SKILLS = [
 
 type RunContentAgentOptions = {
   onStepsChange?: (steps: AgentExecutionStep[]) => void
+  onToken?: (token: string) => void
 }
 
 export async function runContentAgent(
@@ -31,6 +32,9 @@ export async function runContentAgent(
 ): Promise<ContentAgentOutput> {
   const startedAt = Date.now()
   const updateSteps = createStepReporter(options.onStepsChange)
+
+  // 确保 Ollama 运行中
+  await ensureOllamaRunning()
 
   updateSteps([
     step("setup", "准备上下文", "读取账号、模型、知识库和技能包", "running"),
@@ -47,7 +51,8 @@ export async function runContentAgent(
     listSkills(),
   ])
 
-  const modelSuite = resolveModelSuite(settings.models, metrics, input)
+  // 获取 Ollama 模型名称
+  const modelName = settings.ollamaModel || "qwen3"
   const enabledSkills = skills.filter((skill) => skill.enabled)
   const useFastPath =
     settings.preferLowPower ||
@@ -75,7 +80,7 @@ export async function runContentAgent(
         return {
           ...item,
           status: "done",
-          detail: `写作模型 ${modelSuite.writer.label}，启用技能 ${enabledSkills.length} 个`,
+          detail: `使用模型 ${modelName}，启用技能 ${enabledSkills.length} 个`,
           elapsedMs: Date.now() - startedAt,
         }
       }
@@ -97,7 +102,7 @@ export async function runContentAgent(
           status: useFastPath ? "skipped" : "running",
           detail: useFastPath
             ? "当前负载较高，跳过单独提纲阶段"
-            : `使用 ${modelSuite.planner.label} 生成提纲`,
+            : `使用 ${modelName} 生成提纲`,
         }
       }
       return item
@@ -107,11 +112,10 @@ export async function runContentAgent(
   const planner =
     useFastPath
       ? ""
-      : await generateTextStream({
-          modelId: modelSuite.planner.id,
-          modelPath: modelSuite.planner.path,
+      : await chatWithOllama({
+          model: modelName,
           maxTokens: 256,
-          stream: false,
+          temperature: 0.7,
           messages: [
             {
               role: "system",
@@ -146,7 +150,7 @@ export async function runContentAgent(
             ? {
                 ...item,
                 status: "running",
-                detail: `使用 ${modelSuite.writer.label} 生成正文`,
+                detail: `使用 ${modelName} 生成正文`,
               }
             : item
       )
@@ -158,19 +162,23 @@ export async function runContentAgent(
           ? {
               ...item,
               status: "running",
-              detail: `快路径直写，使用 ${modelSuite.writer.label}`,
+              detail: `快路径直写，使用 ${modelName}`,
             }
           : item
       )
     )
   }
 
-  const draft = await generateTextStream({
-    modelId: modelSuite.writer.id,
-    modelPath: modelSuite.writer.path,
+  let draft = ""
+  await chatWithOllama({
+    model: modelName,
     maxTokens: metrics.pressure === "high" ? 640 : 1200,
+    temperature: 0.7,
     stream: true,
-    imagePath: input.imagePath,
+    onChunk: (token) => {
+      draft += token
+      options.onToken?.(token)
+    },
     messages: [
       {
         role: "system",
@@ -187,7 +195,6 @@ export async function runContentAgent(
           `知识库:\n${knowledgeText}`,
           `技能:\n${formatSkills(enabledSkills)}`,
           `素材:\n${input.references || "无"}`,
-          input.imagePath ? `图片路径: ${input.imagePath}` : "",
         ]
           .filter(Boolean)
           .join("\n\n"),
@@ -211,7 +218,7 @@ export async function runContentAgent(
           status: useFastPath ? "running" : "running",
           detail: useFastPath
             ? "快路径本地整理标签和结果"
-            : `使用 ${modelSuite.reviewer.label} 生成标签`,
+            : `使用 ${modelName} 生成标签`,
         }
       }
       return item
@@ -220,11 +227,10 @@ export async function runContentAgent(
 
   const review = useFastPath
     ? ""
-    : await generateTextStream({
-        modelId: modelSuite.reviewer.id,
-        modelPath: modelSuite.reviewer.path,
+    : await chatWithOllama({
+        model: modelName,
         maxTokens: 160,
-        stream: false,
+        temperature: 0.3,
         messages: [
           {
             role: "system",
@@ -263,17 +269,10 @@ export async function runContentAgent(
     body: parsed.body,
     tags: buildTags(input, review || parsed.title),
     trace: {
-      modelId: modelSuite.writer.id,
-      modelLabel: modelSuite.writer.label,
-      modelPath: modelSuite.writer.path,
-      selectedBy: input.modelPath ? "manual" : "auto",
-      selectedReason: metrics.recommendedReason,
-      modelSuite: {
-        mode: modelSuite.mode,
-        planner: modelSuite.planner.label,
-        writer: modelSuite.writer.label,
-        reviewer: modelSuite.reviewer.label,
-      },
+      modelId: modelName,
+      modelLabel: modelName,
+      selectedBy: "auto",
+      selectedReason: `使用 Ollama 模型 ${modelName}`,
       knowledgeUsed: knowledge.length,
       totalKnowledge: knowledge.length,
       skills: enabledSkills.map((skill) => skill.name),
@@ -339,97 +338,6 @@ function formatSkills(skills: AgentSkill[], compact = true) {
     .join("\n\n")
 }
 
-type ModelSuite = {
-  mode: "manual-single-model" | "auto-single-model" | "auto-suite"
-  planner: ModelConfig
-  writer: ModelConfig
-  reviewer: ModelConfig
-}
-
-const modelSuiteCache = new Map<string, ModelSuite>()
-
-function getModelSuiteCacheKey(
-  models: ModelConfig[],
-  recommendedModelId: string | undefined,
-  imagePath: string | undefined
-) {
-  const modelIds = models.map((m) => `${m.id}:${m.enabled}:${m.capability}`).join(",")
-  return `${modelIds}|${recommendedModelId ?? ""}|${imagePath ?? ""}`
-}
-
-function resolveModelSuite(
-  models: ModelConfig[],
-  metrics: { recommendedModelId?: string },
-  input: ContentAgentInput
-): ModelSuite {
-  if (!input.modelPath?.trim()) {
-    const cacheKey = getModelSuiteCacheKey(models, metrics.recommendedModelId, input.imagePath)
-    const cached = modelSuiteCache.get(cacheKey)
-    if (cached) return cached
-  }
-
-  if (input.modelPath?.trim()) {
-    const manual: ModelConfig = {
-      id: input.modelId || "manual",
-      label: "手动指定模型",
-      path: input.modelPath,
-      paramsB: inferParams(input.modelPath),
-      quant: "unknown",
-      sizeGb: 0,
-      enabled: true,
-      capability: "text",
-    }
-    return {
-      mode: "manual-single-model",
-      planner: manual,
-      writer: manual,
-      reviewer: manual,
-    }
-  }
-
-  const available = models
-    .filter(
-      (model) =>
-        model.enabled &&
-        (model.capability === "text" || model.capability === "vision") &&
-        model.path.trim()
-    )
-    .sort((a, b) => a.paramsB - b.paramsB)
-
-  const textModels = available.filter((model) => model.capability === "text")
-  const visionModels = available.filter((model) => model.capability === "vision")
-
-  if (!textModels.length && !visionModels.length) {
-    throw new Error("没有可用文本模型。请先在设置页下载或登记 GGUF 文本模型。")
-  }
-
-  const writer =
-    input.imagePath && visionModels.length
-      ? visionModels[0]
-      : textModels.find((model) => model.id === metrics.recommendedModelId) ||
-        textModels[0] ||
-        visionModels[0]
-  const planner = textModels[0] || writer
-  const reviewer =
-    [...textModels]
-      .reverse()
-      .find((model) => model.paramsB <= writer.paramsB) || writer
-
-  const result: ModelSuite = {
-    mode:
-      planner.id === writer.id && writer.id === reviewer.id
-        ? "auto-single-model"
-        : "auto-suite",
-    planner,
-    writer,
-    reviewer,
-  }
-
-  const cacheKey = getModelSuiteCacheKey(models, metrics.recommendedModelId, input.imagePath)
-  modelSuiteCache.set(cacheKey, result)
-  return result
-}
-
 function splitDraft(text: string, fallbackTitle: string) {
   const lines = text
     .trim()
@@ -449,9 +357,4 @@ function buildTags(input: ContentAgentInput, review: string) {
     .map((word) => word.trim())
     .filter((word) => word.length >= 2 && word.length <= 12)
   return [...new Set(words)].slice(0, 5)
-}
-
-function inferParams(path: string) {
-  const match = path.match(/(\d+(?:\.\d+)?)\s*b/i)
-  return match ? Number(match[1]) : 3
 }

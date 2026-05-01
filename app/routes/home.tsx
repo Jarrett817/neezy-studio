@@ -4,9 +4,9 @@ import {
   Clock3,
   FileText,
   Lightbulb,
+  MessageSquare,
   Send,
   Sparkles,
-  TrendingUp,
   Wand2,
 } from "lucide-react"
 import { Link } from "react-router"
@@ -25,7 +25,7 @@ const statCards = [
 const quickActions = [
   { label: "开始创作", href: "/creator", icon: Wand2 },
   { label: "补充知识", href: "/knowledge-base", icon: Lightbulb },
-  { label: "查看效果", href: "/analytics", icon: TrendingUp },
+  { label: "模型对话", href: "/chat", icon: MessageSquare },
 ]
 
 export default function Home() {

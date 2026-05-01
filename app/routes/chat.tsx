@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   Bot,
   MessageSquare,
@@ -14,6 +15,7 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Spinner } from "~/components/ui/spinner"
 import { Textarea } from "~/components/ui/textarea"
+import { FadeIn, PageTransition } from "~/components/animation-effects"
 import { listenTauri } from "~/services/tauri-client"
 import {
   cancelGeneration,
@@ -261,64 +263,89 @@ export default function ChatRoute() {
   const clearChat = () => setMessages([])
 
   return (
-    <div className="flex h-[calc(100svh-80px)] flex-col gap-4">
-      {/* 头部 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <MessageSquare className="size-4" />
+    <PageTransition>
+      <div className="flex flex-col h-full">
+        {/* 头部 */}
+        <div className="flex items-center justify-between pb-4 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <MessageSquare className="size-4" />
+            </div>
+            <span className="text-sm font-semibold">模型对话</span>
+            {metrics?.recommendedModelId && (
+              <span className="text-xs text-muted-foreground">
+                · {metrics.recommendedModelId}
+              </span>
+            )}
           </div>
-          <span className="text-sm font-semibold">模型对话</span>
-          {metrics?.recommendedModelId && (
-            <span className="text-xs text-muted-foreground">
-              · {metrics.recommendedModelId}
-            </span>
+          {messages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs rounded-xl"
+              onClick={clearChat}
+            >
+              <Trash2 className="size-3" />
+              清空
+            </Button>
           )}
         </div>
-        {messages.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-xs rounded-xl"
-            onClick={clearChat}
-          >
-            <Trash2 className="size-3" />
-            清空
-          </Button>
-        )}
-      </div>
 
-      {/* 消息区 */}
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto">
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center py-16 text-center">
-            <Bot className="size-10 text-muted-foreground/30 mb-3" />
-            <h3 className="font-display text-lg font-semibold">直接对话模型</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              直接测试 LLM 对话能力
-            </p>
-          </div>
-        ) : (
-          <>
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            {/* 流式状态指示器 */}
-            {isGenerating && currentPhase && (
-              <div className="flex items-center gap-2 px-4">
-                <Spinner className="size-4 text-primary" />
-                <span className="text-xs text-muted-foreground">
-                  {currentPhaseLabel(currentPhase)}
-                </span>
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </>
-        )}
+        {/* 消息区 */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {messages.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex h-full flex-col items-center justify-center py-16 text-center"
+            >
+              <motion.div
+                animate={{ y: [0, -8, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <Bot className="size-12 text-muted-foreground/30 mb-4" />
+              </motion.div>
+              <h3 className="font-display text-lg font-semibold">直接对话模型</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                直接测试 LLM 对话能力
+              </p>
+            </motion.div>
+          ) : (
+            <div className="space-y-4">
+              <AnimatePresence>
+                {messages.map((message, index) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={{ duration: 0.3, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <MessageBubble message={message} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+          {/* 流式状态指示器 */}
+          {isGenerating && currentPhase && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-2 px-4"
+            >
+              <Spinner className="size-4 text-primary" />
+              <span className="text-xs text-muted-foreground">
+                {currentPhaseLabel(currentPhase)}
+              </span>
+            </motion.div>
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* 输入区 */}
-      <div className="glass-warm rounded-2xl border border-border/10 p-4 space-y-3">
+      <div className="shrink-0 glass-warm rounded-2xl border border-border/10 p-4 space-y-3">
         {/* 系统提示词 */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground shrink-0">系统:</span>
@@ -379,7 +406,7 @@ export default function ChatRoute() {
           )}
         </div>
       </div>
-    </div>
+    </PageTransition>
   )
 }
 

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -12,6 +12,7 @@ pub struct RuntimeMetrics {
     pub pressure: String,
     pub recommended_model_id: Option<String>,
     pub recommended_reason: String,
+    pub scanned_models: Vec<ModelConfig>,
 }
 
 impl Default for RuntimeMetrics {
@@ -24,6 +25,7 @@ impl Default for RuntimeMetrics {
             pressure: "medium".to_string(),
             recommended_model_id: None,
             recommended_reason: "no model registered".to_string(),
+            scanned_models: Vec::new(),
         }
     }
 }
@@ -80,7 +82,7 @@ pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::storage::settings::app_data_dir(app)?.join("models"))
 }
 
-/// 扫描 models/ 目录下的所有 GGUF 文件，返回实时发现的模型列表
+/// 扫描 models/ 目录下的所有 GGUF 文件（平铺），返回实时发现的模型列表
 pub fn scan_models_dir(app: &AppHandle) -> Vec<ModelConfig> {
     let models_path = match models_dir(app) {
         Ok(p) => p,
@@ -93,50 +95,50 @@ pub fn scan_models_dir(app: &AppHandle) -> Vec<ModelConfig> {
 
     let mut models = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(&models_path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
+    // 递归扫描所有 .gguf 文件
+    fn scanRecursive(dir: &Path, models_path: &Path, models: &mut Vec<ModelConfig>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    scanRecursive(&path, models_path, models);
+                } else if path.extension().map(|e| e == "gguf").unwrap_or(false) {
+                    let file_name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
 
-            // 在子目录中找 .gguf 文件
-            if let Ok(sub_entries) = fs::read_dir(&path) {
-                for sub_entry in sub_entries.flatten() {
-                    let file_path = sub_entry.path();
-                    if file_path.extension().map(|e| e == "gguf").unwrap_or(false) {
-                        let file_name = file_path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let folder_name = path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
+                    // 使用相对于 models 目录的路径作为 ID
+                    let relative_path = path.strip_prefix(models_path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| file_name.clone());
+                    let id = relative_path.replace(['/', '\\'], "_").replace(".gguf", "");
 
-                        let size_bytes = fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
-                        let size_gb = size_bytes as f32 / (1024.0 * 1024.0 * 1024.0);
+                    let size_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                    let size_gb = size_bytes as f32 / (1024.0 * 1024.0 * 1024.0);
 
-                        let capability = infer_capability_from_filename(&file_name);
-                        let params_b = infer_params_from_path(&file_name);
-                        let quant = infer_quant_from_filename(&file_name);
+                    let capability = infer_capability_from_filename(&file_name);
+                    let params_b = infer_params_from_path(&file_name);
+                    let quant = infer_quant_from_filename(&file_name);
 
-                        models.push(ModelConfig {
-                            id: folder_name.clone(),
-                            label: folder_name.clone(),
-                            path: file_path.to_string_lossy().to_string(),
-                            params_b,
-                            quant,
-                            size_gb,
-                            enabled: true,
-                            capability,
-                            repo: None,
-                            file: Some(file_name),
-                            tokenizer_repo: None,
-                        });
-                    }
+                    models.push(ModelConfig {
+                        id: id.clone(),
+                        label: file_name.clone(),
+                        path: path.to_string_lossy().to_string(),
+                        params_b,
+                        quant,
+                        size_gb,
+                        enabled: true,
+                        capability,
+                        repo: None,
+                        file: Some(file_name),
+                        tokenizer_repo: None,
+                    });
                 }
             }
         }
     }
+
+    scanRecursive(&models_path, &models_path, &mut models);
 
     models
 }
@@ -292,7 +294,7 @@ pub fn recommend_from_scanned<'a>(
         })
 }
 
-fn infer_params_from_path(path: &str) -> f32 {
+pub fn infer_params_from_path(path: &str) -> f32 {
     let lower = path.to_lowercase();
     if lower.contains("7b") {
         7.0
@@ -303,4 +305,13 @@ fn infer_params_from_path(path: &str) -> f32 {
     } else {
         0.0
     }
+}
+
+pub fn now_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    millis.to_string()
 }

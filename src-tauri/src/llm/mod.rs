@@ -1,19 +1,144 @@
-pub mod model;
-pub mod tokenizer;
+// Ollama 进程管理模块
+// 前端直接通过 HTTP API 与 Ollama 交互（http://127.0.0.1:11434）
 
-use crate::LlmMessage;
-use candle_core::{Device, Tensor};
-use candle_transformers::generation::{LogitsProcessor, Sampling};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex, OnceLock,
-};
-use tauri::{AppHandle, Emitter};
-use tokenizers::Tokenizer;
+use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use tauri::{AppHandle, Manager};
+
+static OLLAMA_PROCESS: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+static OLLAMA_STARTED: AtomicBool = AtomicBool::new(false);
+
+const OLLAMA_HOST: &str = "http://127.0.0.1:11434";
+
+/// 获取 Ollama 二进制文件路径
+pub fn get_ollama_path(app: &AppHandle) -> Result<PathBuf, String> {
+    // 首先检查资源目录（打包的 Ollama）
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        #[cfg(target_os = "windows")]
+        let ollama_exe = resource_dir.join("resources").join("windows").join("ollama.exe");
+        #[cfg(target_os = "macos")]
+        let ollama_exe = resource_dir
+            .join("Contents")
+            .join("Resources")
+            .join("resources")
+            .join("macos")
+            .join("ollama");
+        #[cfg(target_os = "linux")]
+        let ollama_exe = resource_dir.join("resources").join("linux").join("ollama");
+
+        if ollama_exe.exists() {
+            return Ok(ollama_exe);
+        }
+    }
+
+    // 回退：检查可执行文件旁边
+    if let Ok(exe_path) = std::env::current_exe() {
+        #[cfg(target_os = "windows")]
+        let ollama_exe = exe_path.parent().unwrap().join("ollama.exe");
+        #[cfg(not(target_os = "windows"))]
+        let ollama_exe = exe_path.parent().unwrap().join("ollama");
+
+        if ollama_exe.exists() {
+            return Ok(ollama_exe);
+        }
+    }
+
+    // 最后回退：PATH 中的 ollama
+    #[cfg(target_os = "windows")]
+    let ollama_exe = PathBuf::from("ollama.exe");
+    #[cfg(not(target_os = "windows"))]
+    let ollama_exe = PathBuf::from("ollama");
+
+    if ollama_exe.exists() {
+        return Ok(ollama_exe);
+    }
+
+    Err("Ollama binary not found".to_string())
+}
+
+/// 检查 Ollama 服务是否正在运行
+pub fn is_server_running() -> bool {
+    if let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        client.get(OLLAMA_HOST).send().is_ok()
+    } else {
+        false
+    }
+}
+
+/// 检查我们是否已启动过 Ollama
+pub fn is_managed() -> bool {
+    OLLAMA_STARTED.load(Ordering::SeqCst)
+}
+
+/// 启动 Ollama 服务
+pub fn ensure_ollama_running(app: &AppHandle) -> Result<(), String> {
+    // 如果已经在运行，就不用管了
+    if is_server_running() {
+        OLLAMA_STARTED.store(true, Ordering::SeqCst);
+        return Ok(());
+    }
+
+    // 如果我们已经启动了进程但服务没在运行，先清理
+    if OLLAMA_STARTED.load(Ordering::SeqCst) {
+        stop_ollama();
+    }
+
+    let ollama_path = get_ollama_path(app)?;
+    log::info!("Starting Ollama from: {:?}", ollama_path);
+
+    let child = Command::new(&ollama_path)
+        .arg("serve")
+        .spawn()
+        .map_err(|e| format!("failed to start Ollama: {}", e))?;
+
+    let _ = OLLAMA_PROCESS.get_or_init(|| Mutex::new(Some(child)));
+
+    // 等待服务就绪
+    for i in 0..60 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        if is_server_running() {
+            log::info!("Ollama server started successfully");
+            OLLAMA_STARTED.store(true, Ordering::SeqCst);
+            return Ok(());
+        }
+        log::info!("Waiting for Ollama... ({})", i + 1);
+    }
+
+    Err("Ollama failed to start within 60 seconds".to_string())
+}
+
+/// 停止 Ollama 服务
+pub fn stop_ollama() {
+    if let Some(process) = OLLAMA_PROCESS.get() {
+        if let Ok(mut guard) = process.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+    OLLAMA_STARTED.store(false, Ordering::SeqCst);
+    log::info!("Ollama stopped");
+}
+
+/// 获取 Ollama 服务器地址
+pub fn get_ollama_host() -> &'static str {
+    OLLAMA_HOST
+}
+
+/// 取消生成（Ollama 原生支持通过 HTTP 请求取消）
+pub fn cancel_generation() {
+    // Ollama 不需要显式取消，HTTP 请求可以被中断
+    // 保留此函数以保持 API 兼容性
+}
+
+// ============== 为兼容旧代码保留的存根 ==============
+// 注意：embedding 功能已移至前端，通过 Ollama /api/embeddings 实现
 
 #[derive(Clone)]
 pub struct RuntimeModel {
@@ -22,376 +147,13 @@ pub struct RuntimeModel {
     pub tokenizer_repo: Option<String>,
 }
 
-enum ModelType {
-    Llama(Arc<Mutex<candle_transformers::models::quantized_llama::ModelWeights>>),
-    Qwen2(Arc<Mutex<candle_transformers::models::quantized_qwen2::ModelWeights>>),
-    Qwen3(Arc<Mutex<candle_transformers::models::quantized_qwen3::ModelWeights>>),
-}
-
-struct ModelInstance {
-    model_type: ModelType,
-    device: Device,
-    tokenizer: Tokenizer,
-}
-
-static MODEL_CACHE: OnceLock<Mutex<HashMap<String, Arc<Mutex<ModelInstance>>>>> = OnceLock::new();
-static CANCEL_GENERATION: AtomicBool = AtomicBool::new(false);
-
-pub fn preload_model_task(
-    model_path: String,
-    model_file: Option<String>,
-    tokenizer_repo: Option<String>,
-    _use_gpu: bool,
-) {
-    let Some(cache_key) = resolve_model_source(&RuntimeModel {
-        path: model_path.clone(),
-        file: model_file.clone(),
-        tokenizer_repo: tokenizer_repo.clone(),
-    })
-    .ok() else {
-        return;
-    };
-    if cached_model(&cache_key).is_some() {
-        return;
-    }
-    let tokenizer_repo_clone = tokenizer_repo.clone();
-    let _handle = tauri::async_runtime::spawn(async move {
-        match load_model_instance(&cache_key, tokenizer_repo_clone.as_deref()) {
-            Ok(_) => log::info!("preloaded model: {}", cache_key),
-            Err(e) => log::warn!("preload model failed: {}", e),
-        }
-    });
-}
-
-pub async fn generate_text_stream(
-    app: AppHandle,
-    model: RuntimeModel,
-    messages: Vec<LlmMessage>,
-    runtime: serde_json::Value,
-    max_tokens: usize,
-    stream_tokens: bool,
-    _image_path: Option<String>,
-) -> Result<String, String> {
-    CANCEL_GENERATION.store(false, Ordering::SeqCst);
-    let cache_key = resolve_model_source(&model)?;
-    emit_status(
-        &app,
-        "loading-model",
-        &format!("加载本地模型 {}", PathBuf::from(&model.path).display()),
-    );
-    if is_cancelled(&app) {
-        return Ok(String::new());
-    }
-
-    let temperature = runtime
-        .get("temperature")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.7) as f64;
-    let repeat_penalty = runtime
-        .get("repeatPenalty")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(1.1) as f32;
-    let model_arc = load_model_instance(&cache_key, model.tokenizer_repo.as_deref())?;
-    if is_cancelled(&app) {
-        return Ok(String::new());
-    }
-
-    emit_status(&app, "preparing-request", "准备提示词");
-    let prompt = build_prompt(&messages);
-    if is_cancelled(&app) {
-        return Ok(String::new());
-    }
-
-    emit_status(&app, "starting-inference", "模型开始推理");
-    let max_tokens = if max_tokens == 0 { 2048 } else { max_tokens };
-
-    let tokens = {
-        let guard = model_arc.lock().map_err(|e| e.to_string())?;
-        guard
-            .tokenizer
-            .encode(prompt.as_str(), true)
-            .map_err(|e| format!("tokenizer error: {}", e))?
-            .get_ids()
-            .to_vec()
-    };
-    if tokens.is_empty() {
-        return Err("failed to tokenize prompt".to_string());
-    }
-
-    let mut all_tokens = Vec::new();
-    let mut logits_processor = LogitsProcessor::from_sampling(
-        299792458,
-        if temperature <= 0. {
-            Sampling::ArgMax
-        } else {
-            Sampling::All { temperature }
-        },
-    );
-    let mut token_stream = String::new();
-    let eos_token = {
-        let guard = model_arc.lock().map_err(|e| e.to_string())?;
-        guard.tokenizer.get_vocab(true).get("</s>").copied()
-    };
-
-    let first_logits = {
-        let guard = model_arc.lock().map_err(|e| e.to_string())?;
-        let initial_input = Tensor::new(tokens.as_slice(), &guard.device)
-            .map_err(|e| e.to_string())?
-            .unsqueeze(0)
-            .map_err(|e| e.to_string())?;
-        match &guard.model_type {
-            ModelType::Llama(m) => m.lock().unwrap().forward(&initial_input, 0),
-            ModelType::Qwen2(m) => m.lock().unwrap().forward(&initial_input, 0),
-            ModelType::Qwen3(m) => m.lock().unwrap().forward(&initial_input, 0),
-        }
-        .map_err(|e| e.to_string())?
-    };
-    let logits = first_logits.squeeze(0).map_err(|e| e.to_string())?;
-    let mut next_token = logits_processor
-        .sample(&logits)
-        .map_err(|e| e.to_string())?;
-
-    if let Some(t) = {
-        let guard = model_arc.lock().map_err(|e| e.to_string())?;
-        decode_token(&guard.tokenizer, next_token)
-    } {
-        token_stream.push_str(&t);
-        if stream_tokens {
-            let _ = app.emit(
-                "content-agent-event",
-                serde_json::json!({ "type": "token", "text": t }),
-            );
-        }
-    }
-    all_tokens.push(next_token);
-
-    for index in 0..max_tokens {
-        if is_cancelled(&app) {
-            break;
-        }
-        let logits = {
-            let guard = model_arc.lock().map_err(|e| e.to_string())?;
-            let input = Tensor::new(&[next_token], &guard.device)
-                .map_err(|e| e.to_string())?
-                .unsqueeze(0)
-                .map_err(|e| e.to_string())?;
-            match &guard.model_type {
-                ModelType::Llama(m) => m.lock().unwrap().forward(&input, tokens.len() + index),
-                ModelType::Qwen2(m) => m.lock().unwrap().forward(&input, tokens.len() + index),
-                ModelType::Qwen3(m) => m.lock().unwrap().forward(&input, tokens.len() + index),
-            }
-            .map_err(|e| e.to_string())?
-        };
-        let logits = logits.squeeze(0).map_err(|e| e.to_string())?;
-        let logits = if repeat_penalty == 1. {
-            logits
-        } else {
-            let start_at = all_tokens.len().saturating_sub(64);
-            candle_transformers::utils::apply_repeat_penalty(
-                &logits,
-                repeat_penalty,
-                &all_tokens[start_at..],
-            )
-            .map_err(|e| format!("repeat penalty error: {}", e))?
-        };
-        next_token = logits_processor
-            .sample(&logits)
-            .map_err(|e| e.to_string())?;
-        if let Some(t) = {
-            let guard = model_arc.lock().map_err(|e| e.to_string())?;
-            decode_token(&guard.tokenizer, next_token)
-        } {
-            token_stream.push_str(&t);
-            if stream_tokens {
-                let _ = app.emit(
-                    "content-agent-event",
-                    serde_json::json!({ "type": "token", "text": t }),
-                );
-            }
-        }
-        all_tokens.push(next_token);
-        if eos_token == Some(next_token) {
-            break;
-        }
-    }
-    Ok(token_stream)
-}
-
-fn detect_model_type(path: &PathBuf) -> Result<&'static str, String> {
-    let file = File::open(path).map_err(|e| format!("failed to open model: {}", e))?;
-    let mut reader = BufReader::new(file);
-    let gguf = candle_core::quantized::gguf_file::Content::read(&mut reader)
-        .map_err(|e| format!("failed to read GGUF: {}", e))?;
-    if gguf.metadata.contains_key("qwen3.embedding_length") {
-        return Ok("qwen3");
-    }
-    if gguf.metadata.contains_key("qwen2.embedding_length") {
-        return Ok("qwen2");
-    }
-    if gguf.metadata.contains_key("llama.embedding_length") {
-        return Ok("llama");
-    }
-    if gguf.metadata.contains_key("gemma.embedding_length") {
-        return Ok("gemma");
-    }
-    log::warn!(
-        "available metadata keys: {:?}",
-        gguf.metadata.keys().collect::<Vec<_>>()
-    );
-    Err("cannot determine model architecture from GGUF file".to_string())
-}
-
-fn load_model_instance(
-    cache_key: &str,
-    tokenizer_repo: Option<&str>,
-) -> Result<Arc<Mutex<ModelInstance>>, String> {
-    if let Some(instance) = cached_model(cache_key) {
-        return Ok(instance);
-    }
-    let path = PathBuf::from(cache_key);
-    let device = Device::cuda_if_available(0).unwrap_or(Device::Cpu);
-
-    let file = File::open(&path).map_err(|e| format!("failed to open model: {}", e))?;
-    let mut reader = BufReader::new(file);
-    let gguf = candle_core::quantized::gguf_file::Content::read(&mut reader)
-        .map_err(|e| format!("failed to read GGUF: {}", e))?;
-
-    let mut total_size = 0usize;
-    for (_, tensor) in gguf.tensor_infos.iter() {
-        let elem_count = tensor.shape.elem_count();
-        total_size += elem_count * tensor.ggml_dtype.type_size() / tensor.ggml_dtype.block_size();
-    }
-    log::info!(
-        "loaded {} tensors ({:.2}GB)",
-        gguf.tensor_infos.len(),
-        total_size as f64 / 1e9
-    );
-
-    let model_type_str = detect_model_type(&path)?;
-    log::info!("detected model type: {}", model_type_str);
-    let mut reader =
-        BufReader::new(File::open(&path).map_err(|e| format!("failed to reopen: {}", e))?);
-    let model_type = match model_type_str {
-        "qwen3" => ModelType::Qwen3(Arc::new(Mutex::new(
-            candle_transformers::models::quantized_qwen3::ModelWeights::from_gguf(
-                gguf,
-                &mut reader,
-                &device,
-            )
-            .map_err(|e| format!("failed to load qwen3 model: {}", e))?,
-        ))),
-        "qwen2" => ModelType::Qwen2(Arc::new(Mutex::new(
-            candle_transformers::models::quantized_qwen2::ModelWeights::from_gguf(
-                gguf,
-                &mut reader,
-                &device,
-            )
-            .map_err(|e| format!("failed to load qwen2 model: {}", e))?,
-        ))),
-        "llama" => ModelType::Llama(Arc::new(Mutex::new(
-            candle_transformers::models::quantized_llama::ModelWeights::from_gguf(
-                gguf,
-                &mut reader,
-                &device,
-            )
-            .map_err(|e| format!("failed to load llama model: {}", e))?,
-        ))),
-        _ => return Err(format!("unsupported model type: {}", model_type_str)),
-    };
-
-    let tokenizer = tokenizer::load_tokenizer(tokenizer_repo, &path)?;
-    let instance = Arc::new(Mutex::new(ModelInstance {
-        model_type,
-        device,
-        tokenizer,
-    }));
-    let _ = cache_model(cache_key.to_string(), Arc::clone(&instance));
-    Ok(instance)
-}
-
-fn resolve_model_source(model: &RuntimeModel) -> Result<String, String> {
-    let path = PathBuf::from(&model.path);
-    if !path.exists() {
-        return Err(format!("model path does not exist: {}", model.path));
-    }
-    if path.is_file() {
-        Ok(path.to_string_lossy().to_string())
-    } else if path.is_dir() {
-        let file = model
-            .file
-            .clone()
-            .ok_or_else(|| "model file name is missing".to_string())?;
-        Ok(PathBuf::from(&model.path)
-            .join(file)
-            .to_string_lossy()
-            .to_string())
-    } else {
-        Err(format!("model path does not exist: {}", model.path))
-    }
-}
-
-fn cached_model(key: &str) -> Option<Arc<Mutex<ModelInstance>>> {
-    MODEL_CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .ok()?
-        .get(key)
-        .map(|arc| Arc::clone(arc))
-}
-fn cache_model(key: String, model: Arc<Mutex<ModelInstance>>) -> Result<(), String> {
-    MODEL_CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(key, model);
-    Ok(())
-}
-
-fn build_prompt(messages: &[LlmMessage]) -> String {
-    let mut prompt = String::new();
-    for msg in messages {
-        match msg.role.as_str() {
-            "system" => prompt.push_str(&format!("<|system|>\n{}<|end|>\n", msg.content)),
-            "user" => prompt.push_str(&format!("<|user|>\n{}<|end|>\n", msg.content)),
-            "assistant" => prompt.push_str(&format!("<|assistant|>\n{}<|end|>\n", msg.content)),
-            "tool" => prompt.push_str(&format!("<|tool|>\n{}<|end|>\n", msg.content)),
-            _ => prompt.push_str(&format!("{}: {}\n", msg.role, msg.content)),
-        }
-    }
-    prompt.push_str("<|assistant|>\n");
-    prompt
-}
-
-fn decode_token(tokenizer: &Tokenizer, token: u32) -> Option<String> {
-    tokenizer
-        .decode(&[token], true)
-        .ok()
-        .map(|s| s.replace("▁", " "))
-        .filter(|s| !s.is_empty() && s != "<unk>" && s != "<pad>")
-}
-pub fn cancel_generation() {
-    CANCEL_GENERATION.store(true, Ordering::SeqCst);
-}
-fn is_cancelled(app: &AppHandle) -> bool {
-    let cancelled = CANCEL_GENERATION.load(Ordering::SeqCst);
-    if cancelled {
-        emit_status(app, "cancelled", "已停止本轮推理");
-    }
-    cancelled
-}
-fn emit_status(app: &AppHandle, phase: &str, message: &str) {
-    let _ = app.emit(
-        "content-agent-event",
-        serde_json::json!({ "type": "status", "phase": phase, "message": message }),
-    );
-}
-
 pub async fn embed_texts(
     _model: RuntimeModel,
-    texts: Vec<String>,
+    _texts: Vec<String>,
 ) -> Result<Vec<Vec<f32>>, String> {
-    if texts.is_empty() {
-        return Ok(Vec::new());
-    }
-    Ok(texts.iter().map(|_| vec![0.0f32; 768]).collect())
+    // Ollama 的 embedding 需要通过 HTTP API 调用
+    // 前端直接调用 http://127.0.0.1:11434/api/embeddings
+    Err(format!(
+        "embed_texts 已移至前端，请使用 Ollama HTTP API 直接调用 embedding"
+    ))
 }

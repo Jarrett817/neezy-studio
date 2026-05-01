@@ -1,13 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Archive,
-  FolderUp,
-  RefreshCw,
-  Trash2,
-  Wrench,
-  BookOpenText,
-  Image as ImageIcon,
-} from "lucide-react"
+import { Archive, BookOpenText, FolderUp, Image as ImageIcon, RefreshCw, SlidersHorizontal, Trash2, Wrench } from "lucide-react"
 import { useRef } from "react"
 
 import { Button } from "~/components/ui/button"
@@ -24,226 +16,136 @@ export default function SkillsRoute() {
   const queryClient = useQueryClient()
   const archiveInputRef = useRef<HTMLInputElement | null>(null)
   const folderInputRef = useRef<HTMLInputElement | null>(null)
-  const { data: skills = [] } = useQuery({
-    queryKey: ["skills"],
-    queryFn: listSkills,
-  })
+  const { data: skills = [] } = useQuery({ queryKey: ["skills"], queryFn: listSkills })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["skills"] })
 
-  const importArchiveMutation = useMutation({
-    mutationFn: importSkillArchive,
-    onSuccess: refresh,
-  })
-  const importFolderMutation = useMutation({
-    mutationFn: importSkillFolder,
-    onSuccess: refresh,
-  })
+  const importArchiveMutation = useMutation({ mutationFn: importSkillArchive, onSuccess: refresh })
+  const importFolderMutation = useMutation({ mutationFn: importSkillFolder, onSuccess: refresh })
   const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      setSkillEnabled(id, enabled),
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSkillEnabled(id, enabled),
     onSuccess: refresh,
   })
-  const deleteMutation = useMutation({
-    mutationFn: deleteSkill,
-    onSuccess: refresh,
-  })
+  const deleteMutation = useMutation({ mutationFn: deleteSkill, onSuccess: refresh })
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-6 pt-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-base font-semibold">Skill 管理</h1>
-          <p className="text-sm text-muted-foreground">
-            支持导入 skill-creator 生成的标准 Skill 包，接受 `.zip` 或文件夹。
-          </p>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Skill 管理</h1>
+          <p className="mt-1 text-sm text-muted-foreground">扩展 AI 能力边界</p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={refresh}>
-          <RefreshCw className="size-4" />
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={refresh}>
+          <RefreshCw className="size-3.5" />
           刷新
         </Button>
       </div>
 
-      <input
-        ref={archiveInputRef}
-        className="hidden"
-        type="file"
-        accept=".zip,application/zip"
+      <input ref={archiveInputRef} className="hidden" type="file" accept=".zip,application/zip"
         onChange={async (event) => {
           const file = event.target.files?.[0]
           if (!file) return
-          importArchiveMutation.mutate({
-            archiveName: file.name,
-            archiveBase64: await fileToBase64(file),
-          })
+          importArchiveMutation.mutate({ archiveName: file.name, archiveBase64: await fileToBase64(file) })
           event.currentTarget.value = ""
         }}
       />
-      <input
-        ref={folderInputRef}
-        className="hidden"
-        type="file"
-        multiple
-        {...({ webkitdirectory: "" } as Record<string, string>)}
+      <input ref={folderInputRef} className="hidden" type="file" multiple {...({ webkitdirectory: "" } as React.HTMLAttributes<HTMLInputElement>)}
         onChange={async (event) => {
           const files = Array.from(event.target.files ?? [])
           if (!files.length) return
-          const folderName =
-            files[0].webkitRelativePath.split("/")[0] || `skill-${Date.now()}`
-          const payload = await Promise.all(
-            files.map(async (file) => ({
-              relativePath: file.webkitRelativePath || file.name,
-              bytesBase64: await fileToBase64(file),
-            }))
-          )
+          const folderName = files[0].webkitRelativePath.split("/")[0] || `skill-${Date.now()}`
+          const payload = await Promise.all(files.map(async (file) => ({ relativePath: file.webkitRelativePath || file.name, bytesBase64: await fileToBase64(file) })))
           importFolderMutation.mutate({ folderName, files: payload })
           event.currentTarget.value = ""
         }}
       />
 
+      {/* 导入选项 */}
       <div className="grid gap-3 md:grid-cols-2">
-        <button
-          type="button"
-          className="rounded-lg border border-border p-4 text-left transition hover:bg-muted/40"
-          onClick={() => archiveInputRef.current?.click()}
-        >
-          <div className="flex items-center gap-3">
-            <Archive className="size-5" />
+        <button type="button" className="rounded-2xl bg-card/60 p-5 text-left hover:bg-card/80 transition-all group" onClick={() => archiveInputRef.current?.click()}>
+          <div className="flex items-center gap-4">
+            <div className="rounded-xl bg-amber-50 p-3 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400 group-hover:bg-amber-100 transition-colors">
+              <Archive className="size-5" />
+            </div>
             <div>
-              <p className="text-sm font-medium">导入 ZIP Skill 包</p>
-              <p className="text-xs text-muted-foreground">
-                适合上传 skill-creator 打包好的完整技能包。
-              </p>
+              <p className="text-sm font-semibold">导入 ZIP 包</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">skill-creator 打包的完整技能包</p>
             </div>
           </div>
         </button>
-
-        <button
-          type="button"
-          className="rounded-lg border border-border p-4 text-left transition hover:bg-muted/40"
-          onClick={() => folderInputRef.current?.click()}
-        >
-          <div className="flex items-center gap-3">
-            <FolderUp className="size-5" />
+        <button type="button" className="rounded-2xl bg-card/60 p-5 text-left hover:bg-card/80 transition-all group" onClick={() => folderInputRef.current?.click()}>
+          <div className="flex items-center gap-4">
+            <div className="rounded-xl bg-emerald-50 p-3 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 group-hover:bg-emerald-100 transition-colors">
+              <FolderUp className="size-5" />
+            </div>
             <div>
-              <p className="text-sm font-medium">导入文件夹 Skill 包</p>
-              <p className="text-xs text-muted-foreground">
-                直接选择包含 `SKILL.md` 的 skill 文件夹。
-              </p>
+              <p className="text-sm font-semibold">导入文件夹</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">包含 SKILL.md 的 skill 文件夹</p>
             </div>
           </div>
         </button>
       </div>
 
-      {importArchiveMutation.error instanceof Error ? (
-        <p className="text-sm text-destructive">
-          {importArchiveMutation.error.message}
-        </p>
-      ) : null}
-      {importFolderMutation.error instanceof Error ? (
-        <p className="text-sm text-destructive">
-          {importFolderMutation.error.message}
-        </p>
-      ) : null}
-
-      <div className="grid gap-3">
-        {skills.map((skill) => (
-          <SkillCard
-            key={skill.id}
-            skill={skill}
-            busy={
-              toggleMutation.isPending ||
-              deleteMutation.isPending ||
-              importArchiveMutation.isPending ||
-              importFolderMutation.isPending
-            }
-            onToggle={(enabled) => toggleMutation.mutate({ id: skill.id, enabled })}
-            onDelete={() => deleteMutation.mutate(skill.id)}
-          />
-        ))}
-      </div>
+      {/* Skill 列表 */}
+      {skills.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <SlidersHorizontal className="size-10 text-muted-foreground/30 mb-3" />
+          <p className="text-sm font-medium">还没有安装 Skill</p>
+          <p className="mt-1 text-xs text-muted-foreground">导入一个 Skill 包开始扩展能力</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {skills.map((skill) => (
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              busy={toggleMutation.isPending || deleteMutation.isPending || importArchiveMutation.isPending || importFolderMutation.isPending}
+              onToggle={(enabled) => toggleMutation.mutate({ id: skill.id, enabled })}
+              onDelete={() => deleteMutation.mutate(skill.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function SkillCard({
-  skill,
-  busy,
-  onToggle,
-  onDelete,
-}: {
+function SkillCard({ skill, busy, onToggle, onDelete }: {
   skill: AgentSkill
   busy: boolean
   onToggle: (enabled: boolean) => void
   onDelete: () => void
 }) {
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className="rounded-2xl bg-card/60 p-4 group">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">{skill.name}</p>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {skill.sourceKind}
-            </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {skill.fileCount} 个文件
-            </span>
+            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">{skill.sourceKind}</span>
+            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">{skill.fileCount} 个文件</span>
           </div>
           <p className="text-sm text-muted-foreground">{skill.description}</p>
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <FeatureChip show={skill.hasScripts} icon={Wrench} label="scripts" />
-            <FeatureChip
-              show={skill.hasReferences}
-              icon={BookOpenText}
-              label="references"
-            />
-            <FeatureChip show={skill.hasAssets} icon={ImageIcon} label="assets" />
+          <div className="flex flex-wrap gap-2">
+            {skill.hasScripts && <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground flex items-center gap-1"><Wrench className="size-3" /> scripts</span>}
+            {skill.hasReferences && <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground flex items-center gap-1"><BookOpenText className="size-3" /> references</span>}
+            {skill.hasAssets && <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground flex items-center gap-1"><ImageIcon className="size-3" /> assets</span>}
           </div>
-          {skill.skillMdPath ? (
-            <p className="text-xs text-muted-foreground">{skill.skillMdPath}</p>
-          ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={skill.enabled}
-              disabled={busy}
-              onChange={(event) => onToggle(event.target.checked)}
-            />
-            启用
+        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input type="checkbox" checked={skill.enabled} disabled={busy} onChange={(e) => onToggle(e.target.checked)} className="size-3.5 rounded accent-primary" />
+            <span className="text-muted-foreground">启用</span>
           </label>
-          <Button variant="outline" size="icon" disabled={busy} onClick={onDelete}>
+          <Button variant="ghost" size="icon-sm" className="text-red-500 hover:text-red-600" disabled={busy} onClick={onDelete}>
             <Trash2 className="size-4" />
           </Button>
         </div>
       </div>
-
-      <div className="mt-3 rounded-md border border-border/70 bg-muted/20 p-3">
-        <p className="text-xs font-medium text-muted-foreground">SKILL.md 指令摘录</p>
-        <p className="mt-2 whitespace-pre-wrap text-sm">
-          {skill.instructions || skill.prompt || "无可用指令"}
-        </p>
+      <div className="mt-3 rounded-xl bg-muted/30 p-3">
+        <p className="text-xs font-medium text-muted-foreground mb-1">SKILL.md 指令摘录</p>
+        <p className="text-sm whitespace-pre-wrap leading-relaxed">{skill.instructions || skill.prompt || "无可用指令"}</p>
       </div>
     </div>
-  )
-}
-
-function FeatureChip({
-  show,
-  icon: Icon,
-  label,
-}: {
-  show: boolean
-  icon: typeof Wrench
-  label: string
-}) {
-  if (!show) return null
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
-      <Icon className="size-3.5" />
-      {label}
-    </span>
   )
 }
 

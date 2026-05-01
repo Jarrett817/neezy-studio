@@ -40,16 +40,20 @@ export async function runContentAgent(
     step("review", "整理结果", "等待标签和收尾", "pending"),
   ])
 
-  const [profile, settings, metrics, knowledge, skills] = await Promise.all([
+  const [profile, settings, metrics, skills] = await Promise.all([
     getAccountProfile(),
     getRuntimeSettings(),
     getRuntimeMetrics(),
-    getRelevantKnowledge(input),
     listSkills(),
   ])
 
   const modelSuite = resolveModelSuite(settings.models, metrics, input)
   const enabledSkills = skills.filter((skill) => skill.enabled)
+  const useFastPath =
+    settings.preferLowPower ||
+    metrics.pressure !== "low" ||
+    metrics.availableMemoryGb < 8
+  const knowledge = useFastPath ? [] : await getRelevantKnowledge(input)
   const memory = [
     `账号: ${profile.accountName || "未配置"}`,
     `赛道: ${profile.track || "未配置"}`,
@@ -65,11 +69,6 @@ export async function runContentAgent(
         )
         .join("\n\n")
     : "暂无可用知识。"
-  const useFastPath =
-    settings.preferLowPower ||
-    metrics.pressure !== "low" ||
-    metrics.availableMemoryGb < 8
-
   updateSteps((steps) =>
     steps.map((item) => {
       if (item.key === "setup") {
@@ -84,7 +83,9 @@ export async function runContentAgent(
         return {
           ...item,
           status: "done",
-          detail: knowledge.length
+          detail: useFastPath
+            ? "快路径已跳过知识召回，优先尽快出首响"
+            : knowledge.length
             ? `召回 ${knowledge.length} 条知识`
             : "本轮未召回知识，回退到用户输入",
           elapsedMs: Date.now() - startedAt,
@@ -320,8 +321,16 @@ function step(
   return { key, label, detail, status }
 }
 
-function formatSkills(skills: AgentSkill[]) {
+function formatSkills(skills: AgentSkill[], compact = true) {
   if (!skills.length) return FALLBACK_SKILLS.join("\n")
+  if (compact) {
+    return skills
+      .map((skill) => {
+        const hint = skill.prompt?.trim().split("\n")[0] ?? skill.instructions?.trim().split("\n")[0] ?? ""
+        return `${skill.name}: ${hint}`.trim()
+      })
+      .join("\n")
+  }
   return skills
     .map(
       (skill) =>
@@ -337,11 +346,28 @@ type ModelSuite = {
   reviewer: ModelConfig
 }
 
+const modelSuiteCache = new Map<string, ModelSuite>()
+
+function getModelSuiteCacheKey(
+  models: ModelConfig[],
+  recommendedModelId: string | undefined,
+  imagePath: string | undefined
+) {
+  const modelIds = models.map((m) => `${m.id}:${m.enabled}:${m.capability}`).join(",")
+  return `${modelIds}|${recommendedModelId ?? ""}|${imagePath ?? ""}`
+}
+
 function resolveModelSuite(
   models: ModelConfig[],
   metrics: { recommendedModelId?: string },
   input: ContentAgentInput
 ): ModelSuite {
+  if (!input.modelPath?.trim()) {
+    const cacheKey = getModelSuiteCacheKey(models, metrics.recommendedModelId, input.imagePath)
+    const cached = modelSuiteCache.get(cacheKey)
+    if (cached) return cached
+  }
+
   if (input.modelPath?.trim()) {
     const manual: ModelConfig = {
       id: input.modelId || "manual",
@@ -389,7 +415,7 @@ function resolveModelSuite(
       .reverse()
       .find((model) => model.paramsB <= writer.paramsB) || writer
 
-  return {
+  const result: ModelSuite = {
     mode:
       planner.id === writer.id && writer.id === reviewer.id
         ? "auto-single-model"
@@ -398,6 +424,10 @@ function resolveModelSuite(
     writer,
     reviewer,
   }
+
+  const cacheKey = getModelSuiteCacheKey(models, metrics.recommendedModelId, input.imagePath)
+  modelSuiteCache.set(cacheKey, result)
+  return result
 }
 
 function splitDraft(text: string, fallbackTitle: string) {

@@ -1,23 +1,32 @@
 import { useQuery } from "@tanstack/react-query"
-import { Clock3, FileText, LibraryBig, Send } from "lucide-react"
-
-import { SectionHeading } from "~/components/section-heading"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card"
+  BookOpenText,
+  Clock3,
+  FileText,
+  Lightbulb,
+  Send,
+  Sparkles,
+  TrendingUp,
+  Wand2,
+} from "lucide-react"
+import { Link } from "react-router"
+
+import { Button } from "~/components/ui/button"
 import { getBuildInfo } from "~/services/tauri-client"
 import { getWorkspaceSnapshot } from "~/services/workspace"
 
 const statCards = [
-  { key: "draftCount", label: "草稿总数", icon: FileText },
-  { key: "readyToPublishCount", label: "待发布", icon: Send },
-  { key: "knowledgeCount", label: "知识条目", icon: LibraryBig },
-  { key: "weeklyPostCount", label: "本周发文", icon: Clock3 },
+  { key: "draftCount", label: "草稿", icon: FileText, color: "amber" },
+  { key: "readyToPublishCount", label: "待发布", icon: Send, color: "emerald" },
+  { key: "knowledgeCount", label: "知识", icon: BookOpenText, color: "sky" },
+  { key: "weeklyPostCount", label: "本周发文", icon: Clock3, color: "violet" },
 ] as const
+
+const quickActions = [
+  { label: "开始创作", href: "/creator", icon: Wand2 },
+  { label: "补充知识", href: "/knowledge-base", icon: Lightbulb },
+  { label: "查看效果", href: "/analytics", icon: TrendingUp },
+]
 
 export default function Home() {
   const { data: snapshot } = useQuery({
@@ -30,76 +39,92 @@ export default function Home() {
     queryFn: getBuildInfo,
   })
 
-  if (!snapshot || !buildInfo) {
-    return null
-  }
-
   return (
-    <div className="space-y-5">
-      <SectionHeading
-        eyebrow="工作台"
-        title="真实数据概览"
-        description="这里显示本机持久化数据；没有录入就保持为空，不展示占位内容。"
-      />
+    <div className="space-y-8 pt-4">
+      {/* 欢迎区 — 大留白 */}
+      <div className="relative py-8">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="size-4 text-primary" />
+              <span className="text-xs font-medium text-muted-foreground">欢迎回来</span>
+            </div>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">
+              准备好创作了吗？
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              你的 AI 助手已就绪，越用越懂你。
+            </p>
+          </div>
+          <div className="flex gap-2 pt-2 shrink-0">
+            <Button asChild className="gap-2 btn-warm rounded-xl">
+              <Link to="/creator">
+                <Wand2 className="size-4" />
+                创作
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" className="gap-2 rounded-xl">
+              <Link to="/settings">
+                设置
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {/* 统计卡片 — 悬浮无边框 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((item) => {
           const Icon = item.icon
-          const value = snapshot.summary[item.key]
+          const value = snapshot?.summary[item.key] ?? 0
 
           return (
-            <Card key={item.key}>
-              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 py-4">
+            <div
+              key={item.key}
+              className="group relative overflow-hidden rounded-2xl bg-card/60 p-5 hover:bg-card transition-all duration-300"
+            >
+              <div className="flex items-start justify-between">
                 <div>
-                  <CardDescription>{item.label}</CardDescription>
-                  <CardTitle className="mt-1 text-2xl">{value}</CardTitle>
+                  <p className="text-3xl font-semibold tabular-nums">{value}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{item.label}</p>
                 </div>
-                <div className="rounded-md bg-muted p-2">
-                  <Icon className="size-4" />
+                <div className={`rounded-xl p-2.5 opacity-70 group-hover:opacity-100 transition-opacity`}>
+                  <Icon className="size-5" />
                 </div>
-              </CardHeader>
-            </Card>
+              </div>
+            </div>
           )
         })}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>运行状态</CardTitle>
-          <CardDescription>
-            Tauri 命令、模型文件检测和本地持久化是当前真实底座。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-2 text-sm md:grid-cols-2">
-          <StatusRow label="应用名称" value={buildInfo.appName} />
-          <StatusRow label="版本" value={buildInfo.appVersion} />
-          <StatusRow label="目标环境" value={buildInfo.target} />
-          <StatusRow label="构建模式" value={buildInfo.profile} />
-        </CardContent>
-      </Card>
+      {/* 快捷入口 */}
+      <div className="grid grid-cols-3 gap-3">
+        {quickActions.map((action) => {
+          const Icon = action.icon
+          return (
+            <Link
+              key={action.href}
+              to={action.href}
+              className="group flex items-center gap-3 rounded-2xl bg-card/60 px-5 py-4 hover:bg-card transition-all duration-300"
+            >
+              <div className="rounded-xl bg-primary/10 p-2 group-hover:bg-primary/20 transition-colors">
+                <Icon className="size-4 text-primary" />
+              </div>
+              <span className="text-sm font-medium group-hover:translate-x-0.5 transition-transform">
+                {action.label}
+              </span>
+            </Link>
+          )
+        })}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>近期内容</CardTitle>
-          <CardDescription>
-            当前没有真实草稿、知识库或复盘数据。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-sm text-muted-foreground">
-            录入真实数据后，这里会展示对应记录。
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+      {/* 底部状态 */}
+      <div className="flex items-center justify-between pt-4">
+        <span className="text-xs text-muted-foreground">
+          {buildInfo?.appName ?? "Neezy Studio"} · v{buildInfo?.appVersion ?? "1.0"}
+        </span>
+        <span className="text-xs text-muted-foreground">本地运行 · 隐私无忧</span>
+      </div>
     </div>
   )
 }

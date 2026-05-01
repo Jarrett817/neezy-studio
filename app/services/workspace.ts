@@ -144,6 +144,27 @@ export type ModelDownloadSuite = {
   note: string
 }
 
+export type HuggingFaceFile = {
+  path: string
+}
+
+export type HuggingFaceModel = {
+  id: string
+  author: string
+  downloads?: number
+  likes?: number
+  tags: string[]
+  lastModified?: string
+}
+
+export type HfModelListResult = {
+  models: HuggingFaceModel[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
 export type ModelDownloadTask = {
   id: string
   optionId: string
@@ -239,20 +260,36 @@ export async function getModelDownloadSuites(): Promise<ModelDownloadSuite[]> {
   return invokeTauri<ModelDownloadSuite[]>("get_model_download_suites")
 }
 
-export async function startModelDownload(
-  optionId: string
-): Promise<ModelDownloadTask> {
-  return invokeTauri<ModelDownloadTask>("start_model_download", { optionId })
+export async function getModelFiles(repoId: string): Promise<HuggingFaceFile[]> {
+  return invokeTauri<HuggingFaceFile[]>("get_model_files", { repoId })
 }
 
-export async function startModelSuiteDownload(
-  suiteId: string
-): Promise<ModelDownloadTask[]> {
-  return invokeTauri<ModelDownloadTask[]>("start_model_suite_download", { suiteId })
+export async function listHfModels(search?: string, sort?: string, page?: number, pageSize?: number): Promise<HfModelListResult> {
+  return invokeTauri<HfModelListResult>("list_hf_models", { search, sort, page, pageSize })
+}
+
+export async function startModelDownload(
+  optionId: string,
+  repoId: string,
+  filePath: string
+): Promise<ModelDownloadTask> {
+  return invokeTauri<ModelDownloadTask>("start_model_download", { optionId, repoId, filePath })
 }
 
 export async function getModelDownloadTasks(): Promise<ModelDownloadTask[]> {
   return invokeTauri<ModelDownloadTask[]>("get_model_download_tasks")
+}
+
+export async function getModelStatus(): Promise<ModelStatus[]> {
+  return invokeTauri<ModelStatus[]>("get_model_status")
+}
+
+export type ModelStatus = {
+  optionId: string
+  label: string
+  ggufExists: boolean
+  tokenizerExists: boolean
+  sizeGb: number
 }
 
 export async function addKnowledgeItem(input: {

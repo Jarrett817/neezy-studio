@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:crates.io)",
+      "PowerShell(cargo metadata *)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Projects\\\\neezy-studio\" -Force -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object Name, @{N='Size';E={'N/A'}}, LastWriteTime)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Projects\\\\neezy-studio\" -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer } | Select-Object Name, Length, LastWriteTime)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "PowerShell(cargo build *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "PowerShell(Get-Content *)",
+      "WebFetch(domain:hf-mirror.com)",
+      "PowerShell(Get-Content \"D:\\\\Projects\\\\neezy-studio\\\\app\\\\services\\\\workspace.ts\" | Select-Object -First 260 | ForEach-Object { $_.Replace\\(\"`t\", \"TAB\"\\) } | Select-Object -Skip 239 -First 20)",
+      "PowerShell([System.IO.File]::ReadAllLines\\(\"D:\\\\Projects\\\\neezy-studio\\\\app\\\\services\\\\workspace.ts\"\\)[239..259] | ForEach-Object { \"`t\" + $_ })"
+    ]
+  }
+}

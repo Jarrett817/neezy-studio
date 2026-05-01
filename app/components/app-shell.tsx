@@ -1,13 +1,37 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { NavLink } from "react-router"
-import { Activity, Cpu, Database, Sparkles } from "lucide-react"
+import {
+  AlertCircle,
+  BookOpenText,
+  CheckCircle2,
+  ChartNoAxesColumn,
+  Database,
+  Download,
+  FolderInput,
+  Home,
+  MessageSquare,
+  MessageSquareText,
+  Settings2,
+  SlidersHorizontal,
+  Sparkles,
+} from "lucide-react"
 
-import { Badge } from "~/components/ui/badge"
-import { appNavigation } from "~/lib/navigation"
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert"
 import { cn } from "~/lib/utils"
-import { getAccountProfile, getRuntimeMetrics } from "~/services/workspace"
+import { getAccountProfile, getModelStatus, getRuntimeMetrics } from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
+
+const navItems = [
+  { href: "/", label: "工作台", Icon: Home },
+  { href: "/chat", label: "模型对话", Icon: MessageSquare },
+  { href: "/creator", label: "Agent 创作", Icon: MessageSquareText },
+  { href: "/skills", label: "Skill 管理", Icon: SlidersHorizontal },
+  { href: "/knowledge-base", label: "知识库", Icon: BookOpenText },
+  { href: "/analytics", label: "数据复盘", Icon: ChartNoAxesColumn },
+  { href: "/import", label: "数据录入", Icon: FolderInput },
+  { href: "/settings", label: "设置中心", Icon: Settings2 },
+]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const activeAccountName = useAppStore((state) => state.activeAccountName)
@@ -15,89 +39,149 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryKey: ["account-profile"],
     queryFn: getAccountProfile,
   })
-  const { data: metrics } = useQuery({
-    queryKey: ["runtime-metrics"],
-    queryFn: getRuntimeMetrics,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
-  })
   const accountName = activeAccountName || profile?.accountName
 
   return (
-    <div className="min-h-svh bg-background text-foreground">
-      <div className="mx-auto grid min-h-svh max-w-[1440px] grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)]">
-        <aside className="border-b border-border bg-background px-4 py-4 lg:border-r lg:border-b-0">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 text-sm font-semibold">
+    <div className="relative min-h-svh bg-background text-foreground">
+      {/* 侧边栏 — 玻璃拟态 */}
+      <aside className="fixed inset-y-0 left-0 z-30 w-16 group hover:w-56 transition-all duration-300 ease-out">
+        <div className="glass-warm absolute inset-0 border-r border-border/10 flex flex-col">
+          {/* 品牌 */}
+          <div className="flex h-14 items-center gap-2.5 px-3 border-b border-border/5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Sparkles className="size-4" />
-              Neezy Studio
             </div>
-            <p className="text-sm text-muted-foreground">
-              {accountName || "未配置账号"}
-            </p>
+            <span className="font-display text-sm font-semibold tracking-tight opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+              Neezy
+            </span>
           </div>
 
-          <nav className="mt-5 grid gap-1">
-            {appNavigation.map((item) => {
-              const Icon = item.icon
+          {/* 导航 */}
+          <nav className="flex-1 space-y-1 p-2 overflow-hidden">
+            {navItems.map((item) => {
+              const { href, label, Icon } = item
               return (
                 <NavLink
-                  key={item.href}
-                  to={item.href}
-                  end={item.href === "/"}
+                  key={href}
+                  to={href}
+                  end={href === "/"}
                   className={({ isActive }) =>
                     cn(
-                      "rounded-md px-3 py-2 transition-colors",
-                      isActive ? "bg-muted" : "hover:bg-muted/60"
+                      "flex items-center gap-3 h-11 rounded-xl px-3 transition-all duration-200",
+                      "hover:bg-primary/10",
+                      isActive && "bg-primary/10 text-primary"
                     )
                   }
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className="size-4" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{item.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
+                  <Icon className="size-5 shrink-0" />
+                  <span className="text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    {label}
+                  </span>
                 </NavLink>
               )
             })}
           </nav>
-        </aside>
 
-        <div className="min-w-0">
-          <header className="sticky top-0 z-10 border-b border-border bg-background/95">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 lg:px-7">
-              <div>
-                <p className="text-sm text-muted-foreground">本地优先</p>
-                <h1 className="text-base font-semibold">内容 Agent 工作台</h1>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
-                  <Activity className="size-3.5" />
-                  <span>{metrics?.recommendedModelId ?? "--"}</span>
-                  <span>{metrics?.pressure ?? "--"}</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
-                  <Cpu className="size-3.5" />
-                  <span>{metrics ? `${metrics.cpuUsagePercent.toFixed(0)}% CPU` : "--"}</span>
-                  <span>
-                    {metrics ? `${metrics.availableMemoryGb.toFixed(1)} GB RAM` : "--"}
-                  </span>
-                </div>
-                <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1">
-                  <Database className="size-3.5" />
-                  本地记忆
-                </Badge>
-              </div>
+          {/* 底部状态 */}
+          <div className="p-2 border-t border-border/5 overflow-hidden">
+            <div className="flex items-center gap-3 px-3 py-2">
+              <Database className="size-4 shrink-0 text-emerald-500" />
+              <span className="text-xs text-muted-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                本地向量记忆
+              </span>
             </div>
-          </header>
-
-          <main className="px-5 py-5 lg:px-7">{children}</main>
+          </div>
         </div>
+      </aside>
+
+      {/* 主内容区 */}
+      <div className="pl-16">
+        {/* 顶栏 */}
+        <header className="sticky top-0 z-20 h-14 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-sm font-semibold text-muted-foreground">
+              {accountName || "Neezy Studio"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <SetupReminder />
+            <PressureBadge />
+          </div>
+        </header>
+
+        <main className="px-6 pb-8">{children}</main>
       </div>
+    </div>
+  )
+}
+
+function SetupReminder() {
+  const { data: modelStatus } = useQuery({
+    queryKey: ["model-status"],
+    queryFn: getModelStatus,
+  })
+
+  const hasLlm = modelStatus?.some(s => s.ggufExists && !s.label.toLowerCase().includes("embedding"))
+  const hasEmbedding = modelStatus?.some(s => s.label.toLowerCase().includes("embedding") && s.ggufExists)
+
+  // Only show if not fully set up
+  if (hasLlm && hasEmbedding) {
+    return null
+  }
+
+  const missingItems: string[] = []
+  if (!hasLlm) missingItems.push("下载一个 LLM 模型（用于对话和生成）")
+  if (!hasEmbedding) missingItems.push("下载一个 Embedding 模型（用于知识库和向量检索）")
+
+  return (
+    <div className="fixed top-16 right-4 z-50 w-80 shadow-lg">
+      <Alert variant="default" className="border-amber-200 bg-amber-50 dark:bg-amber-950/50">
+        <AlertCircle className="size-4 text-amber-600" />
+        <AlertTitle className="text-amber-800 dark:text-amber-200">初始化提示</AlertTitle>
+        <AlertDescription className="text-amber-700 dark:text-amber-300">
+          <ul className="list-disc list-inside space-y-1 text-xs mt-1">
+            {missingItems.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+          <p className="text-xs mt-2 opacity-70">前往「设置中心」下载模型</p>
+        </AlertDescription>
+      </Alert>
+    </div>
+  )
+}
+
+function PressureBadge() {
+  const { data: metrics } = useQuery({
+    queryKey: ["runtime-metrics"],
+    queryFn: getRuntimeMetrics,
+    staleTime: 10000,
+  })
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
+        metrics?.pressure === "low"
+          ? "bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400"
+          : metrics?.pressure === "medium"
+            ? "bg-amber-50/80 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
+            : "bg-red-50/80 text-red-500 dark:bg-red-950/60 dark:text-red-400"
+      )}
+    >
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          metrics?.pressure === "low"
+            ? "bg-emerald-500"
+            : metrics?.pressure === "medium"
+              ? "bg-amber-500"
+              : "bg-red-500"
+        )}
+      />
+      <span>
+        {metrics?.pressure === "low" ? "轻松" : metrics?.pressure === "medium" ? "负载中" : "高负载"}
+      </span>
     </div>
   )
 }

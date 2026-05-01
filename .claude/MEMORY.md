@@ -1,0 +1,1 @@
+- [简洁编码规范](./skills/concise/skill.md) — 优先CLI、成熟方案，精简回答

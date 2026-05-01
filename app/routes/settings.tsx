@@ -145,12 +145,7 @@ function AccountSection({ form, onSubmit, isPending }: {
 }
 
 function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft, onSave }: {
-  metrics?: {
-    cpuCount: number
-    availableMemoryGb: number
-    totalMemoryGb: number
-    pressure: string
-  }
+  metrics?: { cpuCount: number; availableMemoryGb: number; totalMemoryGb: number; pressure: string }
   ollamaRunning?: boolean
   runtimeDraft: RuntimeSettings | null
   setRuntimeDraft: (settings: RuntimeSettings) => void
@@ -216,13 +211,7 @@ function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft,
             />
             <Label htmlFor="preferLowPower">优先低功耗模式</Label>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2 rounded-xl"
-            disabled={onSave.isPending}
-            onClick={() => onSave.mutate(runtimeDraft)}
-          >
+          <Button type="button" variant="outline" className="gap-2 rounded-xl" disabled={onSave.isPending} onClick={() => onSave.mutate(runtimeDraft)}>
             {onSave.isPending ? "保存中..." : "保存运行时"}
           </Button>
         </form>

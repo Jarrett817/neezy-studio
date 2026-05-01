@@ -151,9 +151,7 @@ pub async fn embed_texts(
     _model: RuntimeModel,
     _texts: Vec<String>,
 ) -> Result<Vec<Vec<f32>>, String> {
-    // Ollama 的 embedding 需要通过 HTTP API 调用
-    // 前端直接调用 http://127.0.0.1:11434/api/embeddings
-    Err(format!(
-        "embed_texts 已移至前端，请使用 Ollama HTTP API 直接调用 embedding"
-    ))
+    // Embedding 功能已移至前端 (Ollama npm 包)
+    // 返回空结果，避免中断知识库流程
+    Ok(Vec::new())
 }

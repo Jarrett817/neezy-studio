@@ -9,17 +9,6 @@ pub struct LlmMessage {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GenerateTextInput {
-    pub model_id: Option<String>,
-    pub model_path: Option<String>,
-    pub messages: Vec<LlmMessage>,
-    pub max_tokens: Option<usize>,
-    pub stream: Option<bool>,
-    pub image_path: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ContentAgentInput {
     pub topic: String,
     pub goal: String,
@@ -81,6 +70,17 @@ pub struct MetricPoint {
     pub label: String,
     pub views: u32,
     pub saves: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePlan {
+    pub max_threads: usize,
+    pub context_size: usize,
+    pub batch_size: usize,
+    pub gpu: serde_json::Value,
+    pub cpu_limit_percent: u8,
+    pub pressure: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]

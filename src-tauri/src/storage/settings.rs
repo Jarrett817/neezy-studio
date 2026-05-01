@@ -6,26 +6,22 @@ use tauri::{AppHandle, Manager};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSettings {
-    pub hf_endpoint: String,
     pub prefer_low_power: bool,
     pub max_cpu_percent: u8,
-    pub models: Vec<crate::models::resolve::ModelConfig>,
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
 }
 
 fn default_ollama_model() -> String {
-    "qwen3".to_string()
+    "qwen3:1.7b".to_string()
 }
 
 impl Default for RuntimeSettings {
     fn default() -> Self {
         Self {
-            hf_endpoint: "https://hf-mirror.com".to_string(),
             prefer_low_power: true,
             max_cpu_percent: 95,
-            models: Vec::new(),
-            ollama_model: "qwen3".to_string(),
+            ollama_model: "qwen3:1.7b".to_string(),
         }
     }
 }
@@ -43,11 +39,39 @@ pub fn read_runtime_settings(app: &AppHandle) -> Result<RuntimeSettings, String>
     if !path.is_file() {
         return Ok(RuntimeSettings::default());
     }
-
     let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
     serde_json::from_str(&raw).map_err(|error| error.to_string())
 }
 
 pub fn write_runtime_settings(app: &AppHandle, settings: &RuntimeSettings) -> Result<(), String> {
-    crate::models::resolve::write_json(&runtime_settings_path(app)?, settings)
+    if let Some(parent) = runtime_settings_path(app)?.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let raw = serde_json::to_string_pretty(settings).map_err(|error| error.to_string())?;
+    fs::write(runtime_settings_path(app)?, raw).map_err(|error| error.to_string())
+}
+
+pub fn now_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    millis.to_string()
+}
+
+pub fn write_json<T: serde::Serialize + ?Sized>(path: &PathBuf, value: &T) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let raw = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
+    fs::write(path, raw).map_err(|error| error.to_string())
+}
+
+pub fn import_jobs_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("import-jobs.json"))
+}
+
+pub fn skill_packages_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("skill-packages"))
 }

@@ -51,27 +51,3 @@ pub fn write_runtime_settings(app: &AppHandle, settings: &RuntimeSettings) -> Re
     fs::write(runtime_settings_path(app)?, raw).map_err(|error| error.to_string())
 }
 
-pub fn now_stamp() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or_default();
-    millis.to_string()
-}
-
-pub fn write_json<T: serde::Serialize + ?Sized>(path: &PathBuf, value: &T) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let raw = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())
-}
-
-pub fn import_jobs_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app_data_dir(app)?.join("import-jobs.json"))
-}
-
-pub fn skill_packages_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app_data_dir(app)?.join("skill-packages"))
-}

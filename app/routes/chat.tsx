@@ -16,10 +16,8 @@ import { Input } from "~/components/ui/input"
 import { Spinner } from "~/components/ui/spinner"
 import { Textarea } from "~/components/ui/textarea"
 import { FadeIn, PageTransition } from "~/components/animation-effects"
-import { listenTauri } from "~/services/tauri-client"
 import {
-  cancelGeneration,
-  generateTextStream,
+  chatWithOllama,
   getRuntimeMetrics,
   getRuntimeSettings,
   type LlmMessage,
@@ -32,10 +30,6 @@ type ChatMessage = {
   content: string
   isStreaming?: boolean
 }
-
-type StreamEvent =
-  | { type: "token"; text?: string }
-  | { type: "status"; phase?: string; message?: string }
 
 const STREAM_FLUSH_INTERVAL_MS = 48
 const FIRST_TOKEN_WARN_MS = 5000
@@ -56,11 +50,6 @@ export default function ChatRoute() {
   const { data: settings } = useQuery({
     queryKey: ["runtime-settings"],
     queryFn: getRuntimeSettings,
-  })
-  const { data: metrics } = useQuery({
-    queryKey: ["runtime-metrics"],
-    queryFn: getRuntimeMetrics,
-    staleTime: 10000,
   })
 
   useEffect(() => {
@@ -90,13 +79,11 @@ export default function ChatRoute() {
   }
 
   const mutation = useMutation({
-    mutationFn: async ({ messages }: { messages: LlmMessage[] }) =>
-      generateTextStream({
-        modelId: metrics?.recommendedModelId,
-        messages,
-        maxTokens: 1024,
-        stream: true,
-      }),
+    mutationFn: async ({ messages }: { messages: LlmMessage[] }) => {
+      const model = settings?.ollamaModel || "qwen3:1.7b"
+      const response = await chatWithOllama({ model, messages })
+      return response
+    },
     onSuccess: () => {
       setIsGenerating(false)
       setCurrentPhase("")
@@ -133,58 +120,6 @@ export default function ChatRoute() {
       activeAssistantId.current = null
     },
   })
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined
-    let disposed = false
-    listenTauri<StreamEvent>("content-agent-event", (event) => {
-      const activeId = activeAssistantId.current
-      if (!activeId) return
-      if (event.payload.type === "token") {
-        const token = event.payload.text
-        if (!token) return
-        if (firstTokenTimerRef.current !== null) {
-          window.clearTimeout(firstTokenTimerRef.current)
-          firstTokenTimerRef.current = null
-        }
-        streamBufferRef.current = `${streamBufferRef.current}${token}`
-        scheduleFlush()
-        return
-      }
-      if (event.payload.type === "status") {
-        const { phase, message } = event.payload
-        if (phase) setCurrentPhase(phase)
-        if (message) {
-          setMessages((items) =>
-            items.map((item) =>
-              item.id === activeId
-                ? { ...item, content: item.content + (message ? `${message}\n` : "") }
-                : item
-            )
-          )
-        }
-      }
-    }).then((handler) => {
-      if (disposed) {
-        handler()
-        return
-      }
-      unlisten = handler
-    })
-    return () => {
-      disposed = true
-      if (flushTimerRef.current !== null) {
-        window.clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
-      if (firstTokenTimerRef.current !== null) {
-        window.clearTimeout(firstTokenTimerRef.current)
-        firstTokenTimerRef.current = null
-      }
-      flushBufferedTokens()
-      unlisten?.()
-    }
-  }, [])
 
   const send = () => {
     const text = input.trim()
@@ -237,7 +172,6 @@ export default function ChatRoute() {
   }
 
   const stop = async () => {
-    await cancelGeneration()
     setIsGenerating(false)
     setCurrentPhase("已停止")
     if (flushTimerRef.current !== null) {
@@ -272,11 +206,6 @@ export default function ChatRoute() {
               <MessageSquare className="size-4" />
             </div>
             <span className="text-sm font-semibold">模型对话</span>
-            {metrics?.recommendedModelId && (
-              <span className="text-xs text-muted-foreground">
-                · {metrics.recommendedModelId}
-              </span>
-            )}
           </div>
           {messages.length > 0 && (
             <Button

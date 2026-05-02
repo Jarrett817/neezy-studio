@@ -15,7 +15,7 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert"
 import { cn } from "~/lib/utils"
-import { getAccountProfile, getModelStatus, getRuntimeMetrics } from "~/services/workspace"
+import { getAccountProfile, listOllamaModels, getRuntimeMetrics } from "~/services/workspace"
 import { useAppStore } from "~/stores/app-store"
 
 const navItems = [
@@ -109,13 +109,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function SetupReminder() {
-  const { data: modelStatus } = useQuery({
-    queryKey: ["model-status"],
-    queryFn: getModelStatus,
+  const { data: models } = useQuery({
+    queryKey: ["ollama-models"],
+    queryFn: listOllamaModels,
   })
 
-  const hasLlm = modelStatus?.some(s => s.ggufExists && !s.label.toLowerCase().includes("embedding"))
-  const hasEmbedding = modelStatus?.some(s => s.label.toLowerCase().includes("embedding") && s.ggufExists)
+  const hasLlm = models?.some(m => !m.name.toLowerCase().includes("embed"))
+  const hasEmbedding = models?.some(m => m.name.toLowerCase().includes("embed"))
 
   // Only show if not fully set up
   if (hasLlm && hasEmbedding) {

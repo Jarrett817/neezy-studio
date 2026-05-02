@@ -79,7 +79,6 @@ export type RuntimePlan = {
 }
 
 export type RuntimeSettings = {
-  hfEndpoint: string
   preferLowPower: boolean
   maxCpuPercent: number
   ollamaModel?: string
@@ -312,7 +311,6 @@ export async function chatWithOllama(options: {
   messages: LlmMessage[]
   temperature?: number
   maxTokens?: number
-  onChunk?: (text: string) => void
 }): Promise<string> {
   const response = await ollama.chat({
     model: options.model,
@@ -329,7 +327,6 @@ export async function chatWithOllama(options: {
   let result = ""
   for await (const part of response) {
     result += part.message.content
-    options.onChunk?.(part.message.content)
   }
   return result
 }

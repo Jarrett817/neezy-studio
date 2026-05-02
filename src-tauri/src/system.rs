@@ -1,5 +1,3 @@
-use crate::models::resolve::RuntimeMetrics;
-use crate::storage::settings::RuntimeSettings;
 use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
@@ -80,7 +78,19 @@ pub fn get_cpu_count() -> usize {
     std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1)
 }
 
-pub fn build_runtime_metrics(_settings: &RuntimeSettings, _app: &AppHandle) -> RuntimeMetrics {
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeMetrics {
+    pub cpu_count: usize,
+    pub cpu_usage_percent: f32,
+    pub total_memory_gb: f32,
+    pub available_memory_gb: f32,
+    pub pressure: String,
+    pub recommended_model_id: Option<String>,
+    pub recommended_reason: String,
+}
+
+pub fn build_runtime_metrics(_app: &AppHandle) -> RuntimeMetrics {
     let cpu_count = get_cpu_count();
     let (total_mem, avail_mem) = memory_snapshot();
     let cpu_usage = cpu_usage_percent();

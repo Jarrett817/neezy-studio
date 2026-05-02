@@ -147,6 +147,7 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
 export function PageTransition({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
+      className="flex flex-col h-full min-h-0"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}

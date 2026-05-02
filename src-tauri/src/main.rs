@@ -24,6 +24,8 @@ fn main() {
             app_lib::save_skill,
             app_lib::set_skill_enabled,
             app_lib::delete_skill,
+            app_lib::import_skill_archive,
+            app_lib::import_skill_folder,
             app_lib::add_memory_event,
             app_lib::save_pasted_image,
         ])

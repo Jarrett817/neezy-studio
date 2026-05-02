@@ -12,7 +12,7 @@ pub fn get_build_info() -> BuildInfo {
 
 #[tauri::command]
 pub async fn ensure_ollama_running(app: AppHandle) -> Result<(), String> {
-    llm::ensure_ollama_running(&app)
+    llm::ensure_ollama_running(&app).await
 }
 
 #[tauri::command]
@@ -116,6 +116,16 @@ pub fn set_skill_enabled(_id: String, _enabled: bool) -> serde_json::Value {
 #[tauri::command]
 pub fn delete_skill(_id: String) -> Result<(), String> {
     Ok(())
+}
+
+#[tauri::command]
+pub fn import_skill_archive(_input: serde_json::Value) -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({}))
+}
+
+#[tauri::command]
+pub fn import_skill_folder(_input: serde_json::Value) -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({}))
 }
 
 #[tauri::command]

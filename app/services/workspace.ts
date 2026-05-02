@@ -1,5 +1,5 @@
-import { invokeTauri } from "~/services/tauri-client"
-import ollama, { type ProgressResponse } from "ollama"
+﻿import { invokeTauri } from "~/services/tauri-client"
+import ollama, { type ChatResponse, type Message } from "ollama/browser"
 
 export type DashboardSummary = {
   draftCount: number
@@ -173,6 +173,10 @@ export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeI
   return invokeTauri<KnowledgeItem>("save_knowledge_item", { item })
 }
 
+export async function addKnowledgeItem(item: Omit<KnowledgeItem, "id">): Promise<KnowledgeItem> {
+  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item: { ...item, id: undefined } })
+}
+
 export async function deleteKnowledgeItem(id: string): Promise<void> {
   return invokeTauri<void>("delete_knowledge_item", { id })
 }
@@ -247,9 +251,16 @@ export async function getOllamaHost(): Promise<string> {
   return invokeTauri<string>("get_ollama_host")
 }
 
-// ==================== Ollama 模型管理（使用 npm 包） ====================
+// ==================== Ollama 模型管理（使用 ollama/browser） ====================
 
 export type OllamaModel = Awaited<ReturnType<typeof ollama.list>>["models"][number]
+
+export type ProgressResponse = {
+  status: string
+  digest: string
+  total: number
+  completed: number
+}
 
 // 列出已下载的模型
 export async function listOllamaModels(): Promise<OllamaModel[]> {
@@ -305,30 +316,41 @@ export async function generateWithOllama(options: {
   return result
 }
 
-// 聊天补全（流式）
+// 聊天补全（流式，使用回调实时输出）
 export async function chatWithOllama(options: {
   model: string
   messages: LlmMessage[]
   temperature?: number
   maxTokens?: number
-}): Promise<string> {
+  onChunk?: (content: string, thinking: string) => void
+}): Promise<{ content: string; thinking: string }> {
   const response = await ollama.chat({
     model: options.model,
-    messages: options.messages.map(m => ({
-      role: m.role as "system" | "user" | "assistant",
-      content: m.content,
-    })),
+    messages: options.messages as ChatResponse["message"]["role"][],
     stream: true,
     options: {
       temperature: options.temperature ?? 0.7,
       num_predict: options.maxTokens ?? 1024,
     },
   })
-  let result = ""
+  let content = ""
+  let thinking = ""
   for await (const part of response) {
-    result += part.message.content
+    // ChatResponse.message.content 是实际回复文本
+    // ChatResponse.message.thinking 是 qwen3 等模型的思考过程
+    const chunk = part.message.content || ""
+    const chunkThinking = part.message.thinking || ""
+    if (chunk) {
+      content += chunk
+    }
+    if (chunkThinking) {
+      thinking += chunkThinking
+    }
+    if (chunk || chunkThinking) {
+      options.onChunk?.(content, thinking)
+    }
   }
-  return result
+  return { content, thinking }
 }
 
 // 获取 embedding

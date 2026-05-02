@@ -120,6 +120,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
+ "tokio",
  "windows-sys 0.61.2",
  "zip",
 ]

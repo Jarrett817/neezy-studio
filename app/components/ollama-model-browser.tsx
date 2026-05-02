@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ChevronDown, ChevronUp, Loader2, RefreshCw, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronUp, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { Alert, AlertDescription } from "~/components/ui/alert"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent } from "~/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog"
@@ -23,22 +22,17 @@ import {
   deleteOllamaModel,
   showOllamaModel,
   isOllamaRunning,
-  ensureOllamaRunning,
   type OllamaModel,
 } from "~/services/workspace"
 
-// 常用模型列表（快速选择）
+// 常用模型列表（快速选择）- 端侧部署首选
 const RECOMMENDED_MODELS = [
-  { name: "qwen3:1.7b", label: "Qwen3 1.7B", desc: "轻量中文模型，适合低配置机器", size: "~1.2GB" },
-  { name: "qwen3:4b", label: "Qwen3 4B", desc: "均衡中文模型，16GB 内存推荐", size: "~2.6GB" },
-  { name: "qwen3:8b", label: "Qwen3 8B", desc: "高质量中文模型，需要高配置", size: "~4.5GB" },
-  { name: "qwen2.5:3b", label: "Qwen2.5 3B", desc: "通用中文模型", size: "~2.2GB" },
-  { name: "llama3.2:3b", label: "Llama 3.2 3B", desc: "英文为主，通用能力强", size: "~2.1GB" },
-  { name: "gemma2:2b", label: "Gemma 2 2B", desc: "轻量级 Google 模型", size: "~1.6GB" },
-  { name: "phi3:latest", label: "Phi-3", desc: "微软轻量模型", size: "~2.3GB" },
-  { name: "mistral:latest", label: "Mistral", desc: "欧洲开源模型", size: "~4.1GB" },
-  { name: "qwen2.5-vl:3b", label: "Qwen2.5-VL 3B", desc: "视觉模型，可理解图片", size: "~2.2GB" },
-  { name: "nomic-embed-text", label: "Nomic Embed Text", desc: "Embedding 模型，用于知识库", size: "~274MB" },
+  { name: "qwen2.5:1.5b", label: "Qwen2.5 1.5B", desc: "轻量中文模型，内存 4GB 可跑", size: "~1GB" },
+  { name: "qwen2.5:3b", label: "Qwen2.5 3B", desc: "均衡中文模型，8GB 内存推荐", size: "~2GB" },
+  { name: "llama3.2:3b", label: "Llama 3.2 3B", desc: "英文强项，通用能力强", size: "~2GB" },
+  { name: "gemma2:2b", label: "Gemma 2 2B", desc: "Google 轻量模型", size: "~1.6GB" },
+  { name: "phi3:latest", label: "Phi-3 3.8B", desc: "微软轻量模型，中英文尚可", size: "~2.3GB" },
+  { name: "nomic-embed-text:latest", label: "Nomic Embed", desc: "Embedding 向量模型，用于知识库检索", size: "~274MB" },
 ]
 
 type PullProgress = {
@@ -61,18 +55,6 @@ export function OllamaModelBrowser() {
     queryKey: ["ollama-running"],
     queryFn: isOllamaRunning,
     refetchInterval: 5000,
-  })
-
-  // 启动 Ollama
-  const startOllamaMutation = useMutation({
-    mutationFn: ensureOllamaRunning,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ollama-running"] })
-      toast.success("Ollama 已启动")
-    },
-    onError: (err: Error) => {
-      toast.error(`启动 Ollama 失败: ${err.message}`)
-    },
   })
 
   // 获取模型列表
@@ -151,23 +133,6 @@ export function OllamaModelBrowser() {
 
   return (
     <div className="space-y-6">
-      {/* Ollama 状态检查 */}
-      {!ollamaRunning && !checkingOllama && (
-        <Alert>
-          <AlertTriangle className="size-4" />
-          <AlertDescription className="flex items-center justify-between">
-            <span>Ollama 服务未运行</span>
-            <Button
-              size="sm"
-              onClick={() => startOllamaMutation.mutate()}
-              disabled={startOllamaMutation.isPending}
-            >
-              {startOllamaMutation.isPending ? "启动中..." : "启动 Ollama"}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {/* 快速下载推荐模型 */}
       <section>
         <div className="mb-4 flex items-center justify-between">

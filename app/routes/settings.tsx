@@ -3,6 +3,7 @@ import { Settings2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
 
 import { SectionHeading } from "~/components/section-heading"
 import { OllamaModelBrowser } from "~/components/ollama-model-browser"

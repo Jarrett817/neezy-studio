@@ -6,6 +6,7 @@ use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
+use tokio::time::{sleep, Duration};
 
 static OLLAMA_PROCESS: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 static OLLAMA_STARTED: AtomicBool = AtomicBool::new(false);
@@ -58,15 +59,16 @@ pub fn get_ollama_path(app: &AppHandle) -> Result<PathBuf, String> {
     Err("Ollama binary not found".to_string())
 }
 
-/// 检查 Ollama 服务是否正在运行
+/// 检查 Ollama 服务是否正在运行（同步版本）
 pub fn is_server_running() -> bool {
-    if let Ok(client) = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build()
-    {
-        client.get(OLLAMA_HOST).send().is_ok()
-    } else {
-        false
+    // 使用 std::net::TcpStream 测试连接，避免 reqwest 阻塞问题
+    use std::net::TcpStream;
+    match TcpStream::connect_timeout(
+        &"127.0.0.1:11434".parse().unwrap(),
+        std::time::Duration::from_secs(2),
+    ) {
+        Ok(_) => true,
+        Err(_) => false,
     }
 }
 
@@ -75,40 +77,48 @@ pub fn is_managed() -> bool {
     OLLAMA_STARTED.load(Ordering::SeqCst)
 }
 
-/// 启动 Ollama 服务
-pub fn ensure_ollama_running(app: &AppHandle) -> Result<(), String> {
+/// 启动 Ollama 服务（异步）
+pub async fn ensure_ollama_running(app: &AppHandle) -> Result<(), String> {
+    log::info!("[Ollama] ensure_ollama_running 被调用");
+
     // 如果已经在运行，就不用管了
+    log::info!("[Ollama] 检查服务是否运行中...");
     if is_server_running() {
+        log::info!("[Ollama] 服务已在运行");
         OLLAMA_STARTED.store(true, Ordering::SeqCst);
         return Ok(());
     }
 
     // 如果我们已经启动了进程但服务没在运行，先清理
     if OLLAMA_STARTED.load(Ordering::SeqCst) {
+        log::info!("[Ollama] 清理之前的进程");
         stop_ollama();
     }
 
     let ollama_path = get_ollama_path(app)?;
-    log::info!("Starting Ollama from: {:?}", ollama_path);
+    log::info!("[Ollama] 找到 Ollama 路径: {:?}", ollama_path);
 
+    log::info!("[Ollama] 正在启动 Ollama...");
     let child = Command::new(&ollama_path)
         .arg("serve")
         .spawn()
-        .map_err(|e| format!("failed to start Ollama: {}", e))?;
+        .map_err(|e| format!("[Ollama] 启动失败: {}", e))?;
 
+    log::info!("[Ollama] 进程已 spawn，PID: {:?}", child.id());
     let _ = OLLAMA_PROCESS.get_or_init(|| Mutex::new(Some(child)));
 
-    // 等待服务就绪
+    // 等待服务就绪（使用异步睡眠）
     for i in 0..60 {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        log::info!("[Ollama] 等待服务就绪... ({})", i + 1);
+        sleep(Duration::from_secs(1)).await;
         if is_server_running() {
-            log::info!("Ollama server started successfully");
+            log::info!("[Ollama] 服务启动成功!");
             OLLAMA_STARTED.store(true, Ordering::SeqCst);
             return Ok(());
         }
-        log::info!("Waiting for Ollama... ({})", i + 1);
     }
 
+    log::error!("[Ollama] 60秒内未能启动");
     Err("Ollama failed to start within 60 seconds".to_string())
 }
 

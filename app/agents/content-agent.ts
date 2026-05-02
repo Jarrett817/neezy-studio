@@ -109,9 +109,9 @@ export async function runContentAgent(
     })
   )
 
-  const planner =
+  const plannerResult =
     useFastPath
-      ? ""
+      ? { content: "", thinking: undefined }
       : await chatWithOllama({
           model: modelName,
           maxTokens: 256,
@@ -135,6 +135,7 @@ export async function runContentAgent(
             },
           ],
         })
+  const planner = plannerResult.content
 
   if (!useFastPath) {
     updateSteps((steps) =>
@@ -169,16 +170,10 @@ export async function runContentAgent(
     )
   }
 
-  let draft = ""
-  await chatWithOllama({
+  let draftResult = await chatWithOllama({
     model: modelName,
     maxTokens: metrics.pressure === "high" ? 640 : 1200,
     temperature: 0.7,
-    stream: true,
-    onChunk: (token) => {
-      draft += token
-      options.onToken?.(token)
-    },
     messages: [
       {
         role: "system",
@@ -201,6 +196,7 @@ export async function runContentAgent(
       },
     ],
   })
+  const draft = draftResult.content
 
   updateSteps((steps) =>
     steps.map((item) => {
@@ -225,8 +221,8 @@ export async function runContentAgent(
     })
   )
 
-  const review = useFastPath
-    ? ""
+  const reviewResult = useFastPath
+    ? { content: "", thinking: undefined }
     : await chatWithOllama({
         model: modelName,
         maxTokens: 160,
@@ -243,6 +239,7 @@ export async function runContentAgent(
           },
         ],
       })
+  const review = reviewResult.content
 
   const parsed = splitDraft(draft, input.topic)
   await addMemoryEvent({

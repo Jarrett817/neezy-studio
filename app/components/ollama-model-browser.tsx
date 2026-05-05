@@ -1,11 +1,17 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, ChevronUp, Loader2, RefreshCw, Trash2 } from "lucide-react"
+import { ChevronDown, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
 import { Card, CardContent } from "~/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog"
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "~/components/ui/carousel"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,27 +19,57 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import { Input } from "~/components/ui/input"
-import { Label } from "~/components/ui/label"
 import { Progress } from "~/components/ui/progress"
 import { cn } from "~/lib/utils"
 import {
   listOllamaModels,
   pullOllamaModel,
   deleteOllamaModel,
-  showOllamaModel,
   isOllamaRunning,
-  type OllamaModel,
 } from "~/services/workspace"
 
-// 常用模型列表（快速选择）- 端侧部署首选
-const RECOMMENDED_MODELS = [
-  { name: "qwen2.5:1.5b", label: "Qwen2.5 1.5B", desc: "轻量中文模型，内存 4GB 可跑", size: "~1GB" },
-  { name: "qwen2.5:3b", label: "Qwen2.5 3B", desc: "均衡中文模型，8GB 内存推荐", size: "~2GB" },
-  { name: "llama3.2:3b", label: "Llama 3.2 3B", desc: "英文强项，通用能力强", size: "~2GB" },
-  { name: "gemma2:2b", label: "Gemma 2 2B", desc: "Google 轻量模型", size: "~1.6GB" },
-  { name: "phi3:latest", label: "Phi-3 3.8B", desc: "微软轻量模型，中英文尚可", size: "~2.3GB" },
-  { name: "nomic-embed-text:latest", label: "Nomic Embed", desc: "Embedding 向量模型，用于知识库检索", size: "~274MB" },
-]
+// 模型分级（按家用电脑性能分类）
+// 原则：使用各家族最新最好的端侧模型，不重复推荐旧版本
+// 低配：集成显卡/旧独显，4GB RAM，推荐 1GB 以内模型
+// 中配：入门独显 GTX 1060+ · 8GB RAM，推荐 2-3GB 模型
+// 高配：RTX 3060+ · 16GB RAM，推荐 4GB+ 模型
+const MODEL_TIERS = {
+  low: {
+    label: "轻量级",
+    desc: "集成显卡 · 4GB RAM",
+    icon: "🪁",
+    models: [
+      { name: "gemma3:1b", label: "Gemma 3 1B", desc: "Google 最新 1B 模型", size: "~800MB" },
+      { name: "qwen3:0.6b", label: "Qwen3 0.6B", desc: "阿里最小体积模型", size: "~400MB" },
+      { name: "nomic-embed-text:latest", label: "Nomic Embed", desc: "Embedding 向量模型，用于知识库检索", size: "~274MB" },
+    ],
+  },
+  mid: {
+    label: "均衡级",
+    desc: "入门独显 GTX 1060+ · 8GB RAM",
+    icon: "⚖️",
+    models: [
+      { name: "qwen3:1.7b", label: "Qwen3 1.7B", desc: "阿里新一代主流模型，支持 Agent", size: "~1.2GB" },
+      { name: "gemma4:1b", label: "Gemma 4 1B", desc: "Google 最新 1B 模型", size: "~900MB" },
+      { name: "llama3.2:3b", label: "Llama 3.2 3B", desc: "英文强项，通用能力强", size: "~2GB" },
+      { name: "phi3:latest", label: "Phi-3 3.8B", desc: "微软轻量模型", size: "~2.3GB" },
+    ],
+  },
+  high: {
+    label: "高性能",
+    desc: "RTX 3060+ · 16GB RAM",
+    icon: "🚀",
+    models: [
+      { name: "qwen3:4b", label: "Qwen3 4B", desc: "阿里新一代均衡模型，支持 Agent", size: "~2.4GB" },
+      { name: "gemma4:4b", label: "Gemma 4 4B", desc: "Google 最新均衡模型", size: "~2.5GB" },
+      { name: "qwen2.5:7b", label: "Qwen2.5 7B", desc: "强力中文模型，16GB 内存推荐", size: "~4GB" },
+      { name: "llama3.2:7b", label: "Llama 3.2 7B", desc: "英文强力模型", size: "~4GB" },
+      { name: "qwen2.5:14b", label: "Qwen2.5 14B", desc: "超大中文模型", size: "~8GB" },
+      { name: "codellama:7b", label: "Code Llama 7B", desc: "代码专用模型", size: "~4GB" },
+      { name: "gemma2:9b", label: "Gemma 2 9B", desc: "Google 主力模型", size: "~5GB" },
+    ],
+  },
+}
 
 type PullProgress = {
   status: string
@@ -47,8 +83,6 @@ export function OllamaModelBrowser() {
   const [customModel, setCustomModel] = useState("")
   const [pullingModel, setPullingModel] = useState<string | null>(null)
   const [pullProgress, setPullProgress] = useState<PullProgress | null>(null)
-  const [expandedModel, setExpandedModel] = useState<string | null>(null)
-  const [modelDetails, setModelDetails] = useState<Map<string, Awaited<ReturnType<typeof showOllamaModel>>>>(new Map())
 
   // 检查 Ollama 是否运行
   const { data: ollamaRunning, isLoading: checkingOllama } = useQuery({
@@ -98,15 +132,6 @@ export function OllamaModelBrowser() {
     },
   })
 
-  // 查看模型详情
-  const viewDetailsMutation = useMutation({
-    mutationFn: showOllamaModel,
-    onSuccess: (details, modelName) => {
-      setModelDetails(prev => new Map(prev).set(modelName, details))
-      setExpandedModel(modelName)
-    },
-  })
-
   const formatSize = (bytes: number) => {
     if (bytes >= 1024 * 1024 * 1024) {
       return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
@@ -114,16 +139,6 @@ export function OllamaModelBrowser() {
       return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
     }
     return `${(bytes / 1024).toFixed(0)} KB`
-  }
-
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString("zh-CN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
   }
 
   // 计算下载进度百分比
@@ -151,75 +166,89 @@ export function OllamaModelBrowser() {
           </Button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {RECOMMENDED_MODELS.map((model) => {
-            const isInstalled = models?.some(m => m.name === model.name || m.name === `ollama/${model.name}`)
-            const isPulling = pullingModel === model.name
-            const isPullingThisModel = pullingModel !== null && pullingModel !== model.name
+        {/* 按性能等级分类的模型下载 */}
+        <div className="space-y-6">
+          {(Object.entries(MODEL_TIERS) as [keyof typeof MODEL_TIERS, typeof MODEL_TIERS.low][]).map(([tier, tierData]) => (
+            <div key={tier}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">{tierData.icon}</span>
+                <div>
+                  <h3 className="font-medium">{tierData.label}</h3>
+                  <p className="text-xs text-muted-foreground">{tierData.desc}</p>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {tierData.models.map((model) => {
+                  const isInstalled = models?.some(m => m.name === model.name || m.name === `ollama/${model.name}`)
+                  const isPulling = pullingModel === model.name
+                  const isPullingThisModel = pullingModel !== null && pullingModel !== model.name
 
-            return (
-              <Card
-                key={model.name}
-                className={cn(
-                  "transition-all",
-                  isInstalled && "border-green-500 bg-green-50/50",
-                )}
-              >
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium">{model.label}</p>
-                      <p className="text-xs text-muted-foreground">{model.size}</p>
-                    </div>
-                    {isInstalled && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                        已安装
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{model.desc}</p>
-                  <div className="flex gap-2 pt-1">
-                    {isPulling ? (
-                      <div className="flex-1 space-y-1">
-                        <Progress value={progressPercent} className="h-1.5" />
-                        <p className="text-xs text-muted-foreground text-center">
-                          {pullProgress?.status || "下载中..."} {progressPercent}%
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant={isInstalled ? "outline" : "default"}
-                          className="flex-1"
-                          disabled={isPullingThisModel || !ollamaRunning}
-                          onClick={() => pullModelMutation.mutate(model.name)}
-                        >
-                          {isPullingThisModel ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : isInstalled ? (
-                            "重新下载"
-                          ) : (
-                            "下载"
+                  return (
+                    <Card
+                      key={model.name}
+                      className={cn(
+                        "transition-all",
+                        isInstalled && "border-green-500 bg-green-50/50 dark:bg-green-950/20",
+                      )}
+                    >
+                      <CardContent className="p-4 space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium">{model.label}</p>
+                            <p className="text-xs text-muted-foreground">{model.size}</p>
+                          </div>
+                          {isInstalled && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                              已安装
+                            </span>
                           )}
-                        </Button>
-                        {isInstalled && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deleteModelMutation.mutate(model.name)}
-                            disabled={deleteModelMutation.isPending}
-                          >
-                            <Trash2 className="size-4 text-destructive" />
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{model.desc}</p>
+                        <div className="flex gap-2 pt-1">
+                          {isPulling ? (
+                            <div className="flex-1 space-y-1">
+                              <Progress value={progressPercent} className="h-1.5" />
+                              <p className="text-xs text-muted-foreground text-center">
+                                {pullProgress?.status || "下载中..."} {progressPercent}%
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant={isInstalled ? "outline" : "default"}
+                                className="flex-1"
+                                disabled={isPullingThisModel || !ollamaRunning}
+                                onClick={() => pullModelMutation.mutate(model.name)}
+                              >
+                                {isPullingThisModel ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : isInstalled ? (
+                                  "重新下载"
+                                ) : (
+                                  "下载"
+                                )}
+                              </Button>
+                              {isInstalled && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => deleteModelMutation.mutate(model.name)}
+                                  disabled={deleteModelMutation.isPending}
+                                >
+                                  <Trash2 className="size-4 text-destructive" />
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -273,77 +302,28 @@ export function OllamaModelBrowser() {
         )}
 
         {models && models.length > 0 && (
-          <div className="space-y-2">
-            {models.map((model) => (
-              <Card key={model.name} className="overflow-hidden">
-                <div
-                  className="p-4 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => {
-                    if (expandedModel === model.name) {
-                      setExpandedModel(null)
-                    } else if (!modelDetails.has(model.name)) {
-                      viewDetailsMutation.mutate(model.name)
-                    } else {
-                      setExpandedModel(model.name)
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <p className="font-medium">{model.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatSize(model.size || 0)} · {model.model}
-                        </p>
-                      </div>
+          <Carousel
+            opts={{
+              align: "start",
+              loop: true,
+            }}
+            className="w-full"
+          >
+            <div className="relative flex items-center">
+              <CarouselPrevious className="left-0 z-10" />
+              <CarouselContent className="ml-4 mr-12">
+                {models.map((model) => (
+                  <CarouselItem key={model.name} className="basis-auto">
+                    <div className="flex items-center gap-2 rounded-full border bg-card px-4 py-2">
+                      <span className="font-medium text-sm">{model.name}</span>
+                      <span className="text-xs text-muted-foreground">{formatSize(model.size || 0)}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {model.modified_at ? formatDate(model.modified_at) : ""}
-                      </span>
-                      {expandedModel === model.name ? (
-                        <ChevronUp className="size-4" />
-                      ) : (
-                        <ChevronDown className="size-4" />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 详情展开 */}
-                  {expandedModel === model.name && modelDetails.has(model.name) && (
-                    <div className="mt-4 pt-4 border-t space-y-2">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">格式：</span>
-                          <span>{modelDetails.get(model.name)?.details.format}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">参数量：</span>
-                          <span>{modelDetails.get(model.name)?.details.parameter_size}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">量化：</span>
-                          <span>{modelDetails.get(model.name)?.details.quantization_level}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">家族：</span>
-                          <span>{modelDetails.get(model.name)?.details.family}</span>
-                        </div>
-                      </div>
-                      {modelDetails.get(model.name)?.template && (
-                        <div className="mt-2">
-                          <span className="text-muted-foreground text-sm">模板：</span>
-                          <code className="mt-1 block text-xs bg-muted p-2 rounded">
-                            {modelDetails.get(model.name)?.template}
-                          </code>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              <CarouselNext className="right-8 z-10" />
+            </div>
+          </Carousel>
         )}
       </section>
 

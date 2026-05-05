@@ -56,30 +56,30 @@
 
 /* ── Light 主题 — 温暖奶油 ── */
 :root {
-    --background:       oklch(0.985 0.008 85);
-    --foreground:       oklch(0.25  0.03  50);
+    --background:       oklch(0.99  0.005 85);
+    --foreground:       oklch(0.15  0.02  50);
 
-    --card:            oklch(0.98  0.005 90);
-    --card-foreground: oklch(0.25  0.03  50);
+    --card:            oklch(0.99  0.003 90);
+    --card-foreground: oklch(0.15  0.02  50);
 
-    --popover:         oklch(0.98  0.005 90);
-    --popover-foreground: oklch(0.25 0.03 50);
+    --popover:         oklch(0.99  0.003 90);
+    --popover-foreground: oklch(0.15 0.02 50);
 
     --primary:         oklch(0.65  0.15  60);
     --primary-foreground: oklch(0.99 0.01 85);
 
     --secondary:       oklch(0.95  0.01  88);
-    --secondary-foreground: oklch(0.35 0.025 50);
+    --secondary-foreground: oklch(0.22 0.02 50);
 
     --accent:          oklch(0.87  0.04  145);
-    --accent-foreground: oklch(0.35 0.04 145);
+    --accent-foreground: oklch(0.22 0.04 145);
 
     --muted:           oklch(0.94  0.01  88);
-    --muted-foreground: oklch(0.50 0.02 75);
+    --muted-foreground: oklch(0.40 0.02 75);
 
     --destructive:    oklch(0.60  0.22  25);
 
-    --border:          oklch(0.90  0.008 85);
+    --border:          oklch(0.88  0.008 85);
     --input:           oklch(0.92  0.008 85);
     --ring:            oklch(0.65  0.15  60);
 
@@ -249,3 +249,15 @@
 .dark .nav-item:hover { background: oklch(0.26 0.015 52); }
 .nav-item.active { background: oklch(0.88 0.03 60 / 0.15); }
 .dark .nav-item.active { background: oklch(0.65 0.12 55 / 0.20); }
+
+/* 跑马灯动画 */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}

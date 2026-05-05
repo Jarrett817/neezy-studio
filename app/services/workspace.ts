@@ -1,5 +1,19 @@
-﻿import { invokeTauri } from "~/services/tauri-client"
-import ollama, { type ChatResponse, type Message } from "ollama/browser"
+import { invokeTauri } from "~/services/tauri-client"
+import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+export type { OllamaModel, ProgressResponse } from "./ollama"
+export {
+  isOllamaRunning,
+  getOllamaHost,
+  listOllamaModels,
+  pullOllamaModel,
+  deleteOllamaModel,
+  showOllamaModel,
+  generateText,
+  chat,
+  getEmbeddings,
+  chat as chatWithOllama, // 别名兼容旧代码
+} from "./ollama"
+export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 
 export type DashboardSummary = {
   draftCount: number
@@ -78,12 +92,6 @@ export type RuntimePlan = {
   pressure: "low" | "medium" | "high"
 }
 
-export type RuntimeSettings = {
-  preferLowPower: boolean
-  maxCpuPercent: number
-  ollamaModel?: string
-}
-
 export type RuntimeMetrics = {
   cpuCount: number
   cpuUsagePercent: number
@@ -133,234 +141,104 @@ export type AgentExecutionStep = {
   elapsedMs?: number
 }
 
-// ==================== Workspace API ====================
+// ==================== Workspace API (stubbed - 前端直接管理) ====================
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
-  return invokeTauri<WorkspaceSnapshot>("get_workspace_snapshot")
+  return {
+    summary: { draftCount: 0, readyToPublishCount: 0, knowledgeCount: 0, weeklyPostCount: 0 },
+    drafts: [],
+    knowledge: []
+  }
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
-  return invokeTauri<AccountProfile>("get_account_profile")
+  return { accountName: "", track: "", persona: "", toneStyle: "", forbiddenWords: "" }
 }
 
 export async function saveAccountProfile(profile: AccountProfile): Promise<AccountProfile> {
-  return invokeTauri<AccountProfile>("save_account_profile", { profile })
+  return profile
 }
 
-export async function getRuntimeSettings(): Promise<RuntimeSettings> {
-  return invokeTauri<RuntimeSettings>("get_runtime_settings")
-}
-
-export async function saveRuntimeSettings(settings: RuntimeSettings): Promise<RuntimeSettings> {
-  return invokeTauri<RuntimeSettings>("save_runtime_settings", { settings })
-}
+// ==================== 运行时指标（Rust 计算） ====================
 
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
   return invokeTauri<RuntimeMetrics>("get_runtime_metrics")
 }
 
-// ==================== 知识库 ====================
+// ==================== 知识库 (已移至前端 memories.ts) ====================
 
-export async function getRelevantKnowledge(input: ContentAgentInput): Promise<KnowledgePreview[]> {
-  return invokeTauri<KnowledgePreview[]>("get_relevant_knowledge", { input })
+export async function getRelevantKnowledge(_input: ContentAgentInput): Promise<KnowledgePreview[]> {
+  return []
 }
 
 export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
-  return invokeTauri<KnowledgeItem[]>("list_knowledge_items")
+  return []
 }
 
 export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
-  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item })
+  return item
 }
 
 export async function addKnowledgeItem(item: Omit<KnowledgeItem, "id">): Promise<KnowledgeItem> {
-  return invokeTauri<KnowledgeItem>("save_knowledge_item", { item: { ...item, id: undefined } })
+  return item as KnowledgeItem
 }
 
-export async function deleteKnowledgeItem(id: string): Promise<void> {
-  return invokeTauri<void>("delete_knowledge_item", { id })
+export async function deleteKnowledgeItem(_id: string): Promise<void> {
+  // 前端通过 memories.ts 处理
 }
 
-// ==================== Skills ====================
+export async function getMemoriesDir(): Promise<string> {
+  const { appDataDir, join } = await import("@tauri-apps/api/path")
+  const baseDir = await appDataDir()
+  return join(baseDir, "memories")
+}
+
+export async function searchMemories(_query: string, _limit = 5): Promise<KnowledgeItem[]> {
+  return []
+}
+
+// ==================== Skills (stubbed) ====================
 
 export async function listSkills(): Promise<AgentSkill[]> {
-  return invokeTauri<AgentSkill[]>("list_skills")
+  return []
 }
 
 export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
-  return invokeTauri<AgentSkill>("save_skill", { skill })
+  return skill
 }
 
-export async function setSkillEnabled(id: string, enabled: boolean): Promise<AgentSkill> {
-  return invokeTauri<AgentSkill>("set_skill_enabled", { id, enabled })
+export async function setSkillEnabled(id: string, _enabled: boolean): Promise<AgentSkill> {
+  return { id } as AgentSkill
 }
 
-export async function importSkillArchive(input: {
-  archiveName: string
-  archiveBase64: string
-}): Promise<AgentSkill> {
-  return invokeTauri<AgentSkill>("import_skill_archive", input)
+export async function importSkillArchive(_input: { archiveName: string; archiveBase64: string }): Promise<AgentSkill> {
+  return {} as AgentSkill
 }
 
-export async function importSkillFolder(input: {
-  folderName: string
-  files: SkillImportFile[]
-}): Promise<AgentSkill> {
-  return invokeTauri<AgentSkill>("import_skill_folder", input)
+export async function importSkillFolder(_input: { folderName: string; files: SkillImportFile[] }): Promise<AgentSkill> {
+  return {} as AgentSkill
 }
 
-export async function deleteSkill(id: string): Promise<void> {
-  return invokeTauri<void>("delete_skill", { id })
+export async function deleteSkill(_id: string): Promise<void> {}
+
+// ==================== 内存事件 (stubbed) ====================
+
+export async function addMemoryEvent(_input: { layer: string; content: string; source?: string }): Promise<void> {}
+
+// ==================== 图片 (stubbed) ====================
+
+export async function savePastedImage(_input: { fileName?: string; mimeType: string; bytesBase64: string }): Promise<string> {
+  return ""
 }
 
-// ==================== 内存事件 ====================
-
-export async function addMemoryEvent(input: {
-  layer: string
-  content: string
-  source?: string
-}): Promise<void> {
-  return invokeTauri<void>("add_memory_event", { input })
-}
-
-// ==================== 图片 ====================
-
-export async function savePastedImage(input: {
-  fileName?: string
-  mimeType: string
-  bytesBase64: string
-}): Promise<string> {
-  return invokeTauri<string>("save_pasted_image", { input })
-}
-
-// ==================== Ollama 进程管理 ====================
+// ==================== Ollama 进程管理（已移至前端 shell.ts） ====================
 
 export async function ensureOllamaRunning(): Promise<void> {
-  return invokeTauri<void>("ensure_ollama_running")
-}
-
-export async function isOllamaRunning(): Promise<boolean> {
-  return invokeTauri<boolean>("is_ollama_running")
+  const { ensureOllamaRunning: ensure } = await import("~/services/shell")
+  return ensure()
 }
 
 export async function stopOllama(): Promise<void> {
-  return invokeTauri<void>("stop_ollama")
-}
-
-export async function getOllamaHost(): Promise<string> {
-  return invokeTauri<string>("get_ollama_host")
-}
-
-// ==================== Ollama 模型管理（使用 ollama/browser） ====================
-
-export type OllamaModel = Awaited<ReturnType<typeof ollama.list>>["models"][number]
-
-export type ProgressResponse = {
-  status: string
-  digest: string
-  total: number
-  completed: number
-}
-
-// 列出已下载的模型
-export async function listOllamaModels(): Promise<OllamaModel[]> {
-  const response = await ollama.list()
-  return response.models || []
-}
-
-// 拉取模型（流式进度）
-export async function pullOllamaModel(
-  modelName: string,
-  onProgress?: (progress: ProgressResponse) => void
-): Promise<void> {
-  const response = await ollama.pull({ model: modelName, stream: true })
-  for await (const part of response) {
-    onProgress?.(part as ProgressResponse)
-  }
-}
-
-// 删除模型
-export async function deleteOllamaModel(modelName: string): Promise<void> {
-  await ollama.delete({ model: modelName })
-}
-
-// 获取模型信息
-export async function showOllamaModel(modelName: string): Promise<Awaited<ReturnType<typeof ollama.show>>> {
-  return ollama.show({ model: modelName })
-}
-
-// 生成文本（流式）
-export async function generateWithOllama(options: {
-  model: string
-  prompt: string
-  system?: string
-  temperature?: number
-  maxTokens?: number
-  onChunk?: (text: string) => void
-}): Promise<string> {
-  const response = await ollama.generate({
-    model: options.model,
-    prompt: options.prompt,
-    system: options.system,
-    stream: true,
-    options: {
-      temperature: options.temperature ?? 0.7,
-      num_predict: options.maxTokens ?? 1024,
-    },
-  })
-  let result = ""
-  for await (const part of response) {
-    result += part.response
-    options.onChunk?.(part.response)
-  }
-  return result
-}
-
-// 聊天补全（流式，使用回调实时输出）
-export async function chatWithOllama(options: {
-  model: string
-  messages: LlmMessage[]
-  temperature?: number
-  maxTokens?: number
-  onChunk?: (content: string, thinking: string) => void
-}): Promise<{ content: string; thinking: string }> {
-  const response = await ollama.chat({
-    model: options.model,
-    messages: options.messages as ChatResponse["message"]["role"][],
-    stream: true,
-    options: {
-      temperature: options.temperature ?? 0.7,
-      num_predict: options.maxTokens ?? 1024,
-    },
-  })
-  let content = ""
-  let thinking = ""
-  for await (const part of response) {
-    // ChatResponse.message.content 是实际回复文本
-    // ChatResponse.message.thinking 是 qwen3 等模型的思考过程
-    const chunk = part.message.content || ""
-    const chunkThinking = part.message.thinking || ""
-    if (chunk) {
-      content += chunk
-    }
-    if (chunkThinking) {
-      thinking += chunkThinking
-    }
-    if (chunk || chunkThinking) {
-      options.onChunk?.(content, thinking)
-    }
-  }
-  return { content, thinking }
-}
-
-// 获取 embedding
-export async function getOllamaEmbedding(options: {
-  model: string
-  prompt: string
-}): Promise<number[]> {
-  const response = await ollama.embeddings({
-    model: options.model,
-    prompt: options.prompt,
-  })
-  return response.embedding
+  const { stopOllama: stop } = await import("~/services/shell")
+  return stop()
 }

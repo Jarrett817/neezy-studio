@@ -6,7 +6,7 @@ import {
   getRuntimeMetrics,
   getRuntimeSettings,
   listSkills,
-  chatWithOllama,
+  chat,
   type AgentExecutionStep,
   type AgentSkill,
   type ContentAgentInput,
@@ -112,7 +112,7 @@ export async function runContentAgent(
   const plannerResult =
     useFastPath
       ? { content: "", thinking: undefined }
-      : await chatWithOllama({
+      : await chat({
           model: modelName,
           maxTokens: 256,
           temperature: 0.7,
@@ -170,7 +170,7 @@ export async function runContentAgent(
     )
   }
 
-  let draftResult = await chatWithOllama({
+  let draftResult = await chat({
     model: modelName,
     maxTokens: metrics.pressure === "high" ? 640 : 1200,
     temperature: 0.7,
@@ -223,7 +223,7 @@ export async function runContentAgent(
 
   const reviewResult = useFastPath
     ? { content: "", thinking: undefined }
-    : await chatWithOllama({
+    : await chat({
         model: modelName,
         maxTokens: 160,
         temperature: 0.3,

@@ -19,9 +19,9 @@ import {
   saveRuntimeSettings,
   saveAccountProfile,
   isOllamaRunning,
-  type RuntimeSettings,
   type AccountProfile,
 } from "~/services/workspace"
+import { type RuntimeSettings } from "~/services/settings"
 import { useAppStore } from "~/stores/app-store"
 
 const profileSchema = z.object({

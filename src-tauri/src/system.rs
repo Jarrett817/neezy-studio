@@ -1,7 +1,9 @@
 use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX, GetSystemInfo, SYSTEM_INFO};
+use windows_sys::Win32::System::SystemInformation::{
+    GetSystemInfo, GlobalMemoryStatusEx, MEMORYSTATUSEX, SYSTEM_INFO,
+};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::FILETIME;
@@ -40,9 +42,18 @@ pub fn memory_snapshot() -> (f32, f32) {
 pub fn cpu_usage_percent() -> f32 {
     use std::{thread, time::Duration};
     fn read_times() -> Option<(u64, u64, u64)> {
-        let mut idle = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-        let mut kernel = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-        let mut user = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let mut idle = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let mut kernel = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let mut user = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
         unsafe {
             if GetSystemTimes(&mut idle, &mut kernel, &mut user) == 0 {
                 return None;
@@ -51,12 +62,22 @@ pub fn cpu_usage_percent() -> f32 {
         let to_u64 = |ft: FILETIME| ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
         Some((to_u64(idle), to_u64(kernel), to_u64(user)))
     }
-    let first = match read_times() { Some(v) => v, None => return 0.0 };
+    let first = match read_times() {
+        Some(v) => v,
+        None => return 0.0,
+    };
     thread::sleep(Duration::from_millis(120));
-    let second = match read_times() { Some(v) => v, None => return 0.0 };
+    let second = match read_times() {
+        Some(v) => v,
+        None => return 0.0,
+    };
     let idle = second.0.saturating_sub(first.0) as f32;
     let total = (second.1.saturating_sub(first.1) + second.2.saturating_sub(first.2)) as f32;
-    if total <= 0.0 { 0.0 } else { ((total - idle) / total * 100.0).clamp(0.0, 100.0) }
+    if total <= 0.0 {
+        0.0
+    } else {
+        ((total - idle) / total * 100.0).clamp(0.0, 100.0)
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -75,7 +96,9 @@ pub fn get_cpu_count() -> usize {
 
 #[cfg(not(target_os = "windows"))]
 pub fn get_cpu_count() -> usize {
-    std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(1)
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -100,7 +123,8 @@ pub fn build_runtime_metrics(_app: &AppHandle) -> RuntimeMetrics {
         "medium"
     } else {
         "low"
-    }.to_string();
+    }
+    .to_string();
     let recommended = if avail_mem >= 16.0 {
         "qwen3:4b"
     } else if avail_mem >= 8.0 {

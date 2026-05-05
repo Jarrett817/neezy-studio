@@ -21,16 +21,16 @@ tauri-build = { version = "2.6.0", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
-hf-hub = "0.3"
-rusqlite = { version = "0.32", features = ["bundled"] }
 tauri = { version = "2.11.0", features = [] }
 tauri-plugin-log = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tokio = { version = "1", features = ["rt", "time"] }
-image = "0.25"
 windows-sys = { version = "0.61.2", features = ["Win32_System_SystemInformation", "Win32_System_Threading"] }
-base64 = "0.22"
-zip = { version = "2.4", default-features = false, features = ["deflate"] }
+tauri-plugin-os = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-process = "2"
+tauri-plugin-shell = "2"
 
 [profile.release]
 lto = "fat"
@@ -38,3 +38,6 @@ codegen-units = 1
 strip = true
 opt-level = "z"
 panic = "abort"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"

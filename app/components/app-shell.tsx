@@ -4,7 +4,7 @@ import { NavLink } from "react-router"
 import { useEffect } from "react"
 import {
   AlertCircle,
-  BookOpenText,
+  Brain,
   CheckCircle2,
   Database,
   Loader2,
@@ -22,8 +22,7 @@ import { useAppStore } from "~/stores/app-store"
 
 const navItems = [
   { href: "/", label: "对话", Icon: MessageSquare },
-  { href: "/creator", label: "创作", Icon: MessageSquareText },
-  { href: "/knowledge-base", label: "知识库", Icon: BookOpenText },
+  { href: "/knowledge-base", label: "记忆", Icon: Brain },
   { href: "/skills", label: "Skill", Icon: SlidersHorizontal },
   { href: "/settings", label: "设置", Icon: Settings2 },
 ]
@@ -158,7 +157,7 @@ function SetupReminder() {
 
   const missingItems: string[] = []
   if (!hasLlm) missingItems.push("下载一个 LLM 模型（用于对话和生成）")
-  if (!hasEmbedding) missingItems.push("下载一个 Embedding 模型（用于知识库和向量检索）")
+  if (!hasEmbedding) missingItems.push("下载一个 Embedding 模型（用于记忆存储和检索）")
 
   return (
     <div className="fixed top-16 right-4 z-50 w-80 shadow-lg">

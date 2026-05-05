@@ -6,6 +6,11 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "os:default",
+    "fs:default",
+    "clipboard-manager:default",
+    "process:default",
+    "shell:default"
   ]
 }

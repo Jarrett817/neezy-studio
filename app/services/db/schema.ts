@@ -20,3 +20,9 @@ export const sessions = sqliteTable("sessions", {
   message_count: integer("message_count").default(0),
   last_message_preview: text("last_message_preview"),
 })
+
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updated_at: integer("updated_at").notNull(),
+})

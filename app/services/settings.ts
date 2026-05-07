@@ -1,7 +1,6 @@
-// 运行时设置 - 前端 via tauri-plugin-fs
+// 运行时设置 - SQLite storage
 
-import { appDataDir, join } from "@tauri-apps/api/path"
-import { readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs"
+import { getSetting, setSetting } from "~/services/storage/settings-store"
 
 export type RuntimeSettings = {
   preferLowPower: boolean
@@ -15,35 +14,12 @@ const DEFAULT_SETTINGS: RuntimeSettings = {
   ollamaModel: "qwen3:1.7b",
 }
 
-async function getSettingsPath(): Promise<string> {
-  const baseDir = await appDataDir()
-  return await join(baseDir, "runtime-settings.json")
-}
-
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {
-  try {
-    const path = await getSettingsPath()
-    const fileExists = await exists(path)
-    if (!fileExists) {
-      return DEFAULT_SETTINGS
-    }
-    const content = await readTextFile(path)
-    return JSON.parse(content) as RuntimeSettings
-  } catch {
-    return DEFAULT_SETTINGS
-  }
+  const settings = await getSetting<RuntimeSettings>("runtime_settings")
+  return settings ?? DEFAULT_SETTINGS
 }
 
 export async function saveRuntimeSettings(settings: RuntimeSettings): Promise<RuntimeSettings> {
-  const path = await getSettingsPath()
-  const baseDir = await appDataDir()
-
-  // 确保目录存在
-  const dirExists = await exists(baseDir)
-  if (!dirExists) {
-    await mkdir(baseDir, { recursive: true })
-  }
-
-  await writeTextFile(path, JSON.stringify(settings, null, 2))
+  await setSetting("runtime_settings", settings)
   return settings
 }

@@ -28,6 +28,7 @@ import {
 import { runAgent, type AgentMessage } from "~/agents/agent-loop"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
 import { MarkdownContent } from "~/components/markdown-content"
+import { addConversationSlice } from "~/services/storage/memory-vectors"
 
 const SYSTEM_PROMPT = `你是 Neezy，一个智能助手。你可以通过以下工具增强能力：
 
@@ -180,6 +181,13 @@ export default function ChatRoute() {
         content: result.content,
         thinking: result.thinking,
       })
+
+      // 保存聊天切片到向量库（非阻塞）
+      if (text || attachedFile) {
+        addConversationSlice(assistantId, userContent).catch(err => {
+          console.warn("Failed to save conversation slice:", err)
+        })
+      }
     } catch (error) {
       window.clearTimeout(firstTokenTimerRef.current ?? undefined)
       addMessage({

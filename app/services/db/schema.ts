@@ -26,3 +26,11 @@ export const settings = sqliteTable("settings", {
   value: text("value").notNull(),
   updated_at: integer("updated_at").notNull(),
 })
+
+export const memorySlices = sqliteTable("memory_slice_metadata", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id"),
+  memory_type: text("memory_type").notNull(),
+  content_preview: text("content_preview").notNull(),
+  created_at: integer("created_at").notNull(),
+})

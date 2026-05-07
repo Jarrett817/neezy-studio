@@ -113,6 +113,14 @@ export default function ChatRoute() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, currentStep])
 
+  useEffect(() => {
+    return () => {
+      if (firstTokenTimerRef.current) {
+        window.clearTimeout(firstTokenTimerRef.current)
+      }
+    }
+  }, [])
+
   const send = useCallback(async () => {
     const text = input.trim()
     const hasText = text.length > 0

@@ -13,6 +13,15 @@ export type MemorySlice = {
   created_at: number
 }
 
+type MemorySliceRow = {
+  id: string
+  session_id: string | null
+  memory_type: "conversation" | "longterm" | "rag"
+  content: string
+  content_preview: string
+  created_at: number
+}
+
 const CONTENT_PREVIEW_LENGTH = 200
 
 function createContentPreview(content: string): string {
@@ -21,18 +30,35 @@ function createContentPreview(content: string): string {
     : content
 }
 
+async function insertMemoryVector(
+  id: string,
+  content: string,
+  sessionId: string | null,
+  memoryType: string
+): Promise<void> {
+  const sqlite = await getSqliteDb()
+  try {
+    const embedding = await getEmbeddings(content)
+    await sqlite.execute(
+      `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, content, sessionId, memoryType, JSON.stringify(embedding)]
+    )
+  } catch (e) {
+    console.warn(`Failed to generate embedding for ${memoryType} slice:`, e)
+  }
+}
+
 // Add a conversation slice (chat history fragment)
 export async function addConversationSlice(
   sessionId: string,
   content: string
 ): Promise<MemorySlice> {
   const db = getDb()
-  const sqlite = await getSqliteDb()
   const id = nanoid(21)
   const now = Date.now()
   const content_preview = createContentPreview(content)
 
-  // Insert metadata via Drizzle
   await db.insert(schema.memorySlices).values({
     id,
     session_id: sessionId,
@@ -41,17 +67,7 @@ export async function addConversationSlice(
     created_at: now,
   })
 
-  // Generate embedding and store in vec0 table
-  try {
-    const embedding = await getEmbeddings(content)
-    await sqlite.execute(
-      `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, content, sessionId, "conversation", JSON.stringify(embedding)]
-    )
-  } catch (e) {
-    console.warn("Failed to generate embedding for conversation slice:", e)
-  }
+  await insertMemoryVector(id, content, sessionId, "conversation")
 
   return {
     id,
@@ -66,12 +82,10 @@ export async function addConversationSlice(
 // Add a long-term memory slice (cross-session, persistent)
 export async function addLongtermMemory(content: string): Promise<MemorySlice> {
   const db = getDb()
-  const sqlite = await getSqliteDb()
   const id = nanoid(21)
   const now = Date.now()
   const content_preview = createContentPreview(content)
 
-  // Insert metadata via Drizzle
   await db.insert(schema.memorySlices).values({
     id,
     session_id: null,
@@ -80,22 +94,39 @@ export async function addLongtermMemory(content: string): Promise<MemorySlice> {
     created_at: now,
   })
 
-  // Generate embedding and store in vec0 table
-  try {
-    const embedding = await getEmbeddings(content)
-    await sqlite.execute(
-      `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, content, null, "longterm", JSON.stringify(embedding)]
-    )
-  } catch (e) {
-    console.warn("Failed to generate embedding for longterm memory:", e)
-  }
+  await insertMemoryVector(id, content, null, "longterm")
 
   return {
     id,
     session_id: null,
     memory_type: "longterm",
+    content,
+    content_preview,
+    created_at: now,
+  }
+}
+
+// Add a RAG slice (retrievable knowledge)
+export async function addRagSlice(content: string, sessionId?: string): Promise<MemorySlice> {
+  const db = getDb()
+  const id = nanoid(21)
+  const now = Date.now()
+  const content_preview = createContentPreview(content)
+
+  await db.insert(schema.memorySlices).values({
+    id,
+    session_id: sessionId ?? null,
+    memory_type: "rag",
+    content_preview,
+    created_at: now,
+  })
+
+  await insertMemoryVector(id, content, sessionId ?? null, "rag")
+
+  return {
+    id,
+    session_id: sessionId ?? null,
+    memory_type: "rag",
     content,
     content_preview,
     created_at: now,
@@ -108,7 +139,6 @@ export async function searchMemorySlices(
   limit = 10,
   type?: "conversation" | "longterm" | "rag"
 ): Promise<MemorySlice[]> {
-  // Generate query embedding
   let queryEmbedding: number[] | null = null
   try {
     queryEmbedding = await getEmbeddings(query)
@@ -121,7 +151,6 @@ export async function searchMemorySlices(
 
   const sqlite = await getSqliteDb()
 
-  // Build SQL with optional type filter
   let sql = `
     SELECT m.id, m.session_id, m.memory_type, m.content_preview, m.created_at,
            v.content
@@ -129,7 +158,7 @@ export async function searchMemorySlices(
     JOIN memory_vector_slices v ON m.id = v.id
     WHERE v.embedding MATCH $1
   `
-  const params: (string | number)[] = [JSON.stringify(queryEmbedding)]
+  const params: string[] = [JSON.stringify(queryEmbedding)]
 
   if (type) {
     sql += ` AND m.memory_type = $${params.length + 1}`
@@ -137,14 +166,14 @@ export async function searchMemorySlices(
   }
 
   sql += ` ORDER BY distance LIMIT $${params.length + 1}`
-  params.push(limit)
+  params.push(String(limit))
 
   try {
-    const rows = await sqlite.select(sql, params as string[])
-    return rows.map((row: Record<string, unknown>) => ({
+    const rows = await sqlite.select(sql, params)
+    return rows.map((row: Record<string, unknown>): MemorySlice => ({
       id: row.id as string,
       session_id: row.session_id as string | null,
-      memory_type: row.memory_type as "conversation" | "longterm" | "rag",
+      memory_type: row.memory_type as MemorySlice["memory_type"],
       content: row.content as string,
       content_preview: row.content_preview as string,
       created_at: row.created_at as number,

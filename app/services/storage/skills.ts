@@ -72,14 +72,14 @@ function parseSkillMd(filename: string, content: string): Skill {
     switch (currentSection) {
       case "描述":
       case "description":
-        skill.description += trimmed
+        skill.description += trimmed + "\n"
         break
       case "指令":
       case "instructions":
-        skill.instructions += trimmed
+        skill.instructions += trimmed + "\n"
         break
       case "prompt":
-        skill.prompt += trimmed
+        skill.prompt += trimmed + "\n"
         break
     }
   }
@@ -144,18 +144,27 @@ export async function listSkills(): Promise<Skill[]> {
 
 // 保存技能
 export async function saveSkill(skill: Skill): Promise<Skill> {
-  await ensureSkillsDir()
-  const path = await getSkillPath(skill.name)
-  const content = serializeSkillToMd(skill)
-  await writeTextFile(path, content)
-  return skill
+  try {
+    await ensureSkillsDir()
+    const path = await getSkillPath(skill.name)
+    const content = serializeSkillToMd(skill)
+    await writeTextFile(path, content)
+    return skill
+  } catch (error) {
+    console.error(`Failed to save skill ${skill.name}:`, error)
+    throw error
+  }
 }
 
 // 删除技能
-export async function deleteSkill(id: string, name: string): Promise<void> {
-  const path = await getSkillPath(name)
-  const fileExists = await exists(path)
-  if (fileExists) {
-    await remove(path)
+export async function deleteSkill(name: string): Promise<void> {
+  try {
+    const path = await getSkillPath(name)
+    const fileExists = await exists(path)
+    if (fileExists) {
+      await remove(path)
+    }
+  } catch (error) {
+    console.error(`Failed to delete skill ${name}:`, error)
   }
 }

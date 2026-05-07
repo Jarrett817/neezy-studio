@@ -1,5 +1,6 @@
 import { invokeTauri } from "~/services/tauri-client"
 import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+import { getPersona, savePersona } from "./storage/persona"
 export type { OllamaModel, ProgressResponse } from "./ollama"
 export {
   isOllamaRunning,
@@ -152,10 +153,24 @@ export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
-  return { accountName: "", track: "", persona: "", toneStyle: "", forbiddenWords: "" }
+  const persona = await getPersona()
+  return {
+    accountName: persona.accountName,
+    track: persona.track,
+    persona: persona.persona,
+    toneStyle: persona.toneStyle,
+    forbiddenWords: persona.forbiddenWords,
+  }
 }
 
 export async function saveAccountProfile(profile: AccountProfile): Promise<AccountProfile> {
+  await savePersona({
+    accountName: profile.accountName,
+    track: profile.track,
+    persona: profile.persona,
+    toneStyle: profile.toneStyle,
+    forbiddenWords: profile.forbiddenWords,
+  })
   return profile
 }
 

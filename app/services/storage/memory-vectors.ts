@@ -1,7 +1,7 @@
 // Memory vector storage service - Drizzle ORM + tauri-plugin-sql + vec0
 
 import { nanoid } from "nanoid"
-import { getDb, getSqliteDb, schema } from "../db"
+import { ensureInit, getDb, getSqliteDb, schema } from "../db"
 import { getEmbeddings } from "../ollama"
 
 export type MemorySlice = {
@@ -39,11 +39,13 @@ async function insertMemoryVector(
   const sqlite = await getSqliteDb()
   try {
     const embedding = await getEmbeddings(content)
-    await sqlite.execute(
-      `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, content, sessionId, memoryType, JSON.stringify(embedding)]
-    )
+    if (embedding && embedding.length > 0) {
+      await sqlite.execute(
+        `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, content, sessionId, memoryType, embedding]
+      )
+    }
   } catch (e) {
     console.warn(`Failed to generate embedding for ${memoryType} slice:`, e)
   }
@@ -54,6 +56,7 @@ export async function addConversationSlice(
   sessionId: string,
   content: string
 ): Promise<MemorySlice> {
+  await ensureInit()
   const db = getDb()
   const id = nanoid(21)
   const now = Date.now()
@@ -81,6 +84,7 @@ export async function addConversationSlice(
 
 // Add a long-term memory slice (cross-session, persistent)
 export async function addLongtermMemory(content: string): Promise<MemorySlice> {
+  await ensureInit()
   const db = getDb()
   const id = nanoid(21)
   const now = Date.now()
@@ -108,6 +112,7 @@ export async function addLongtermMemory(content: string): Promise<MemorySlice> {
 
 // Add a RAG slice (retrievable knowledge)
 export async function addRagSlice(content: string, sessionId?: string): Promise<MemorySlice> {
+  await ensureInit()
   const db = getDb()
   const id = nanoid(21)
   const now = Date.now()
@@ -139,6 +144,7 @@ export async function searchMemorySlices(
   limit = 10,
   type?: "conversation" | "longterm" | "rag"
 ): Promise<MemorySlice[]> {
+  await ensureInit()
   let queryEmbedding: number[] | null = null
   try {
     queryEmbedding = await getEmbeddings(query)
@@ -147,7 +153,7 @@ export async function searchMemorySlices(
     return []
   }
 
-  if (!queryEmbedding) return []
+  if (!queryEmbedding || queryEmbedding.length === 0) return []
 
   const sqlite = await getSqliteDb()
 
@@ -158,7 +164,7 @@ export async function searchMemorySlices(
     JOIN memory_vector_slices v ON m.id = v.id
     WHERE v.embedding MATCH $1
   `
-  const params: string[] = [JSON.stringify(queryEmbedding)]
+  const params: unknown[] = [queryEmbedding]
 
   if (type) {
     sql += ` AND m.memory_type = $${params.length + 1}`
@@ -169,8 +175,8 @@ export async function searchMemorySlices(
   params.push(String(limit))
 
   try {
-    const rows = await sqlite.select(sql, params)
-    return rows.map((row: Record<string, unknown>): MemorySlice => ({
+    const rows = await sqlite.select<Record<string, unknown>[]>(sql, params)
+    return rows.map((row): MemorySlice => ({
       id: row.id as string,
       session_id: row.session_id as string | null,
       memory_type: row.memory_type as MemorySlice["memory_type"],

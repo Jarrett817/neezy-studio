@@ -1,7 +1,7 @@
 // Session storage service using Drizzle ORM
 
 import { nanoid } from "nanoid"
-import { getDb, schema } from "../db"
+import { ensureInit, getDb, schema } from "../db"
 import { eq, desc } from "drizzle-orm"
 
 export type Session = {
@@ -14,6 +14,7 @@ export type Session = {
 }
 
 export async function createSession(title: string): Promise<Session> {
+  await ensureInit()
   const db = getDb()
   const id = nanoid(21)
   const now = Date.now()
@@ -38,6 +39,7 @@ export async function createSession(title: string): Promise<Session> {
 }
 
 export async function listSessions(): Promise<Session[]> {
+  await ensureInit()
   const db = getDb()
   const result = await db
     .select()
@@ -50,6 +52,7 @@ export async function updateSession(
   id: string,
   updates: Partial<Omit<Session, "id" | "created_at">>
 ): Promise<void> {
+  await ensureInit()
   const db = getDb()
   await db
     .update(schema.sessions)
@@ -58,6 +61,7 @@ export async function updateSession(
 }
 
 export async function deleteSession(id: string): Promise<void> {
+  await ensureInit()
   const db = getDb()
   await db.delete(schema.sessions).where(eq(schema.sessions.id, id))
 }

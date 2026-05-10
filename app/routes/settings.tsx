@@ -173,7 +173,7 @@ function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft,
           </div>
           <div className="flex items-center gap-2">
             <span className={cn("size-2 rounded-full", ollamaRunning ? "bg-green-500" : "bg-gray-400")} />
-            <span className="text-sm">Ollama {ollamaRunning ? "运行中" : "未运行"}</span>
+            <span className="text-sm">{ollamaRunning ? "大模型就绪" : "大模型未连接"}</span>
           </div>
         </div>
       )}

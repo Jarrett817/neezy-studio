@@ -1,6 +1,6 @@
 import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
 
-const FALLBACK_BUILD_INFO: BuildInfo = {
+export const BUILD_INFO: BuildInfo = {
   appName: "Neezy Studio",
   appVersion: "0.1.0",
   target: "web-preview",
@@ -29,11 +29,12 @@ export async function listenTauri<T>(
   return listen<T>(event, handler)
 }
 
+export async function emit(event: string, payload?: unknown) {
+  if (typeof window === "undefined") return
+  const { emit: tauriEmit } = await import("@tauri-apps/api/event")
+  return tauriEmit(event, payload)
+}
+
 export async function getBuildInfo(): Promise<BuildInfo> {
-  try {
-    const result = await invokeTauri("get_build_info")
-    return buildInfoSchema.parse(result)
-  } catch {
-    return FALLBACK_BUILD_INFO
-  }
+  return BUILD_INFO
 }

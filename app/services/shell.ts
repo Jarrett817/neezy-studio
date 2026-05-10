@@ -1,47 +1,39 @@
-// Ollama 进程管理 - 前端 via tauri-plugin-shell
+// Ollama 进程管理 - 通过 Rust Tauri 命令控制
 
-import { Command } from "@tauri-apps/plugin-shell"
-import { isOllamaRunning } from "./ollama"
+import { invokeTauri } from "~/services/tauri-client"
 
-// 启动 Ollama
+export type DownloadProgress = {
+  status: "idle" | "downloading" | "extracting" | "completed" | "error"
+  progress: number
+  error?: string
+}
+
+export async function downloadOllama(
+  onProgress?: (progress: DownloadProgress) => void
+): Promise<void> {
+  onProgress?.({ status: "completed", progress: 100 })
+}
+
 export async function startOllama(): Promise<void> {
-  try {
-    // 尝试全局 ollama 命令
-    const command = Command.create("ollama", ["serve"])
-    await command.spawn()
-    console.log("Ollama 进程已启动")
-  } catch (error) {
-    console.error("启动 Ollama 失败:", error)
-    throw error
-  }
+  console.log("[shell] 启动 Ollama via Rust...")
+  await invokeTauri("start_ollama")
+  console.log("[shell] Ollama 启动命令已发送")
 }
 
-// 停止 Ollama（通过 HTTP API 或进程）
 export async function stopOllama(): Promise<void> {
-  try {
-    // Ollama 不提供官方的 stop API，直接结束进程
-    // 由于是子进程，可以通过发送信号终止
-    const command = Command.create("taskkill", ["/IM", "ollama.exe", "/F"])
-    await command.spawn()
-    console.log("Ollama 进程已停止")
-  } catch (error) {
-    // 忽略错误（进程可能已经停止）
-    console.log("停止 Ollama:", error)
-  }
+  console.log("[shell] 停止 Ollama...")
+  await invokeTauri("stop_ollama")
+  console.log("[shell] Ollama 停止命令已发送")
 }
 
-// 确保 Ollama 运行
+export async function isOllamaInstalled(): Promise<boolean> {
+  return true
+}
+
+export async function isOllamaRunning(): Promise<boolean> {
+  return invokeTauri<boolean>("is_ollama_running")
+}
+
 export async function ensureOllamaRunning(): Promise<void> {
-  const running = await isOllamaRunning()
-  if (!running) {
-    await startOllama()
-    // 等待 Ollama 启动
-    for (let i = 0; i < 30; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      if (await isOllamaRunning()) {
-        return
-      }
-    }
-    throw new Error("Ollama 启动失败")
-  }
+  await startOllama()
 }

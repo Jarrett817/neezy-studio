@@ -9,12 +9,16 @@ export type ProgressResponse = {
   completed: number
 }
 
-const OLLAMA_HOST = "http://127.0.0.1:11434"
+// Ollama 主机地址，默认 http://127.0.0.1:11434
+// 可通过环境变量 OLLAMA_HOST 覆盖
+export function getOllamaHost(): string {
+  return process.env?.OLLAMA_HOST || "http://127.0.0.1:11434"
+}
 
 // 检查 Ollama 是否运行（直接 HTTP 检测）
 export async function isOllamaRunning(): Promise<boolean> {
   try {
-    const response = await fetch(`${OLLAMA_HOST}/api/tags`, {
+    const response = await fetch(`${getOllamaHost()}/api/tags`, {
       method: "GET",
       signal: AbortSignal.timeout(2000),
     })
@@ -22,11 +26,6 @@ export async function isOllamaRunning(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-// 获取 Ollama 主机地址
-export function getOllamaHost(): string {
-  return OLLAMA_HOST
 }
 
 // 列出已下载的模型

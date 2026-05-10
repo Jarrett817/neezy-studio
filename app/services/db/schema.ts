@@ -17,7 +17,7 @@ export const sessions = sqliteTable("sessions", {
   title: text("title").notNull(),
   created_at: integer("created_at").notNull(),
   updated_at: integer("updated_at").notNull(),
-  message_count: integer("message_count").default(0),
+  message_count: integer("message_count").notNull().default(0),
   last_message_preview: text("last_message_preview"),
 })
 

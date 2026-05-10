@@ -3,7 +3,6 @@ import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 import { getPersona, savePersona } from "./storage/persona"
 export type { OllamaModel, ProgressResponse } from "./ollama"
 export {
-  isOllamaRunning,
   getOllamaHost,
   listOllamaModels,
   pullOllamaModel,
@@ -15,6 +14,7 @@ export {
   chat as chatWithOllama, // 别名兼容旧代码
 } from "./ollama"
 export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+export { isOllamaRunning } from "~/services/shell"
 
 export type DashboardSummary = {
   draftCount: number

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import { NavLink } from "react-router"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import {
   AlertCircle,
   Brain,
@@ -42,7 +42,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: ollamaRunning } = useQuery({
     queryKey: ["ollama-running"],
     queryFn: isOllamaRunning,
-    staleTime: 10000,
+    staleTime: 2000,
+    refetchInterval: 3000,
   })
   console.log("[AppShell] ollamaRunning:", ollamaRunning)
 
@@ -58,13 +59,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   })
   console.log("[AppShell] isPending:", startOllamaMutation.isPending)
 
+  const startedRef = useRef(false)
+
   useEffect(() => {
     console.log("[AppShell] useEffect triggered, ollamaRunning:", ollamaRunning, "isPending:", startOllamaMutation.isPending)
-    if (ollamaRunning === false && !startOllamaMutation.isPending) {
+    if (ollamaRunning === false && !startOllamaMutation.isPending && !startedRef.current) {
       console.log("[AppShell] 开始启动 Ollama...")
+      startedRef.current = true
       startOllamaMutation.mutate()
     }
-  }, [ollamaRunning])
+  }, [ollamaRunning, startOllamaMutation.isPending])
 
   return (
     <div className="flex h-screen text-foreground overflow-hidden">

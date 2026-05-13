@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react"
 import {
   Links,
   Meta,
@@ -12,7 +11,6 @@ import * as React from "react"
 
 import type { Route } from "./+types/root"
 import { AppShell } from "./components/app-shell"
-import { DownloadScreen } from "./components/download-screen"
 import { Toaster } from "./components/ui/sonner"
 import "./app.css"
 
@@ -52,14 +50,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false)
-
-  if (!ready) {
-    return (
-      <DownloadScreen onReady={() => setReady(true)} />
-    )
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
       <AppShell>

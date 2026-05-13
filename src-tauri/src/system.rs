@@ -126,11 +126,11 @@ pub fn build_runtime_metrics(_app: &AppHandle) -> RuntimeMetrics {
     }
     .to_string();
     let recommended = if avail_mem >= 16.0 {
-        "qwen3:4b"
+        "Qwen2.5-7B-Instruct-q4f16_1-MLC"
     } else if avail_mem >= 8.0 {
-        "qwen3:1.7b"
+        "Qwen2.5-3B-Instruct-q4f16_1-MLC"
     } else {
-        "qwen3:0.5b"
+        "gemma-2-2b-it-q4f16_1-MLC"
     };
     RuntimeMetrics {
         cpu_count,

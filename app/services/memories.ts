@@ -4,7 +4,7 @@ import { nanoid } from "nanoid"
 import { ensureInit, getDb, getSqliteDb, schema } from "./db"
 import { writeMemoryFile, deleteMemoryFile } from "./fs-memory"
 import { eq } from "drizzle-orm"
-import { getEmbeddings } from "./ollama"
+import { getEmbeddings } from "./webllm"
 
 export type MemoryItem = {
   id: string
@@ -52,7 +52,7 @@ export async function saveMemory(item: {
     },
   })
 
-  // 生成向量并存储（如果 Ollama 可用）
+  // 生成向量并存储
   try {
     const text = `${item.title} ${item.content}`
     const embedding = await getEmbeddings(text)

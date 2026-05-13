@@ -6,7 +6,7 @@ import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 
 import { SectionHeading } from "~/components/section-heading"
-import { OllamaModelBrowser } from "~/components/ollama-model-browser"
+import { WebLLMModelBrowser } from "~/components/webllm-model-browser"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -18,11 +18,11 @@ import {
   getRuntimeSettings,
   saveRuntimeSettings,
   saveAccountProfile,
-  isOllamaRunning,
   type AccountProfile,
 } from "~/services/workspace"
 import { type RuntimeSettings } from "~/services/settings"
 import { useAppStore } from "~/stores/app-store"
+import { isModelLoaded, getCurrentModel } from "~/services/webllm"
 
 const profileSchema = z.object({
   accountName: z.string().min(1, "请输入账号名称"),
@@ -50,11 +50,11 @@ export default function SettingsRoute() {
     queryFn: getRuntimeMetrics,
     staleTime: 5000,
   })
-  const { data: ollamaRunning } = useQuery({
-    queryKey: ["ollama-running"],
-    queryFn: isOllamaRunning,
-  })
   const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings | null>(null)
+
+  // WebLLM 模型状态
+  const modelLoaded = isModelLoaded()
+  const currentModel = getCurrentModel()
 
   useEffect(() => {
     if (runtimeSettings) setRuntimeDraft(runtimeSettings)
@@ -85,8 +85,8 @@ export default function SettingsRoute() {
   return (
     <div className="space-y-8 pt-4">
       <AccountSection form={form} onSubmit={onSubmit} isPending={saveProfileMutation.isPending} />
-      <RuntimeSection metrics={metrics} ollamaRunning={ollamaRunning} runtimeDraft={runtimeDraft} setRuntimeDraft={setRuntimeDraft} onSave={saveRuntimeMutation} />
-      <OllamaModelBrowser />
+      <RuntimeSection metrics={metrics} modelReady={modelLoaded} currentModel={currentModel} runtimeDraft={runtimeDraft} setRuntimeDraft={setRuntimeDraft} onSave={saveRuntimeMutation} />
+      <WebLLMModelBrowser />
     </div>
   )
 }
@@ -145,9 +145,10 @@ function AccountSection({ form, onSubmit, isPending }: {
   )
 }
 
-function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft, onSave }: {
+function RuntimeSection({ metrics, modelReady, currentModel, runtimeDraft, setRuntimeDraft, onSave }: {
   metrics?: { cpuCount: number; availableMemoryGb: number; totalMemoryGb: number; pressure: string }
-  ollamaRunning?: boolean
+  modelReady?: boolean
+  currentModel?: string | null
   runtimeDraft: RuntimeSettings | null
   setRuntimeDraft: (settings: RuntimeSettings) => void
   onSave: ReturnType<typeof useMutation<RuntimeSettings, Error, RuntimeSettings>>
@@ -172,8 +173,8 @@ function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft,
             <span className="text-sm">{metrics.pressure === "low" ? "轻松" : metrics.pressure === "medium" ? "中等" : "高"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={cn("size-2 rounded-full", ollamaRunning ? "bg-green-500" : "bg-gray-400")} />
-            <span className="text-sm">{ollamaRunning ? "大模型就绪" : "大模型未连接"}</span>
+            <span className={cn("size-2 rounded-full", modelReady ? "bg-green-500" : "bg-gray-400")} />
+            <span className="text-sm">{modelReady ? `模型: ${currentModel || "已加载"}` : "模型未加载"}</span>
           </div>
         </div>
       )}
@@ -181,16 +182,6 @@ function RuntimeSection({ metrics, ollamaRunning, runtimeDraft, setRuntimeDraft,
       {runtimeDraft && (
         <form className="space-y-4 rounded-2xl bg-card/60 p-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="ollamaModel">Ollama 模型</Label>
-              <Input
-                id="ollamaModel"
-                value={runtimeDraft.ollamaModel || ""}
-                onChange={(e) => setRuntimeDraft({ ...runtimeDraft, ollamaModel: e.target.value })}
-                className="bg-transparent"
-                placeholder="qwen3:1.7b"
-              />
-            </div>
             <div className="space-y-1.5">
               <Label htmlFor="maxCpuPercent">最大 CPU 使用率</Label>
               <Input

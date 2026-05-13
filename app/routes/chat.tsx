@@ -25,7 +25,7 @@ import {
   getRuntimeSettings,
   listSkills,
 } from "~/services/workspace"
-import { runAgent, type AgentMessage } from "~/agents/agent-loop"
+import { runAgent, type AgentMessage } from "~/agents/webllm-agent"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
 import { MarkdownContent } from "~/components/markdown-content"
 import { addConversationSlice } from "~/services/storage/memory-vectors"
@@ -160,17 +160,16 @@ export default function ChatRoute() {
       }))
     agentMessages.push({ role: "user", content: userContent })
 
-    const model = settings?.ollamaModel || "qwen3:1.7b"
-
     try {
       const result = await runAgent(agentMessages, {
-        model,
         systemPrompt: activeSkill
           ? `${SYSTEM_PROMPT}\n\n当前技能: ${activeSkill}`
           : SYSTEM_PROMPT,
         maxSteps: 5,
-        onChunk: (content, thinking) => {
-          updateMessage(assistantId, { content, thinking })
+        temperature: 0.7,
+        maxTokens: 2048,
+        onChunk: (content) => {
+          updateMessage(assistantId, { content })
         },
         onToolCall: (name, args, result) => {
           const current = messages.find(m => m.id === assistantId)
@@ -211,7 +210,7 @@ export default function ChatRoute() {
     setIsGenerating(false)
     setCurrentStep("")
     activeAssistantId.current = null
-  }, [input, isGenerating, messages, settings?.ollamaModel, activeSkill, addMessage, updateMessage])
+  }, [input, isGenerating, messages, activeSkill, addMessage, updateMessage])
 
   const stop = useCallback(() => {
     setIsGenerating(false)

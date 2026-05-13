@@ -1,20 +1,7 @@
 import { invokeTauri } from "~/services/tauri-client"
 import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 import { getPersona, savePersona } from "./storage/persona"
-export type { OllamaModel, ProgressResponse } from "./ollama"
-export {
-  getOllamaHost,
-  listOllamaModels,
-  pullOllamaModel,
-  deleteOllamaModel,
-  showOllamaModel,
-  generateText,
-  chat,
-  getEmbeddings,
-  chat as chatWithOllama, // 别名兼容旧代码
-} from "./ollama"
 export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
-export { isOllamaRunning } from "~/services/shell"
 
 export type DashboardSummary = {
   draftCount: number
@@ -142,7 +129,7 @@ export type AgentExecutionStep = {
   elapsedMs?: number
 }
 
-// ==================== Workspace API (stubbed - 前端直接管理) ====================
+// ==================== Workspace API ====================
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
   return {
@@ -180,7 +167,7 @@ export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
   return invokeTauri<RuntimeMetrics>("get_runtime_metrics")
 }
 
-// ==================== 知识库 (已移至前端 memories.ts) ====================
+// ==================== 知识库 (前端 memories.ts) ====================
 
 export async function getRelevantKnowledge(_input: ContentAgentInput): Promise<KnowledgePreview[]> {
   return []
@@ -198,9 +185,7 @@ export async function addKnowledgeItem(item: Omit<KnowledgeItem, "id">): Promise
   return item as KnowledgeItem
 }
 
-export async function deleteKnowledgeItem(_id: string): Promise<void> {
-  // 前端通过 memories.ts 处理
-}
+export async function deleteKnowledgeItem(_id: string): Promise<void> {}
 
 export async function getMemoriesDir(): Promise<string> {
   const { appDataDir, join } = await import("@tauri-apps/api/path")
@@ -236,24 +221,12 @@ export async function importSkillFolder(_input: { folderName: string; files: Ski
 
 export async function deleteSkill(_id: string): Promise<void> {}
 
-// ==================== 内存事件 (stubbed) ====================
+// ==================== 内存事件 ====================
 
 export async function addMemoryEvent(_input: { layer: string; content: string; source?: string }): Promise<void> {}
 
-// ==================== 图片 (stubbed) ====================
+// ==================== 图片 ====================
 
 export async function savePastedImage(_input: { fileName?: string; mimeType: string; bytesBase64: string }): Promise<string> {
   return ""
-}
-
-// ==================== Ollama 进程管理（已移至前端 shell.ts） ====================
-
-export async function ensureOllamaRunning(): Promise<void> {
-  const { ensureOllamaRunning: ensure } = await import("~/services/shell")
-  return ensure()
-}
-
-export async function stopOllama(): Promise<void> {
-  const { stopOllama: stop } = await import("~/services/shell")
-  return stop()
 }

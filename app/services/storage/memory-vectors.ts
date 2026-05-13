@@ -2,18 +2,9 @@
 
 import { nanoid } from "nanoid"
 import { ensureInit, getDb, getSqliteDb, schema } from "../db"
-import { getEmbeddings } from "../ollama"
+import { getEmbeddings } from "~/services/webllm"
 
 export type MemorySlice = {
-  id: string
-  session_id: string | null
-  memory_type: "conversation" | "longterm" | "rag"
-  content: string
-  content_preview: string
-  created_at: number
-}
-
-type MemorySliceRow = {
   id: string
   session_id: string | null
   memory_type: "conversation" | "longterm" | "rag"
@@ -36,10 +27,10 @@ async function insertMemoryVector(
   sessionId: string | null,
   memoryType: string
 ): Promise<void> {
-  const sqlite = await getSqliteDb()
   try {
     const embedding = await getEmbeddings(content)
     if (embedding && embedding.length > 0) {
+      const sqlite = await getSqliteDb()
       await sqlite.execute(
         `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
          VALUES ($1, $2, $3, $4, $5)`,

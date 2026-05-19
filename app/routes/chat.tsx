@@ -25,7 +25,7 @@ import {
   getRuntimeSettings,
   listSkills,
 } from "~/services/workspace"
-import { runAgent, type AgentMessage } from "~/agents/webllm-agent"
+import { runAgent, type AgentMessage } from "~/agents/llm-agent"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
 import { MarkdownContent } from "~/components/markdown-content"
 import { addConversationSlice } from "~/services/storage/memory-vectors"

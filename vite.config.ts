@@ -9,7 +9,6 @@ export default defineConfig({
     minify: "esbuild",
     sourcemap: false,
     rollupOptions: {
-      external: ["react", "react-dom", "react-router"],
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules/@tanstack/react-query")) return "query"

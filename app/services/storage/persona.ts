@@ -1,7 +1,6 @@
 // AI 人设 MD 文件存储
 
-import { readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs"
-import { appDataDir, join } from "@tauri-apps/api/path"
+import { appDataDir, exists, join, mkdir, readTextFile, writeTextFile } from "~/services/electron-client"
 
 const PERSONAS_DIR = "personas"
 const PERSONA_FILE = "current.md"

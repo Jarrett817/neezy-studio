@@ -1,82 +1,75 @@
-// Drizzle + tauri-plugin-sql integration
-
-import Database from "@tauri-apps/plugin-sql"
 import { drizzle } from "drizzle-orm/sqlite-proxy"
-import { appDataDir } from "@tauri-apps/api/path"
+import { appDataDir, join, sqliteExecute, sqliteSelect } from "~/services/electron-client"
 import { runMigrations } from "./migrate"
 import * as schema from "./schema"
 
-let db: ReturnType<typeof drizzle> | null = null
-let sqliteDb: Awaited<ReturnType<typeof Database.load>> | null = null
-let initPromise: Promise<void> | null = null
-
-// 获取数据库完整路径（跨平台：Win: %APPDATA%/com.neezy.studio/memories.db, Mac: ~/Library/Application Support/com.neezy.studio/memories.db）
-async function getDbPath() {
-  const baseDir = await appDataDir()
-  // appDataDir 返回的路径已经区分平台：Win/Mac/Linux 各不相同
-  return `${baseDir}/memories.db`
+type SqliteBridge = {
+  execute: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; lastInsertRowid: number; changes: number }>
+  select: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>
 }
 
-// 获取 tauri-plugin-sql 数据库实例
-async function getSqliteDb() {
+let db: ReturnType<typeof drizzle> | null = null
+let sqliteDb: SqliteBridge | null = null
+let initPromise: Promise<void> | null = null
+
+async function getDbPath() {
+  const baseDir = await appDataDir()
+  return join(baseDir, "memories.db")
+}
+
+async function getSqliteDb(): Promise<SqliteBridge> {
   if (!sqliteDb) {
     const dbPath = await getDbPath()
-    sqliteDb = await Database.load(`sqlite:${dbPath}`)
+    sqliteDb = {
+      execute: (sql, params = []) => sqliteExecute(dbPath, sql, params),
+      select: (sql, params = []) => sqliteSelect(dbPath, sql, params),
+    }
   }
   return sqliteDb
 }
 
-// 确保数据库已初始化（应用迁移 + 创建 vec0 向量表）
-// 只在浏览器环境中执行，使用 Promise 缓存防止并发初始化
 export async function ensureInit() {
   if (typeof window === "undefined") return
   if (initPromise) return initPromise
 
   initPromise = (async () => {
-    // 运行 drizzle 迁移
     await runMigrations()
 
-    // 创建 sqlite-vec 向量表
     const sqlite = await getSqliteDb()
+    await sqlite.execute("SELECT 1")
 
-    // 检查 vec0 扩展是否可用（尝试执行简单查询）
     try {
-      await sqlite.execute("SELECT 1")
-    } catch {
-      console.warn("[db] vec0 extension may not be loaded, creating tables anyway")
+      await sqlite.execute(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_embeddings USING vec0(
+          id TEXT PRIMARY KEY,
+          embedding FLOAT[768]
+        )
+      `)
+      await sqlite.execute(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_vector_slices USING vec0(
+          id TEXT PRIMARY KEY,
+          content TEXT NOT NULL,
+          session_id TEXT,
+          memory_type TEXT NOT NULL,
+          embedding FLOAT[768]
+        )
+      `)
+    } catch (error) {
+      console.warn("[db] sqlite-vec is not available in the Electron runtime; vector search is disabled.", error)
     }
-
-    await sqlite.execute(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_embeddings USING vec0(
-        id TEXT PRIMARY KEY,
-        embedding FLOAT[768]
-      )
-    `)
-    await sqlite.execute(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_vector_slices USING vec0(
-        id TEXT PRIMARY KEY,
-        content TEXT NOT NULL,
-        session_id TEXT,
-        memory_type TEXT NOT NULL,
-        embedding FLOAT[768]
-      )
-    `)
   })()
 
   await initPromise
 }
 
-// SQLite proxy that wraps tauri-plugin-sql for drizzle
 async function sqliteProxy(sql: string, params: unknown[], method: "all" | "run" | "get" | "values") {
   const sqlite = await getSqliteDb()
 
   if (method === "all" || method === "get" || method === "values") {
-    const rows = await sqlite.select(sql, params as string[])
-    return rows
-  } else {
-    await sqlite.execute(sql, params as string[])
-    return { rows: [], lastInsertRowid: 0, changes: 0 }
+    return sqlite.select(sql, params)
   }
+
+  return sqlite.execute(sql, params)
 }
 
 export function getDb() {
@@ -84,7 +77,10 @@ export function getDb() {
     db = drizzle(
       async (sql, params, method) => {
         const result = await sqliteProxy(sql, params, method as "all" | "run" | "get" | "values")
-        return { rows: result as unknown as {}[], lastInsertRowid: 0, changes: 0 }
+        if (Array.isArray(result)) {
+          return { rows: result as unknown as {}[], lastInsertRowid: 0, changes: 0 }
+        }
+        return { rows: [], lastInsertRowid: result.lastInsertRowid, changes: result.changes }
       },
       { schema }
     )

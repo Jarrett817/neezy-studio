@@ -5,13 +5,13 @@ import { getSetting, setSetting } from "~/services/storage/settings-store"
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
-  webllmModel: string
+  llmModel: string
 }
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
   preferLowPower: true,
   maxCpuPercent: 95,
-  webllmModel: "Qwen2.5-3B-Instruct-q4f16_1-MLC",
+  llmModel: "",
 }
 
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {

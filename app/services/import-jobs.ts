@@ -1,5 +1,3 @@
-import { invokeTauri } from "~/services/tauri-client"
-
 export type JobStage =
   | "queued"
   | "screenshot"
@@ -26,17 +24,25 @@ export type ImportJob = {
 }
 
 export async function listImportJobs(): Promise<ImportJob[]> {
-  return invokeTauri<ImportJob[]>("list_import_jobs")
+  return []
 }
 
 export async function createImportJob(sourceUrl: string): Promise<ImportJob> {
-  return invokeTauri<ImportJob>("create_import_job", { sourceUrl })
+  const now = new Date().toISOString()
+  return {
+    id: crypto.randomUUID(),
+    sourceUrl,
+    stage: "queued",
+    createdAt: now,
+    updatedAt: now,
+    noteId: "",
+  }
 }
 
-export async function runNextStage(jobId: string): Promise<ImportJob> {
-  return invokeTauri<ImportJob>("run_import_job", { jobId })
+export async function runNextStage(_jobId: string): Promise<ImportJob> {
+  throw new Error("Import jobs are not implemented in the Electron runtime yet.")
 }
 
 export async function retryJob(jobId: string): Promise<ImportJob> {
-  return invokeTauri<ImportJob>("retry_import_job", { jobId })
+  return runNextStage(jobId)
 }

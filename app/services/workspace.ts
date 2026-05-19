@@ -1,4 +1,4 @@
-import { invokeTauri } from "~/services/tauri-client"
+import { appDataDir, getRuntimeMetrics as getElectronRuntimeMetrics, join } from "~/services/electron-client"
 import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 import { getPersona, savePersona } from "./storage/persona"
 export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
@@ -164,7 +164,7 @@ export async function saveAccountProfile(profile: AccountProfile): Promise<Accou
 // ==================== 运行时指标（Rust 计算） ====================
 
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
-  return invokeTauri<RuntimeMetrics>("get_runtime_metrics")
+  return getElectronRuntimeMetrics()
 }
 
 // ==================== 知识库 (前端 memories.ts) ====================
@@ -188,7 +188,6 @@ export async function addKnowledgeItem(item: Omit<KnowledgeItem, "id">): Promise
 export async function deleteKnowledgeItem(_id: string): Promise<void> {}
 
 export async function getMemoriesDir(): Promise<string> {
-  const { appDataDir, join } = await import("@tauri-apps/api/path")
   const baseDir = await appDataDir()
   return join(baseDir, "memories")
 }

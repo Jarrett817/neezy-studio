@@ -1,8 +1,8 @@
-// Memory vector storage service - Drizzle ORM + tauri-plugin-sql + vec0
+// Memory vector storage service - Drizzle ORM + Electron SQLite
 
 import { nanoid } from "nanoid"
 import { ensureInit, getDb, getSqliteDb, schema } from "../db"
-import { getEmbeddings } from "~/services/webllm"
+import { getEmbeddings } from "~/services/llm"
 
 export type MemorySlice = {
   id: string
@@ -166,7 +166,7 @@ export async function searchMemorySlices(
   params.push(String(limit))
 
   try {
-    const rows = await sqlite.select<Record<string, unknown>[]>(sql, params)
+    const rows = await sqlite.select<Record<string, unknown>>(sql, params)
     return rows.map((row): MemorySlice => ({
       id: row.id as string,
       session_id: row.session_id as string | null,

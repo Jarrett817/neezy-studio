@@ -1,10 +1,10 @@
-// 记忆存储服务 - Drizzle ORM + tauri-plugin-sql + sqlite-vec
+// 记忆存储服务 - Drizzle ORM + Electron SQLite
 
 import { nanoid } from "nanoid"
 import { ensureInit, getDb, getSqliteDb, schema } from "./db"
 import { writeMemoryFile, deleteMemoryFile } from "./fs-memory"
 import { eq } from "drizzle-orm"
-import { getEmbeddings } from "./webllm"
+import { getEmbeddings } from "./llm"
 
 export type MemoryItem = {
   id: string
@@ -109,16 +109,32 @@ export async function deleteMemory(id: string, filePath: string): Promise<void> 
 export async function searchMemories(query: string, limit = 10): Promise<MemoryItem[]> {
   await ensureInit()
 
+  const fallbackSearch = async () => {
+    const all = await listMemories()
+    const terms = query.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean)
+
+    return all
+      .map((item) => {
+        const text = `${item.title} ${item.category} ${item.content}`.toLowerCase()
+        const score = terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0)
+        return { item, score }
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || b.item.updated_at - a.item.updated_at)
+      .slice(0, limit)
+      .map(({ item }) => item)
+  }
+
   // 生成查询向量
   let queryEmbedding: number[] | null = null
   try {
     queryEmbedding = await getEmbeddings(query)
   } catch (e) {
     console.warn("Failed to generate query embedding:", e)
-    return []
+    return fallbackSearch()
   }
 
-  if (!queryEmbedding || queryEmbedding.length === 0) return []
+  if (!queryEmbedding || queryEmbedding.length === 0) return fallbackSearch()
 
   const sqlite = await getSqliteDb()
   const results = await sqlite.select(

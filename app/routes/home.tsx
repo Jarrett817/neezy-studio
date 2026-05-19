@@ -12,7 +12,7 @@ import {
 import { Link } from "react-router"
 
 import { Button } from "~/components/ui/button"
-import { getBuildInfo } from "~/services/tauri-client"
+import { getBuildInfo } from "~/services/electron-client"
 import { getWorkspaceSnapshot } from "~/services/workspace"
 
 const statCards = [

@@ -1,7 +1,6 @@
-// MD 文件操作 - 前端 via tauri-plugin-fs
+// MD 文件操作 - 前端 via Electron preload
 
-import { readTextFile, writeTextFile, mkdir, exists, remove } from "@tauri-apps/plugin-fs"
-import { appDataDir, join } from "@tauri-apps/api/path"
+import { appDataDir, exists, join, mkdir, readTextFile, remove, writeTextFile } from "~/services/electron-client"
 
 const MEMORIES_DIR = "memories"
 

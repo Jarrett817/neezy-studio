@@ -29,6 +29,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   })
   const accountName = activeAccountName || profile?.accountName
 
+  // App 启动后预加载上次使用的模型（仅在浏览器环境）
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      import("~/services/llm").then(({ preloadModel }) => {
+        preloadModel()
+      })
+    }
+  }, [])
+
   return (
     <div className="flex h-screen text-foreground overflow-hidden">
       {/* 侧边栏 — 玻璃拟态 */}

@@ -1,7 +1,6 @@
 // Skill MD 文件存储
 
-import { readTextFile, writeTextFile, mkdir, exists, remove, readDir } from "@tauri-apps/plugin-fs"
-import { appDataDir, join } from "@tauri-apps/api/path"
+import { appDataDir, exists, join, mkdir, readDir, readTextFile, remove, writeTextFile } from "~/services/electron-client"
 
 const SKILLS_DIR = "skills"
 

@@ -6,7 +6,7 @@ import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 
 import { SectionHeading } from "~/components/section-heading"
-import { WebLLMModelBrowser } from "~/components/webllm-model-browser"
+import { LlmModelBrowser } from "~/components/llm-model-browser"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -22,7 +22,7 @@ import {
 } from "~/services/workspace"
 import { type RuntimeSettings } from "~/services/settings"
 import { useAppStore } from "~/stores/app-store"
-import { isModelLoaded, getCurrentModel } from "~/services/webllm"
+import { isModelLoaded, getCurrentModel } from "~/services/llm"
 
 const profileSchema = z.object({
   accountName: z.string().min(1, "请输入账号名称"),
@@ -52,7 +52,7 @@ export default function SettingsRoute() {
   })
   const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings | null>(null)
 
-  // WebLLM 模型状态
+  // Local LLM 模型状态
   const modelLoaded = isModelLoaded()
   const currentModel = getCurrentModel()
 
@@ -86,7 +86,7 @@ export default function SettingsRoute() {
     <div className="space-y-8 pt-4">
       <AccountSection form={form} onSubmit={onSubmit} isPending={saveProfileMutation.isPending} />
       <RuntimeSection metrics={metrics} modelReady={modelLoaded} currentModel={currentModel} runtimeDraft={runtimeDraft} setRuntimeDraft={setRuntimeDraft} onSave={saveRuntimeMutation} />
-      <WebLLMModelBrowser />
+      <LlmModelBrowser memoryGb={metrics?.totalMemoryGb} />
     </div>
   )
 }

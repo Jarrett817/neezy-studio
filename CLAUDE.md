@@ -1,158 +1,118 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件供 Claude Code 在本仓库中协作时参考。
 
 ## 项目概述
 
-Neezy Studio 是一个基于 Tauri 的本地内容生成桌面应用，使用本地 GGUF 格式大模型进行 Agent 编排。
+Neezy Studio 是基于 **Electron** 的本地 AI 桌面应用：对话 Agent、记忆检索、对话驱动的人格画像，模型均为本地 **GGUF**。
 
 - **前端**: React Router 7 + TypeScript + Tailwind CSS v4 + shadcn/ui
-- **后端**: Tauri 2.x + Rust + mistralrs (本地 LLM 推理)
-- **数据库**: SQLite (rusqlite)
-- **模型格式**: GGUF
+- **桌面壳**: Electron 42 + `electron/main.cjs`（IPC、文件、SQLite、模型下载）
+- **对话推理**: `@electron/llm`（底层 node-llama-cpp，renderer 中 `window.electronAi`）
+- **Embedding**: 主进程 `node-llama-cpp`（`electron/embedding-runtime.cjs`）
+- **数据库**: SQLite（Drizzle ORM + 主进程 `node:sqlite`，经 IPC）
+- **模型下载**: `@huggingface/hub`（`electron/model-download.cjs`，hf-mirror 回退官方源）
 - **包管理**: bun
 
 ## 开发命令
 
 ```bash
-# 安装依赖
 bun install
 
-# 开发模式
-bun tauri dev
+# Electron 开发（会拉起 Vite + Electron）
+bun run electron:dev
 
-# 生产构建
-bun tauri build
+# 仅前端
+bun run dev
 
-# 类型检查
+# 生产：先构建前端再启动 Electron
+bun run electron:start
+
 bun run typecheck
-
-# 代码格式化
 bun run format
-
-# 前端单独构建
 bun run build
 
-# 前端单独开发服务器
-bun run dev
+bun run db:generate
+bun run db:studio
 ```
 
-## 架构概览
+## 架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (app/)                      │
-│  React Router 7 + TanStack Query + Zustand + Tailwind  │
-└─────────────────────┬───────────────────────────────────┘
-                      │ Tauri IPC (invoke)
-┌─────────────────────▼───────────────────────────────────┐
-│                 Backend (src-tauri/)                    │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │ llm_runtime │  │ agent/       │  │ storage/      │  │
-│  │ (mistralrs)│  │ memory.rs    │  │ db.rs (SQLite) │  │
-│  │             │  │ skill.rs     │  │ settings.rs    │  │
-│  │             │  │ react.rs    │  │                │  │
-│  └─────────────┘  └──────────────┘  └────────────────┘  │
-│  ┌─────────────┐  ┌──────────────────────────────────┐  │
-│  │ models/     │  │ lib.rs (Tauri commands + metrics)│  │
-│  │ download.rs│  │                                  │  │
-│  │ resolve.rs │  │                                  │  │
-│  └─────────────┘  └──────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Renderer (app/)                                           │
+│  React Router 7 · TanStack Query · Zustand                 │
+│  llm.ts → window.electronAi (@electron/llm)                │
+└─────────────────────────┬────────────────────────────────┘
+                          │ preload (electronAPI)
+┌─────────────────────────▼────────────────────────────────┐
+│  Main (electron/)                                          │
+│  main.cjs · storage-paths.cjs · model-catalog.cjs        │
+│  model-download.cjs · embedding-runtime.cjs                │
+│  node:sqlite · @huggingface/hub                              │
+└──────────────────────────────────────────────────────────┘
 ```
+
+## 路由 (app/routes.ts)
+
+| 路径 | 页面 |
+|------|------|
+| `/` | chat.tsx — Agent 对话 |
+| `/portrait` | portrait.tsx — 人格画像（对话自动归纳，可导出 MD） |
+| `/knowledge-base` | knowledge-base.tsx — 记忆列表 |
+| `/skills` | skills.tsx — Skill |
+| `/settings` | settings.tsx — 存储路径、运行时、本地模型 |
 
 ## 关键模块
 
-### 前端 (app/)
-
 | 路径 | 用途 |
 |------|------|
-| `app/agents/content-agent.ts` | Content Agent 编排逻辑：setup → knowledge → plan → write → review |
-| `app/services/workspace.ts` | 所有 Tauri IPC 调用的入口，定义关键类型 |
-| `app/routes.ts` | 路由配置 (React Router 7) |
-| `app/components/app-shell.tsx` | 主布局：侧边栏 + 顶部状态栏 |
-| `app/stores/app-store.ts` | Zustand 状态管理 |
+| `app/services/electron-client.ts` | 所有 `window.electronAPI` 的类型与封装 |
+| `app/services/storage-paths.ts` | 可配置数据目录 / 模型目录（`getStoragePaths()`） |
+| `app/services/llm.ts` | 对话 load/chat/stream；Embedding 经 IPC |
+| `app/services/settings.ts` | `runtime_settings`（llmModel、embeddingModel、档位等） |
+| `app/services/user-portrait.ts` | 对话更新人格画像、导出 Markdown |
+| `app/services/memories.ts` | 记忆 CRUD + 向量检索 |
+| `app/services/fs-memory.ts` | 记忆 Markdown 文件读写 |
+| `app/agents/llm-agent.ts` | ReAct 工具循环 |
+| `app/components/llm-model-browser.tsx` | 对话 / Embedding 模型分档选择与下载 |
+| `electron/model-catalog.cjs` | 模型目录（轻量 / 中等 / 高性能） |
+| `electron/model-recommendations.cjs` | 按内存与负载推荐模型 |
 
-**路由**:
-- `/` → home.tsx (工作台)
-- `/creator` → creator.tsx (内容生成对话)
-- `/knowledge-base` → knowledge-base.tsx
-- `/skills` → skills.tsx
-- `/import` → import.tsx
-- `/analytics` → analytics.tsx
-- `/settings` → settings.tsx
+## 存储路径
 
-### 后端 (src-tauri/)
+用户可在设置中配置（小配置文件在系统 `userData`，大文件在用户指定盘）：
 
-| 文件 | 职责 |
-|------|------|
-| `src-tauri/src/lib.rs` | 主入口，注册 25+ Tauri commands，运行时指标计算 |
-| `src-tauri/src/llm_runtime.rs` | mistralrs 封装：文本生成、embedding、模型缓存 |
-| `src-tauri/src/agent/memory.rs` | RAG 检索：embedding 生成 + cosine similarity |
-| `src-tauri/src/agent/skill.rs` | Skill 系统：SKILL.md 解析、skill 执行、import/export |
-| `src-tauri/src/agent/react.rs` | ReAct Agent 循环 (最多 10 步) |
-| `src-tauri/src/models/resolve.rs` | 模型选择：根据 pressure/内存推荐模型 |
-| `src-tauri/src/models/download.rs` | 模型下载：12 个可下载 GGUF 模型 |
-| `src-tauri/src/storage/db.rs` | SQLite：knowledge_items, memory_events, embeddings |
+- `dataRoot` — `memories.db`、`memories/`、`personas/`、`skills/`
+- `modelsDir` — `.gguf` 对话与 Embedding 模型
 
-## Content Agent 流程
+代码中统一使用 `getStoragePaths()` 取路径字段，不要再加仅转调一层的包装函数。
 
-`app/agents/content-agent.ts` 中的 `runContentAgent()` 实现多阶段管道：
+## 模型
 
-1. **setup** - 加载账户配置、模型设置、技能
-2. **knowledge** - 从向量存储检索相关知识
-3. **plan** - 使用 planner 模型生成大纲 (高负载时可跳过)
-4. **write** - 使用 writer 模型生成正文 (流式)
-5. **review** - 使用 reviewer 模型生成标签 (可走快速路径)
+- **对话**: `@electron/llm`，同时仅加载一个 GGUF
+- **Embedding**: 主进程单独加载（如 Nomic Embed，768 维，与 sqlite-vec 表一致）
+- **下载**: catalog 中 `repo` + `repoPath`，经 `@huggingface/hub` 流式落盘
+- **推荐**: `app:get-runtime-metrics` / `getModelRecommendations` 返回 `chatTier`、`embeddingTier` 与推荐模型 id
 
-**模型套件解析** (`resolveModelSuite`):
-- `manual-single-model`: 用户指定精确模型路径
-- `auto-single-model`: 单模型处理 plan/write/review
-- `auto-suite`: 不同模型分别处理 plan/writer/reviewer
+## IPC 要点 (preload → main)
 
-**自适应行为**:
-- 高压或内存 < 8GB 时跳过 knowledge retrieval 和 planning
-- 动态 token limit: 高压 640，正常 1200
-
-## Tauri IPC 模式
-
-所有后端调用通过 `invokeTauri()` 封装在 `app/services/workspace.ts`:
-
-```typescript
-// 典型调用模式
-const result = await invokeTauri('get_relevant_knowledge', { query, topK });
-```
-
-关键命令: `generate_text_stream`, `get_relevant_knowledge`, `list_skills`, `resolve_llm_model`, `get_runtime_metrics`
-
-## 系统压力检测
-
-后端根据 CPU 和内存计算压力等级 (high/medium/low)：
-- **high**: CPU ≥70% 或内存 <4GB
-- **medium**: CPU ≥45% 或内存 <8GB
-- **low**: 其他
-
-压力等级决定运行时参数：线程数、上下文大小、批处理大小、GPU 使用
-
-## 模型管理
-
-- 模型存储在 `models/` 目录
-- 使用 mistralrs 加载 GGUF 模型
-- 支持 CUDA GPU 加速 (自动检测)
-- 模型缓存: `TEXT_MODEL_CACHE` / `EMBEDDING_MODEL_CACHE`
-- 默认下载源: `hf-mirror.com`
+- `getStoragePaths` / `saveStoragePaths`
+- `getModelCatalog(kind?: 'chat' | 'embedding')`
+- `downloadModel` / `deleteModel`
+- `loadEmbeddingModel` / `getEmbeddings`
+- `sqlite:execute` / `sqlite:select`
+- `fs:*`、`path:*`
 
 ## 数据库
 
-SQLite 数据库 (`neezy-memory.sqlite`) 位于应用数据目录:
-- `account_profile` - 用户账户设置
-- `knowledge_items` - RAG 知识库
-- `memory_events` - 事件日志
-- `memory_embeddings` - 向量 embedding 存储
+- 主库: `{dataRoot}/memories.db`（Drizzle + IPC sqlite）
+- 向量表: `memory_embeddings`、`memory_vector_slices`（vec0，768 维，需 Embedding 模型已加载）
+- 设置: `settings` 表（如 `runtime_settings`、`user_portrait_v1`）
 
 ## 注意事项
 
-- React Router 7 使用 `app/` 目录而非传统 `src/`
-- 路径别名 `~/` 映射到 `./app/`
-- shadcn/ui 组件在 `app/components/ui/`，使用 `class-variance-authority` 定制
-- 取消生成: `CANCEL_GENERATION` atomic flag 在 `llm_runtime.rs`
+- 路径别名 `~/` → `./app/`
+- 无 `src-tauri`；勿使用 Tauri / mistralrs / `invoke` 等旧描述
+- 人格画像由对话自动更新，不在设置页手填人设
+- 修改存储路径后需 `resetDbCache()`，并提示用户迁移数据 / 重启

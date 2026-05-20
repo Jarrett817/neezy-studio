@@ -1,4 +1,11 @@
-import { listLlmModels as listLocalLlmModels } from "~/services/electron-client"
+import {
+  getEmbeddingsFromMain,
+  getEmbeddingStatus,
+  getModelCatalog,
+  listLlmModels as listLocalLlmModels,
+  loadEmbeddingModel as loadEmbeddingModelInMain,
+} from "~/services/electron-client"
+import { getRuntimeSettings } from "~/services/settings"
 
 export type LlmModel = {
   id: string
@@ -28,8 +35,22 @@ type ElectronAi = {
     requestUUID?: string
   }) => Promise<void>
   destroy: () => Promise<void>
-  prompt: (input: string, options?: { timeout?: number; requestUUID?: string; responseJSONSchema?: object }) => Promise<string>
-  promptStreaming: (input: string, options?: { timeout?: number; requestUUID?: string; responseJSONSchema?: object }) => Promise<AsyncIterableIterator<string>>
+  prompt: (
+    input: string,
+    options?: {
+      timeout?: number
+      requestUUID?: string
+      responseJSONSchema?: object
+    }
+  ) => Promise<string>
+  promptStreaming: (
+    input: string,
+    options?: {
+      timeout?: number
+      requestUUID?: string
+      responseJSONSchema?: object
+    }
+  ) => Promise<AsyncIterableIterator<string>>
   abortRequest: (requestUUID: string) => void
 }
 
@@ -56,11 +77,18 @@ let lastUsedTime = 0
 const HOT_CACHE_THRESHOLD_MS = 30 * 60 * 1000
 const loadingListeners = new Set<(state: LoadingState) => void>()
 
+/** Electron 渲染进程且 @electron/llm 预加载已注入 */
+export function isElectronLlmAvailable(): boolean {
+  return typeof window !== "undefined" && window.electronAi != null
+}
+
 function getElectronAi(): ElectronAi {
-  if (typeof window === "undefined" || !window.electronAi) {
-    throw new Error("@electron/llm is only available in the Electron renderer.")
+  if (!isElectronLlmAvailable()) {
+    throw new Error(
+      "@electron/llm 未就绪。请用 bun run electron:dev 启动，并确保主进程在开窗前已调用 loadElectronLlm。"
+    )
   }
-  return window.electronAi
+  return window.electronAi!
 }
 
 function notifyLoadingState() {
@@ -70,14 +98,21 @@ function notifyLoadingState() {
 function formatPrompt(messages: ChatMessage[]): string {
   return messages
     .map((message) => {
-      const role = message.role === "assistant" ? "Assistant" : message.role === "system" ? "System" : "User"
+      const role =
+        message.role === "assistant"
+          ? "Assistant"
+          : message.role === "system"
+            ? "System"
+            : "User"
       return `${role}:\n${message.content}`
     })
     .join("\n\n")
     .concat("\n\nAssistant:\n")
 }
 
-export function subscribeLoadingState(listener: (state: LoadingState) => void): () => void {
+export function subscribeLoadingState(
+  listener: (state: LoadingState) => void
+): () => void {
   loadingListeners.add(listener)
   listener({ ...loadingState })
   return () => loadingListeners.delete(listener)
@@ -96,6 +131,7 @@ export async function loadModel(
   onProgress?: (progress: ModelProgress) => void,
   options?: { temperature?: number; topK?: number; systemPrompt?: string }
 ): Promise<void> {
+  if (!isElectronLlmAvailable()) return
   if (currentModel === modelId) return
 
   const progress = { progress: 0, text: "Loading local GGUF model..." }
@@ -150,10 +186,14 @@ export async function chat(
   }
 ): Promise<string> {
   if (!currentModel) {
-    throw new Error("No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first.")
+    throw new Error(
+      "No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first."
+    )
   }
   touchLastUsed()
-  const content = await getElectronAi().prompt(formatPrompt(messages), { timeout: 120000 })
+  const content = await getElectronAi().prompt(formatPrompt(messages), {
+    timeout: 120000,
+  })
   options?.onChunk?.(content)
   return content
 }
@@ -167,11 +207,15 @@ export async function* streamChat(
   }
 ): AsyncGenerator<{ content: string; done: boolean }> {
   if (!currentModel) {
-    throw new Error("No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first.")
+    throw new Error(
+      "No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first."
+    )
   }
   touchLastUsed()
 
-  const stream = await getElectronAi().promptStreaming(formatPrompt(messages), { timeout: 120000 })
+  const stream = await getElectronAi().promptStreaming(formatPrompt(messages), {
+    timeout: 120000,
+  })
   let accumulatedContent = ""
 
   for await (const chunk of stream) {
@@ -199,9 +243,52 @@ export async function unloadModel(): Promise<void> {
 
 export function preloadModel(): void {}
 
+async function ensureEmbeddingModelLoaded(): Promise<boolean> {
+  const status = await getEmbeddingStatus()
+  if (status.loaded) return true
+
+  const settings = await getRuntimeSettings()
+  if (!settings.embeddingModel) return false
+
+  const catalog = await getModelCatalog("embedding")
+  const match = catalog.find(
+    (item) => item.fileName === settings.embeddingModel && item.installed
+  )
+  if (!match) return false
+
+  try {
+    await loadEmbeddingModelInMain(match.id)
+    return true
+  } catch (error) {
+    console.warn("[embedding] Failed to load model:", error)
+    return false
+  }
+}
+
+export async function loadEmbeddingByFileName(
+  fileName: string,
+  modelId: string
+): Promise<void> {
+  await loadEmbeddingModelInMain(modelId)
+  const settings = await getRuntimeSettings()
+  const { saveRuntimeSettings } = await import("~/services/settings")
+  await saveRuntimeSettings({ ...settings, embeddingModel: fileName })
+}
+
 export async function getEmbeddings(_texts: string): Promise<number[]>
 export async function getEmbeddings(_texts: string[]): Promise<number[][]>
-export async function getEmbeddings(_texts: string[] | string): Promise<number[][] | number[]> {
-  console.warn("@electron/llm does not provide embeddings; semantic vector search is disabled.")
-  return []
+export async function getEmbeddings(
+  _texts: string[] | string
+): Promise<number[][] | number[]> {
+  const ready = await ensureEmbeddingModelLoaded()
+  if (!ready) {
+    console.warn(
+      "[embedding] No embedding model loaded; vector search is disabled."
+    )
+    return Array.isArray(_texts) ? [] : []
+  }
+  if (Array.isArray(_texts)) {
+    return getEmbeddingsFromMain(_texts)
+  }
+  return getEmbeddingsFromMain(_texts)
 }

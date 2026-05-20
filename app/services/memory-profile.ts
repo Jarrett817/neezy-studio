@@ -1,4 +1,9 @@
-import { listMemories, saveMemory, searchMemories, type MemoryItem } from "~/services/memories"
+import {
+  listMemories,
+  saveMemory,
+  searchMemories,
+  type MemoryItem,
+} from "~/services/memories"
 
 export type MemoryProfile = {
   total: number
@@ -37,10 +42,16 @@ function compactText(text: string, max = 120) {
 export async function buildMemoryProfile(): Promise<MemoryProfile> {
   const memories = await listMemories()
   const categoryCounts = new Map<string, number>()
-  const allText = memories.map((item) => `${item.title} ${item.category} ${item.content}`).join("\n").toLowerCase()
+  const allText = memories
+    .map((item) => `${item.title} ${item.category} ${item.content}`)
+    .join("\n")
+    .toLowerCase()
 
   for (const item of memories) {
-    categoryCounts.set(item.category, (categoryCounts.get(item.category) ?? 0) + 1)
+    categoryCounts.set(
+      item.category,
+      (categoryCounts.get(item.category) ?? 0) + 1
+    )
   }
 
   const focusAreas = Array.from(categoryCounts.entries())
@@ -55,7 +66,13 @@ export async function buildMemoryProfile(): Promise<MemoryProfile> {
     }, 0)
     return {
       label: rule.label,
-      score: memories.length === 0 ? 0 : Math.min(100, Math.round((hits / Math.max(3, memories.length)) * 35)),
+      score:
+        memories.length === 0
+          ? 0
+          : Math.min(
+              100,
+              Math.round((hits / Math.max(3, memories.length)) * 35)
+            ),
       description: rule.description,
     }
   }).sort((a, b) => b.score - a.score)
@@ -75,7 +92,10 @@ export async function buildMemoryProfile(): Promise<MemoryProfile> {
   }
 }
 
-export async function getRelevantMemories(input: string, limit = 5): Promise<MemoryItem[]> {
+export async function getRelevantMemories(
+  input: string,
+  limit = 5
+): Promise<MemoryItem[]> {
   if (!input.trim()) return []
   return searchMemories(input, limit)
 }
@@ -88,7 +108,9 @@ export async function rememberConversationTurn(input: {
   if (content.length < 12) return
 
   const important =
-    /我(喜欢|偏好|习惯|正在|想要|希望|需要|不喜欢|讨厌|害怕|计划|决定)|记住|以后|我的|我们|项目|目标|账号|人设|风格/.test(content)
+    /我(喜欢|偏好|习惯|正在|想要|希望|需要|不喜欢|讨厌|害怕|计划|决定)|记住|以后|我的|我们|项目|目标|账号|人设|风格/.test(
+      content
+    )
 
   if (!important && content.length < 80) return
 

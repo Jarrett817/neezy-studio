@@ -1,8 +1,15 @@
 // Skill MD 文件存储
 
-import { appDataDir, exists, join, mkdir, readDir, readTextFile, remove, writeTextFile } from "~/services/electron-client"
-
-const SKILLS_DIR = "skills"
+import {
+  exists,
+  join,
+  mkdir,
+  readDir,
+  readTextFile,
+  remove,
+  writeTextFile,
+} from "~/services/electron-client"
+import { getStoragePaths } from "~/services/storage-paths"
 
 export type Skill = {
   id: string
@@ -15,15 +22,8 @@ export type Skill = {
   updated_at: number
 }
 
-// 获取技能目录路径
-async function getSkillsDir(): Promise<string> {
-  const baseDir = await appDataDir()
-  return await join(baseDir, SKILLS_DIR)
-}
-
-// 确保目录存在
 async function ensureSkillsDir(): Promise<void> {
-  const dir = await getSkillsDir()
+  const { skillsDir: dir } = await getStoragePaths()
   const dirExists = await exists(dir)
   if (!dirExists) {
     await mkdir(dir, { recursive: true })
@@ -106,7 +106,7 @@ function serializeSkillToMd(skill: Skill): string {
 
 // 获取技能文件路径
 async function getSkillPath(name: string): Promise<string> {
-  const dir = await getSkillsDir()
+  const { skillsDir: dir } = await getStoragePaths()
   const safeName = safeFilename(name)
   return await join(dir, `${safeName}.md`)
 }
@@ -114,7 +114,7 @@ async function getSkillPath(name: string): Promise<string> {
 // 列出所有技能
 export async function listSkills(): Promise<Skill[]> {
   try {
-    const dir = await getSkillsDir()
+    const { skillsDir: dir } = await getStoragePaths()
     const dirExists = await exists(dir)
     if (!dirExists) {
       return []

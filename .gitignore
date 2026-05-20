@@ -10,3 +10,4 @@
 /src-tauri/binaries/
 .playwright-mcp
 /src-tauri/resources/**
+/src-tauri/target/**

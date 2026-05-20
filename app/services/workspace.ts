@@ -1,6 +1,8 @@
-import { appDataDir, getRuntimeMetrics as getElectronRuntimeMetrics, join } from "~/services/electron-client"
+import {
+  getRuntimeMetrics as getElectronRuntimeMetrics,
+  type RuntimeMetrics as ElectronRuntimeMetrics,
+} from "~/services/electron-client"
 import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
-import { getPersona, savePersona } from "./storage/persona"
 export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 
 export type DashboardSummary = {
@@ -29,14 +31,6 @@ export type WorkspaceSnapshot = {
   summary: DashboardSummary
   drafts: DraftPreview[]
   knowledge: KnowledgePreview[]
-}
-
-export type AccountProfile = {
-  accountName: string
-  track: string
-  persona: string
-  toneStyle: string
-  forbiddenWords: string
 }
 
 export type ContentAgentInput = {
@@ -80,15 +74,7 @@ export type RuntimePlan = {
   pressure: "low" | "medium" | "high"
 }
 
-export type RuntimeMetrics = {
-  cpuCount: number
-  cpuUsagePercent: number
-  totalMemoryGb: number
-  availableMemoryGb: number
-  pressure: "low" | "medium" | "high"
-  recommendedModelId?: string
-  recommendedReason: string
-}
+export type RuntimeMetrics = ElectronRuntimeMetrics
 
 export type KnowledgeItem = {
   id?: string
@@ -133,35 +119,18 @@ export type AgentExecutionStep = {
 
 export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
   return {
-    summary: { draftCount: 0, readyToPublishCount: 0, knowledgeCount: 0, weeklyPostCount: 0 },
+    summary: {
+      draftCount: 0,
+      readyToPublishCount: 0,
+      knowledgeCount: 0,
+      weeklyPostCount: 0,
+    },
     drafts: [],
-    knowledge: []
+    knowledge: [],
   }
 }
 
-export async function getAccountProfile(): Promise<AccountProfile> {
-  const persona = await getPersona()
-  return {
-    accountName: persona.accountName,
-    track: persona.track,
-    persona: persona.persona,
-    toneStyle: persona.toneStyle,
-    forbiddenWords: persona.forbiddenWords,
-  }
-}
-
-export async function saveAccountProfile(profile: AccountProfile): Promise<AccountProfile> {
-  await savePersona({
-    accountName: profile.accountName,
-    track: profile.track,
-    persona: profile.persona,
-    toneStyle: profile.toneStyle,
-    forbiddenWords: profile.forbiddenWords,
-  })
-  return profile
-}
-
-// ==================== 运行时指标（Rust 计算） ====================
+// ==================== 运行时指标 ====================
 
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
   return getElectronRuntimeMetrics()
@@ -169,7 +138,9 @@ export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
 
 // ==================== 知识库 (前端 memories.ts) ====================
 
-export async function getRelevantKnowledge(_input: ContentAgentInput): Promise<KnowledgePreview[]> {
+export async function getRelevantKnowledge(
+  _input: ContentAgentInput
+): Promise<KnowledgePreview[]> {
   return []
 }
 
@@ -177,22 +148,24 @@ export async function listKnowledgeItems(): Promise<KnowledgeItem[]> {
   return []
 }
 
-export async function saveKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem> {
+export async function saveKnowledgeItem(
+  item: KnowledgeItem
+): Promise<KnowledgeItem> {
   return item
 }
 
-export async function addKnowledgeItem(item: Omit<KnowledgeItem, "id">): Promise<KnowledgeItem> {
+export async function addKnowledgeItem(
+  item: Omit<KnowledgeItem, "id">
+): Promise<KnowledgeItem> {
   return item as KnowledgeItem
 }
 
 export async function deleteKnowledgeItem(_id: string): Promise<void> {}
 
-export async function getMemoriesDir(): Promise<string> {
-  const baseDir = await appDataDir()
-  return join(baseDir, "memories")
-}
-
-export async function searchMemories(_query: string, _limit = 5): Promise<KnowledgeItem[]> {
+export async function searchMemories(
+  _query: string,
+  _limit = 5
+): Promise<KnowledgeItem[]> {
   return []
 }
 
@@ -206,15 +179,24 @@ export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {
   return skill
 }
 
-export async function setSkillEnabled(id: string, _enabled: boolean): Promise<AgentSkill> {
+export async function setSkillEnabled(
+  id: string,
+  _enabled: boolean
+): Promise<AgentSkill> {
   return { id } as AgentSkill
 }
 
-export async function importSkillArchive(_input: { archiveName: string; archiveBase64: string }): Promise<AgentSkill> {
+export async function importSkillArchive(_input: {
+  archiveName: string
+  archiveBase64: string
+}): Promise<AgentSkill> {
   return {} as AgentSkill
 }
 
-export async function importSkillFolder(_input: { folderName: string; files: SkillImportFile[] }): Promise<AgentSkill> {
+export async function importSkillFolder(_input: {
+  folderName: string
+  files: SkillImportFile[]
+}): Promise<AgentSkill> {
   return {} as AgentSkill
 }
 
@@ -222,10 +204,18 @@ export async function deleteSkill(_id: string): Promise<void> {}
 
 // ==================== 内存事件 ====================
 
-export async function addMemoryEvent(_input: { layer: string; content: string; source?: string }): Promise<void> {}
+export async function addMemoryEvent(_input: {
+  layer: string
+  content: string
+  source?: string
+}): Promise<void> {}
 
 // ==================== 图片 ====================
 
-export async function savePastedImage(_input: { fileName?: string; mimeType: string; bytesBase64: string }): Promise<string> {
+export async function savePastedImage(_input: {
+  fileName?: string
+  mimeType: string
+  bytesBase64: string
+}): Promise<string> {
   return ""
 }

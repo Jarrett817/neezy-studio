@@ -33,10 +33,10 @@ export function FloatingParticles() {
     resize()
 
     const colors = [
-      { h: 30, s: 100 },  // amber
-      { h: 120, s: 60 },  // sage green
-      { h: 270, s: 60 },  // lavender
-      { h: 15, s: 90 },   // coral
+      { h: 30, s: 100 }, // amber
+      { h: 120, s: 60 }, // sage green
+      { h: 270, s: 60 }, // lavender
+      { h: 15, s: 90 }, // coral
     ]
 
     const initParticles = () => {
@@ -124,19 +124,21 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      {isVisible && createPortal(
-        <motion.div
-          className="pointer-events-none fixed z-[9999] size-48 rounded-full"
-          style={{
-            background: "radial-gradient(circle, rgba(255,180,80,0.15) 0%, transparent 70%)",
-            left: mousePos.x - 96,
-            top: mousePos.y - 96,
-          }}
-          animate={{ x: 0, y: 0 }}
-          transition={{ type: "spring", stiffness: 150, damping: 15 }}
-        />,
-        document.body
-      )}
+      {isVisible &&
+        createPortal(
+          <motion.div
+            className="pointer-events-none fixed z-[9999] size-48 rounded-full"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(255,180,80,0.15) 0%, transparent 70%)",
+              left: mousePos.x - 96,
+              top: mousePos.y - 96,
+            }}
+            animate={{ x: 0, y: 0 }}
+            transition={{ type: "spring", stiffness: 150, damping: 15 }}
+          />,
+          document.body
+        )}
     </>
   )
 }
@@ -147,7 +149,7 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
 export function PageTransition({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
-      className="flex flex-col h-full min-h-0"
+      className="flex h-full min-h-0 flex-col"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
@@ -161,7 +163,13 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
 /**
  * 卡片入场动画
  */
-export function CardFloat({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+export function CardFloat({
+  children,
+  delay = 0,
+}: {
+  children: React.ReactNode
+  delay?: number
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -200,10 +208,12 @@ export function FadeIn({
   children,
   delay = 0,
   direction = "up",
+  className,
 }: {
   children: React.ReactNode
   delay?: number
   direction?: "up" | "down" | "left" | "right"
+  className?: string
 }) {
   const variants = {
     up: { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 } },
@@ -214,6 +224,7 @@ export function FadeIn({
 
   return (
     <motion.div
+      className={className}
       initial={variants[direction].initial}
       animate={variants[direction].animate}
       transition={{ duration: 0.4, delay, ease: [0.22, 1, 0.36, 1] }}
@@ -235,7 +246,9 @@ export function RippleButton({
   className?: string
   onClick?: () => void
 }) {
-  const [ripples, setRipples] = useState<{ x: number; y: number; id: number }[]>([])
+  const [ripples, setRipples] = useState<
+    { x: number; y: number; id: number }[]
+  >([])
 
   const handleClick = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -252,7 +265,10 @@ export function RippleButton({
   }
 
   return (
-    <div className={`relative overflow-hidden ${className}`} onClick={handleClick}>
+    <div
+      className={`relative overflow-hidden ${className}`}
+      onClick={handleClick}
+    >
       {ripples.map((r) => (
         <motion.span
           key={r.id}
@@ -278,7 +294,7 @@ export function RippleButton({
 export function WaveDivider({ className = "" }: { className?: string }) {
   return (
     <svg
-      className={`w-full h-8 ${className}`}
+      className={`h-8 w-full ${className}`}
       viewBox="0 0 1200 30"
       preserveAspectRatio="none"
       fill="none"
@@ -361,7 +377,11 @@ export function SkeletonShimmer() {
     <motion.div
       className="h-4 rounded-full bg-muted/60"
       animate={{
-        backgroundColor: ["rgba(var(--muted), 0.6)", "rgba(var(--muted), 0.3)", "rgba(var(--muted), 0.6)"],
+        backgroundColor: [
+          "rgba(var(--muted), 0.6)",
+          "rgba(var(--muted), 0.3)",
+          "rgba(var(--muted), 0.6)",
+        ],
       }}
       transition={{
         duration: 1.5,

@@ -1,98 +1,53 @@
-const { app, BrowserWindow, ipcMain } = require("electron")
-const { loadElectronLlm } = require("@electron/llm/main")
+const { app, BrowserWindow, ipcMain, dialog } = require("electron")
 const path = require("node:path")
 const fs = require("node:fs/promises")
 const fsSync = require("node:fs")
-const http = require("node:http")
-const https = require("node:https")
 const os = require("node:os")
 const { spawn } = require("node:child_process")
-const Database = require("better-sqlite3")
+const storagePaths = require("./storage-paths.cjs")
+const { registerIpcHandlers } = require("./ipc-handlers.cjs")
 
 const isDev = process.argv.includes("--dev")
 let devServer = null
 let mainWindow = null
-const sqliteHandles = new Map()
+let sqliteRuntime = null
 const activeDownloads = new Map()
 
-const MODEL_CATALOG = [
-  {
-    id: "qwen3-1.7b-daily",
-    title: "日常轻快",
-    subtitle: "回复快，占用低，适合聊天、记录和轻量写作。",
-    fileName: "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-    aliases: ["Qwen3-1.7B-Q4_K_M.gguf"],
-    sizeLabel: "约 1.2 GB",
-    sizeBytes: 1190000000,
-    minMemoryGb: 8,
-    fit: ["日常问答", "轻量写作", "低占用"],
-    url: "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-  },
-  {
-    id: "phi35-mini-balanced",
-    title: "稳妥均衡",
-    subtitle: "理解和写作更稳，适合大多数家用电脑。",
-    fileName: "Phi-3.5-mini-instruct-Q4_K_M.gguf",
-    aliases: [],
-    sizeLabel: "约 2.4 GB",
-    sizeBytes: 2400000000,
-    minMemoryGb: 12,
-    fit: ["长一点的对话", "内容创作", "资料整理"],
-    url: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
-  },
-  {
-    id: "qwen3-4b-quality",
-    title: "表达更好",
-    subtitle: "更适合复杂写作和分析，建议内存更充足时使用。",
-    fileName: "Qwen_Qwen3-4B-Q4_K_M.gguf",
-    aliases: ["Qwen3-4B-Q4_K_M.gguf"],
-    sizeLabel: "约 2.6 GB",
-    sizeBytes: 2600000000,
-    minMemoryGb: 16,
-    fit: ["深度分析", "高质量文案", "复杂任务"],
-    url: "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf",
-  },
-]
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 960,
-    minHeight: 640,
-    title: "Neezy Studio",
-    center: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
-
-  if (isDev) {
-    mainWindow.loadURL("http://127.0.0.1:5173")
-    mainWindow.webContents.openDevTools({ mode: "detach" })
-  } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "build", "client", "index.html"))
+function getSqliteRuntime() {
+  if (!sqliteRuntime) {
+    sqliteRuntime = require("./sqlite-runtime.cjs")
   }
+  return sqliteRuntime
 }
 
-function startDevServer() {
-  if (!isDev) return
+let heavy = null
 
-  devServer = spawn("bun", ["run", "dev", "--host", "127.0.0.1"], {
-    cwd: path.join(__dirname, ".."),
-    shell: process.platform === "win32",
-    stdio: "inherit",
-  })
+function ensureHeavy() {
+  if (heavy) return heavy
+  heavy = {
+    loadElectronLlm: require("@electron/llm/main").loadElectronLlm,
+    downloadModelFile: require("./model-download.cjs").downloadModelFile,
+    ...require("./model-catalog.cjs"),
+    buildModelRecommendations: require("./model-recommendations.cjs").buildModelRecommendations,
+    embeddingRuntime: require("./embedding-runtime.cjs"),
+  }
+  return heavy
+}
+
+function getPaths() {
+  return storagePaths.resolveStoragePaths(app)
 }
 
 function appDataDir() {
-  return app.getPath("userData")
+  return getPaths().dataRoot
 }
 
 function modelsDir() {
-  return path.join(appDataDir(), "models")
+  return getPaths().modelsDir
+}
+
+function closeAllSqliteHandles() {
+  if (sqliteRuntime) sqliteRuntime.closeAll()
 }
 
 function getModelFilePath(model) {
@@ -124,123 +79,43 @@ function modelStatus(model) {
 }
 
 function sendModelProgress(modelId) {
-  const model = MODEL_CATALOG.find((item) => item.id === modelId)
+  const { findModel } = ensureHeavy()
+  const model = findModel(modelId)
   if (!model || !mainWindow) return
   mainWindow.webContents.send("model-download-progress", modelStatus(model))
 }
 
-function downloadFile(url, destination, modelId) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https:") ? https : http
-    const request = client.get(url, (response) => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) {
-        response.resume()
-        downloadFile(new URL(response.headers.location, url).toString(), destination, modelId).then(resolve, reject)
-        return
-      }
-
-      if ((response.statusCode ?? 0) >= 400) {
-        response.resume()
-        reject(new Error(`Download failed with status ${response.statusCode}`))
-        return
-      }
-
-      const totalBytes = Number(response.headers["content-length"] ?? 0)
-      const tempPath = `${destination}.download`
-      const file = fsSync.createWriteStream(tempPath)
-      const state = activeDownloads.get(modelId)
-      if (state) {
-        state.totalBytes = totalBytes || state.totalBytes
-      }
-
-      response.on("data", (chunk) => {
-        const next = activeDownloads.get(modelId)
-        if (!next) return
-        next.downloadedBytes += chunk.length
-        next.progress = next.totalBytes > 0
-          ? Math.min(100, Math.round((next.downloadedBytes / next.totalBytes) * 100))
-          : null
-        sendModelProgress(modelId)
-      })
-
-      response.pipe(file)
-      file.on("finish", () => {
-        file.close(async () => {
-          try {
-            await fs.rename(tempPath, destination)
-            resolve()
-          } catch (error) {
-            reject(error)
-          }
-        })
-      })
-      file.on("error", reject)
-    })
-
-    request.on("error", reject)
-    request.setTimeout(30000, () => {
-      request.destroy(new Error("Download timed out"))
-    })
-  })
-}
-
-function sqlitePath(input) {
-  return input.startsWith("sqlite:") ? input.slice("sqlite:".length) : input
-}
-
 function getSqlite(dbPath) {
-  const resolved = sqlitePath(dbPath)
-  if (!sqliteHandles.has(resolved)) {
-    fsSync.mkdirSync(path.dirname(resolved), { recursive: true })
-    sqliteHandles.set(resolved, new Database(resolved))
-  }
-  return sqliteHandles.get(resolved)
+  return getSqliteRuntime().openDatabase(dbPath)
 }
 
 function runtimeMetrics() {
+  const { buildModelRecommendations } = ensureHeavy()
   const totalMemoryGb = os.totalmem() / 1024 / 1024 / 1024
   const availableMemoryGb = os.freemem() / 1024 / 1024 / 1024
   const usedRatio = totalMemoryGb === 0 ? 0 : 1 - availableMemoryGb / totalMemoryGb
   const pressure = usedRatio > 0.82 ? "high" : usedRatio > 0.65 ? "medium" : "low"
 
-  return {
+  const base = {
     cpuCount: os.cpus().length,
     cpuUsagePercent: Math.round(os.loadavg()[0] * 100) / 100,
     totalMemoryGb: Math.round(totalMemoryGb * 10) / 10,
     availableMemoryGb: Math.round(availableMemoryGb * 10) / 10,
     pressure,
-    recommendedReason: "Electron runtime metrics are estimated from local system resources.",
+  }
+
+  return {
+    ...base,
+    ...buildModelRecommendations({
+      metrics: base,
+      isInstalled: (model) => Boolean(findInstalledModelFile(model)),
+    }),
   }
 }
 
-ipcMain.handle("app:get-build-info", () => ({
-  appName: app.getName(),
-  appVersion: app.getVersion(),
-  target: "electron",
-  profile: app.isPackaged ? "release" : "debug",
-}))
-
-ipcMain.handle("app:get-runtime-metrics", () => runtimeMetrics())
-ipcMain.handle("app:get-model-catalog", async () => {
-  await fs.mkdir(modelsDir(), { recursive: true })
-  return MODEL_CATALOG.map(modelStatus)
-})
-ipcMain.handle("app:list-llm-models", async () => {
-  await fs.mkdir(modelsDir(), { recursive: true })
-  const entries = await fs.readdir(modelsDir(), { withFileTypes: true })
-  const catalogFiles = new Set(MODEL_CATALOG.flatMap((model) => [model.fileName, ...(model.aliases || [])]))
-  const localFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"))
-  return localFiles
-    .map((entry) => ({
-      id: entry.name,
-      name: entry.name.replace(/\.gguf$/i, ""),
-      path: path.join(modelsDir(), entry.name),
-      managed: catalogFiles.has(entry.name),
-    }))
-})
-ipcMain.handle("app:download-model", async (_event, modelId) => {
-  const model = MODEL_CATALOG.find((item) => item.id === modelId)
+async function downloadModel(modelId) {
+  const { findModel, downloadModelFile: download } = ensureHeavy()
+  const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
   if (findInstalledModelFile(model)) return modelStatus(model)
   if (activeDownloads.has(modelId)) return modelStatus(model)
@@ -255,7 +130,15 @@ ipcMain.handle("app:download-model", async (_event, modelId) => {
   sendModelProgress(modelId)
 
   try {
-    await downloadFile(model.url, getModelFilePath(model), modelId)
+    const destination = getModelFilePath(model)
+    await download(model, destination, ({ downloadedBytes, totalBytes, progress }) => {
+      const state = activeDownloads.get(modelId)
+      if (!state) return
+      state.downloadedBytes = downloadedBytes
+      state.totalBytes = totalBytes || state.totalBytes
+      state.progress = progress
+      sendModelProgress(modelId)
+    })
     activeDownloads.delete(modelId)
     sendModelProgress(modelId)
     return modelStatus(model)
@@ -270,56 +153,147 @@ ipcMain.handle("app:download-model", async (_event, modelId) => {
     sendModelProgress(modelId)
     throw error
   }
-})
-ipcMain.handle("app:delete-model", async (_event, modelId) => {
-  const model = MODEL_CATALOG.find((item) => item.id === modelId)
+}
+
+async function deleteModel(modelId) {
+  const { findModel } = ensureHeavy()
+  const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
   const filePath = findInstalledModelFile(model)
   if (filePath) await fs.rm(filePath, { force: true })
   return modelStatus(model)
-})
-ipcMain.handle("path:app-data-dir", () => appDataDir())
-ipcMain.handle("path:join", (_event, ...parts) => path.join(...parts))
+}
 
-ipcMain.handle("fs:exists", async (_event, targetPath) => fsSync.existsSync(targetPath))
-ipcMain.handle("fs:mkdir", async (_event, targetPath, options) => fs.mkdir(targetPath, options))
-ipcMain.handle("fs:read-text-file", async (_event, targetPath) => fs.readFile(targetPath, "utf8"))
-ipcMain.handle("fs:write-text-file", async (_event, targetPath, content) => {
-  await fs.mkdir(path.dirname(targetPath), { recursive: true })
-  await fs.writeFile(targetPath, content, "utf8")
-})
-ipcMain.handle("fs:remove", async (_event, targetPath) => fs.rm(targetPath, { recursive: true, force: true }))
-ipcMain.handle("fs:read-dir", async (_event, targetPath) => {
-  const entries = await fs.readdir(targetPath, { withFileTypes: true })
-  return entries.map((entry) => ({
-    name: entry.name,
-    isDirectory: entry.isDirectory(),
-    isFile: entry.isFile(),
-  }))
-})
+async function loadEmbeddingModel(modelId) {
+  const { findModel, embeddingRuntime } = ensureHeavy()
+  const model = findModel(modelId)
+  if (!model || model.kind !== "embedding") throw new Error("Unknown embedding model")
+  const filePath = findInstalledModelFile(model)
+  if (!filePath) throw new Error("请先下载 Embedding 模型")
+  return embeddingRuntime.loadEmbeddingModel(filePath, model.id)
+}
 
-ipcMain.handle("sqlite:execute", (_event, dbPath, sql, params = []) => {
-  const result = getSqlite(dbPath).prepare(sql).run(params)
-  return {
-    rows: [],
-    lastInsertRowid: Number(result.lastInsertRowid ?? 0),
-    changes: result.changes ?? 0,
+function embedTexts(texts) {
+  return ensureHeavy().embeddingRuntime.embedTexts(texts)
+}
+
+function getEmbeddingStatus() {
+  return ensureHeavy().embeddingRuntime.getEmbeddingStatus()
+}
+
+const ipcCtx = {
+  app,
+  ipcMain,
+  dialog,
+  path,
+  fs,
+  fsSync,
+  os,
+  storagePaths,
+  get mainWindow() {
+    return mainWindow
+  },
+  getPaths,
+  appDataDir,
+  modelsDir,
+  closeAllSqliteHandles,
+  runtimeMetrics,
+  get ALL_MODELS() {
+    return ensureHeavy().ALL_MODELS
+  },
+  getModelsByKind(kind) {
+    return ensureHeavy().getModelsByKind(kind)
+  },
+  modelStatus,
+  downloadModel,
+  deleteModel,
+  loadEmbeddingModel,
+  embedTexts,
+  getEmbeddingStatus,
+  getSqlite,
+  get sqliteRuntime() {
+    return getSqliteRuntime()
+  },
+}
+
+registerIpcHandlers(ipcCtx)
+console.log("[main] IPC handlers registered (app:get-storage-paths, …)")
+
+async function waitForDevServer(url, timeoutMs = 90_000) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const response = await fetch(url, { method: "HEAD" })
+      if (response.ok || response.status === 404) return
+    } catch {
+      // Vite 尚未就绪
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400))
   }
-})
+  throw new Error(`开发服务器未在 ${timeoutMs / 1000}s 内启动：${url}`)
+}
 
-ipcMain.handle("sqlite:select", (_event, dbPath, sql, params = []) => {
-  return getSqlite(dbPath).prepare(sql).all(params)
-})
+async function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    title: "Neezy Studio",
+    center: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  if (isDev) {
+    await waitForDevServer("http://127.0.0.1:5173")
+    await mainWindow.loadURL("http://127.0.0.1:5173")
+    mainWindow.webContents.openDevTools({ mode: "detach" })
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "..", "build", "client", "index.html"))
+  }
+}
+
+function startDevServer() {
+  if (!isDev) return
+
+  devServer = spawn("bun", ["run", "dev", "--host", "127.0.0.1"], {
+    cwd: path.join(__dirname, ".."),
+    shell: process.platform === "win32",
+    stdio: "inherit",
+  })
+}
 
 app.whenReady().then(async () => {
-  await loadElectronLlm({
-    getModelPath: (modelAlias) => path.join(modelsDir(), modelAlias),
-  })
-  startDevServer()
-  createWindow()
+  try {
+    const paths = getPaths()
+    await storagePaths.ensureStorageDirs(paths)
+    const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
+    console.log(
+      `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
+      vecStatus.error ?? ""
+    )
+    // 必须在 createWindow 之前加载，否则 renderer 没有 window.electronAi
+    const { loadElectronLlm } = ensureHeavy()
+    await loadElectronLlm({
+      getModelPath: (modelAlias) => path.join(modelsDir(), modelAlias),
+    })
+
+    startDevServer()
+    await createWindow()
+  } catch (error) {
+    console.error("[main] startup failed:", error)
+    dialog.showErrorBox("Neezy Studio 启动失败", error instanceof Error ? error.message : String(error))
+    app.quit()
+  }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => console.error("[main] createWindow failed:", error))
+    }
   })
 })
 
@@ -328,6 +302,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
-  for (const db of sqliteHandles.values()) db.close()
+  if (sqliteRuntime) sqliteRuntime.closeAll()
+  if (heavy) heavy.embeddingRuntime.unloadEmbeddingModel().catch(() => {})
   if (devServer) devServer.kill()
 })

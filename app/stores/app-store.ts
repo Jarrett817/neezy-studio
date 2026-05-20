@@ -1,19 +1,20 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
+import type { AgentStep } from "~/lib/agent-steps"
+
 export type ChatMessage = {
   id: string
   role: "user" | "assistant" | "error"
   content: string
   thinking: string
+  agentSteps?: AgentStep[]
+  isStreaming?: boolean
   toolCalls?: { name: string; args: Record<string, unknown>; result: string }[]
   timestamp: number
 }
 
 type AppStoreState = {
-  activeAccountName: string
-  setActiveAccountName: (name: string) => void
-
   // 对话历史（跨页面保活）
   conversationHistory: ChatMessage[]
   addMessage: (msg: Omit<ChatMessage, "timestamp">) => void
@@ -24,9 +25,6 @@ type AppStoreState = {
 export const useAppStore = create<AppStoreState>()(
   persist(
     (set) => ({
-      activeAccountName: "",
-      setActiveAccountName: (name) => set({ activeAccountName: name }),
-
       conversationHistory: [],
       addMessage: (msg) =>
         set((state) => ({
@@ -46,7 +44,6 @@ export const useAppStore = create<AppStoreState>()(
     {
       name: "neezy-app-store",
       partialize: (state) => ({
-        activeAccountName: state.activeAccountName,
         conversationHistory: state.conversationHistory,
       }),
     }

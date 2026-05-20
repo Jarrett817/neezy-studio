@@ -25,7 +25,9 @@ const memorySearchTool: Tool = {
       }
       return {
         success: true,
-        result: items.map(i => `[${i.category}] ${i.title}\n${i.content}`).join("\n\n"),
+        result: items
+          .map((i) => `[${i.category}] ${i.title}\n${i.content}`)
+          .join("\n\n"),
       }
     } catch (e) {
       return { success: false, result: `搜索失败: ${e}` }
@@ -36,9 +38,14 @@ const memorySearchTool: Tool = {
 // 存储记忆
 const memoryAddTool: Tool = {
   name: "memory_add",
-  description: "将重要内容存入长期记忆。输入标题、记忆内容。Agent 自动判断是否需要存入记忆。",
+  description:
+    "将重要内容存入长期记忆。输入标题、记忆内容。Agent 自动判断是否需要存入记忆。",
   execute: async (args) => {
-    const { title, content, category } = args as { title: string; content: string; category?: string }
+    const { title, content, category } = args as {
+      title: string
+      content: string
+      category?: string
+    }
     if (!title || !content) return { success: false, result: "缺少标题或内容" }
     try {
       await saveMemory({ title, content, category: category || "记忆" })
@@ -113,11 +120,22 @@ export const AVAILABLE_TOOLS: Tool[] = [
 ]
 
 export function getToolByName(name: string): Tool | undefined {
-  return AVAILABLE_TOOLS.find(t => t.name === name)
+  return AVAILABLE_TOOLS.find((t) => t.name === name)
 }
 
-export function getToolDefinitions(): { type: "function"; function: { name: string; description: string; parameters: { type: "object"; properties: Record<string, { type: string; description: string }>; required: string[] } } }[] {
-  return AVAILABLE_TOOLS.map(tool => ({
+export function getToolDefinitions(): {
+  type: "function"
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: "object"
+      properties: Record<string, { type: string; description: string }>
+      required: string[]
+    }
+  }
+}[] {
+  return AVAILABLE_TOOLS.map((tool) => ({
     type: "function" as const,
     function: {
       name: tool.name,
@@ -131,7 +149,9 @@ export function getToolDefinitions(): { type: "function"; function: { name: stri
   }))
 }
 
-function getToolParams(name: string): Record<string, { type: string; description: string }> {
+function getToolParams(
+  name: string
+): Record<string, { type: string; description: string }> {
   switch (name) {
     case "memory_search":
       return { query: { type: "string", description: "搜索关键词" } }
@@ -146,7 +166,9 @@ function getToolParams(name: string): Record<string, { type: string; description
     case "datetime":
       return {}
     case "calculator":
-      return { expression: { type: "string", description: "数学表达式，如 2+3*4" } }
+      return {
+        expression: { type: "string", description: "数学表达式，如 2+3*4" },
+      }
     default:
       return {}
   }

@@ -1,7 +1,11 @@
 // Memory vector storage service - Drizzle ORM + Electron SQLite
 
 import { nanoid } from "nanoid"
-import { ensureInit, getDb, getSqliteDb, schema } from "../db"
+import { ensureInit, getDb, schema } from "../db"
+import {
+  searchMemorySlicesByVector,
+  upsertMemorySliceVector,
+} from "~/services/vector-store"
 import { getEmbeddings } from "~/services/llm"
 
 export type MemorySlice = {
@@ -30,12 +34,7 @@ async function insertMemoryVector(
   try {
     const embedding = await getEmbeddings(content)
     if (embedding && embedding.length > 0) {
-      const sqlite = await getSqliteDb()
-      await sqlite.execute(
-        `INSERT INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [id, content, sessionId, memoryType, embedding]
-      )
+      await upsertMemorySliceVector(id, content, sessionId, memoryType, embedding)
     }
   } catch (e) {
     console.warn(`Failed to generate embedding for ${memoryType} slice:`, e)
@@ -102,7 +101,10 @@ export async function addLongtermMemory(content: string): Promise<MemorySlice> {
 }
 
 // Add a RAG slice (retrievable knowledge)
-export async function addRagSlice(content: string, sessionId?: string): Promise<MemorySlice> {
+export async function addRagSlice(
+  content: string,
+  sessionId?: string
+): Promise<MemorySlice> {
   await ensureInit()
   const db = getDb()
   const id = nanoid(21)
@@ -146,35 +148,18 @@ export async function searchMemorySlices(
 
   if (!queryEmbedding || queryEmbedding.length === 0) return []
 
-  const sqlite = await getSqliteDb()
-
-  let sql = `
-    SELECT m.id, m.session_id, m.memory_type, m.content_preview, m.created_at,
-           v.content
-    FROM memory_slice_metadata m
-    JOIN memory_vector_slices v ON m.id = v.id
-    WHERE v.embedding MATCH $1
-  `
-  const params: unknown[] = [queryEmbedding]
-
-  if (type) {
-    sql += ` AND m.memory_type = $${params.length + 1}`
-    params.push(type)
-  }
-
-  sql += ` ORDER BY distance LIMIT $${params.length + 1}`
-  params.push(String(limit))
-
   try {
-    const rows = await sqlite.select<Record<string, unknown>>(sql, params)
-    return rows.map((row): MemorySlice => ({
-      id: row.id as string,
-      session_id: row.session_id as string | null,
-      memory_type: row.memory_type as MemorySlice["memory_type"],
-      content: row.content as string,
-      content_preview: row.content_preview as string,
-      created_at: row.created_at as number,
-    }))
+    const rows = await searchMemorySlicesByVector(queryEmbedding, limit, type)
+    return rows.map(
+      (row): MemorySlice => ({
+        id: row.id,
+        session_id: row.session_id,
+        memory_type: row.memory_type as MemorySlice["memory_type"],
+        content: row.content,
+        content_preview: row.content_preview,
+        created_at: row.created_at,
+      })
+    )
   } catch (e) {
     console.warn("Failed to search memory slices:", e)
     return []

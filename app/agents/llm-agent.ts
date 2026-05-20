@@ -14,8 +14,16 @@ export type AgentOptions = {
   temperature?: number
   maxTokens?: number
   onChunk?: (content: string) => void
-  onToolCall?: (name: string, args: Record<string, unknown>, result: string) => void
+  onToolCall?: (
+    name: string,
+    args: Record<string, unknown>,
+    result: string
+  ) => void
   onStep?: (step: number, action: string) => void
+  onPhase?: (
+    phase: "prepare" | "model" | "tool" | "writing",
+    detail?: string
+  ) => void
 }
 
 export type AgentResponse = {
@@ -63,17 +71,20 @@ export async function runAgent(
   let lastContent = ""
 
   while (step < maxSteps) {
-    options.onStep?.(step + 1, "调用模型...")
+    options.onPhase?.("model", step === 0 ? "深度推理中" : "继续推理")
+    options.onStep?.(step + 1, "推理")
 
     for await (const chunk of streamChat(chatMessages, {
       temperature,
       maxTokens,
       onChunk: (content) => {
         lastContent = content
+        if (content.length > 0) options.onPhase?.("writing", "组织语言")
         options.onChunk?.(content)
       },
     })) {
       lastContent = chunk.content
+      if (chunk.content.length > 0) options.onPhase?.("writing", "组织语言")
       options.onChunk?.(chunk.content)
     }
 
@@ -89,18 +100,35 @@ export async function runAgent(
         if (toolCall.function?.name) {
           hasToolCall = true
           const toolName = toolCall.function.name
-          const args = typeof toolCall.function.arguments === "string"
-            ? JSON.parse(toolCall.function.arguments)
-            : toolCall.function.arguments || {}
+          let args: Record<string, unknown> = {}
+          if (typeof toolCall.function.arguments === "string") {
+            const raw = toolCall.function.arguments.trim()
+            if (raw && raw !== "undefined") {
+              try {
+                args = JSON.parse(raw) as Record<string, unknown>
+              } catch {
+                args = {}
+              }
+            }
+          } else if (
+            toolCall.function.arguments &&
+            typeof toolCall.function.arguments === "object"
+          ) {
+            args = toolCall.function.arguments
+          }
 
           const tool = getToolByName(toolName)
           if (tool) {
-            options.onStep?.(step + 1, `执行工具: ${toolName}`)
+            options.onPhase?.("tool", toolName)
+            options.onStep?.(step + 1, toolName)
             const result = await tool.execute(args)
             options.onToolCall?.(toolName, args, result.result)
             toolResults.push({ name: toolName, args, result: result.result })
             chatMessages.push({ role: "assistant", content: lastContent })
-            chatMessages.push({ role: "user", content: `工具 ${toolName} 返回：\n${result.result}` })
+            chatMessages.push({
+              role: "user",
+              content: `工具 ${toolName} 返回：\n${result.result}`,
+            })
           }
         }
       }

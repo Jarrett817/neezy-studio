@@ -6,15 +6,16 @@ import { motion } from "framer-motion"
  */
 export function WarmAmbientBg() {
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       {/* 基础渐变 */}
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-sky-50/60" />
 
       {/* 动态光斑 1 */}
       <motion.div
-        className="absolute w-[500px] h-[500px] rounded-full"
+        className="absolute h-[500px] w-[500px] rounded-full"
         style={{
-          background: "radial-gradient(circle, rgba(255,180,80,0.4) 0%, transparent 70%)",
+          background:
+            "radial-gradient(circle, rgba(255,180,80,0.4) 0%, transparent 70%)",
           left: "10%",
           top: "20%",
         }}
@@ -32,9 +33,10 @@ export function WarmAmbientBg() {
 
       {/* 动态光斑 2 */}
       <motion.div
-        className="absolute w-[600px] h-[600px] rounded-full"
+        className="absolute h-[600px] w-[600px] rounded-full"
         style={{
-          background: "radial-gradient(circle, rgba(180,220,160,0.35) 0%, transparent 70%)",
+          background:
+            "radial-gradient(circle, rgba(180,220,160,0.35) 0%, transparent 70%)",
           right: "5%",
           bottom: "10%",
         }}
@@ -53,9 +55,10 @@ export function WarmAmbientBg() {
 
       {/* 动态光斑 3 */}
       <motion.div
-        className="absolute w-[400px] h-[400px] rounded-full"
+        className="absolute h-[400px] w-[400px] rounded-full"
         style={{
-          background: "radial-gradient(circle, rgba(255,200,120,0.35) 0%, transparent 70%)",
+          background:
+            "radial-gradient(circle, rgba(255,200,120,0.35) 0%, transparent 70%)",
           left: "40%",
           top: "60%",
         }}
@@ -74,9 +77,10 @@ export function WarmAmbientBg() {
 
       {/* 小的装饰光斑 */}
       <motion.div
-        className="absolute w-[200px] h-[200px] rounded-full"
+        className="absolute h-[200px] w-[200px] rounded-full"
         style={{
-          background: "radial-gradient(circle, rgba(200,160,255,0.3) 0%, transparent 70%)",
+          background:
+            "radial-gradient(circle, rgba(200,160,255,0.3) 0%, transparent 70%)",
           left: "70%",
           top: "15%",
         }}
@@ -94,10 +98,10 @@ export function WarmAmbientBg() {
       />
 
       {/* 底部暖色 */}
-      <div className="absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t from-orange-100/50 to-transparent" />
+      <div className="absolute right-0 bottom-0 left-0 h-64 bg-gradient-to-t from-orange-100/50 to-transparent" />
 
       {/* 顶部冷色 */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-sky-100/30 to-transparent" />
+      <div className="absolute top-0 right-0 left-0 h-32 bg-gradient-to-b from-sky-100/30 to-transparent" />
     </div>
   )
 }
@@ -118,7 +122,7 @@ export function SparkleBg() {
   )
 
   return (
-    <div className="fixed inset-0 z-[1] pointer-events-none">
+    <div className="pointer-events-none fixed inset-0 z-[1]">
       {sparks.map((s) => (
         <motion.div
           key={s.id}
@@ -161,7 +165,9 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
       throttleRef.current = true
       setMousePos({ x: e.clientX, y: e.clientY })
       setIsVisible(true)
-      setTimeout(() => { throttleRef.current = false }, 50)
+      setTimeout(() => {
+        throttleRef.current = false
+      }, 50)
     }
     const handleLeave = () => setIsVisible(false)
 
@@ -179,13 +185,14 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
       {children}
       {isVisible && (
         <div
-          className="fixed pointer-events-none z-[9999] rounded-full"
+          className="pointer-events-none fixed z-[9999] rounded-full"
           style={{
             left: mousePos.x - 150,
             top: mousePos.y - 150,
             width: 300,
             height: 300,
-            background: "radial-gradient(circle, rgba(255,180,80,0.25) 0%, rgba(255,180,80,0.1) 40%, transparent 70%)",
+            background:
+              "radial-gradient(circle, rgba(255,180,80,0.25) 0%, rgba(255,180,80,0.1) 40%, transparent 70%)",
             transition: "left 0.15s ease-out, top 0.15s ease-out",
           }}
         />

@@ -1,18 +1,17 @@
 // MD 文件操作 - 前端 via Electron preload
 
-import { appDataDir, exists, join, mkdir, readTextFile, remove, writeTextFile } from "~/services/electron-client"
+import {
+  exists,
+  join,
+  mkdir,
+  readTextFile,
+  remove,
+  writeTextFile,
+} from "~/services/electron-client"
+import { getStoragePaths } from "~/services/storage-paths"
 
-const MEMORIES_DIR = "memories"
-
-// 获取记忆目录路径
-export async function getMemoriesDir(): Promise<string> {
-  const baseDir = await appDataDir()
-  return await join(baseDir, MEMORIES_DIR)
-}
-
-// 确保目录存在
 export async function ensureMemoriesDir(): Promise<string> {
-  const dir = await getMemoriesDir()
+  const { memoriesDir: dir } = await getStoragePaths()
   const dirExists = await exists(dir)
   if (!dirExists) {
     await mkdir(dir, { recursive: true })
@@ -26,7 +25,10 @@ export async function readMemoryFile(filePath: string): Promise<string> {
 }
 
 // 写入 MD 文件
-export async function writeMemoryFile(title: string, content: string): Promise<{
+export async function writeMemoryFile(
+  title: string,
+  content: string
+): Promise<{
   file_path: string
   created_at: number
 }> {

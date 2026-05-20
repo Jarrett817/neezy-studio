@@ -40,7 +40,9 @@ export async function createImportJob(sourceUrl: string): Promise<ImportJob> {
 }
 
 export async function runNextStage(_jobId: string): Promise<ImportJob> {
-  throw new Error("Import jobs are not implemented in the Electron runtime yet.")
+  throw new Error(
+    "Import jobs are not implemented in the Electron runtime yet."
+  )
 }
 
 export async function retryJob(jobId: string): Promise<ImportJob> {

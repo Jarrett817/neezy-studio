@@ -3,58 +3,58 @@ import { useQuery } from "@tanstack/react-query"
 import { NavLink } from "react-router"
 import {
   Brain,
-  Database,
+  Box,
   MessageSquare,
   Settings2,
   SlidersHorizontal,
   Sparkles,
+  UserRound,
 } from "lucide-react"
 
 import { cn } from "~/lib/utils"
-import { getAccountProfile, getRuntimeMetrics } from "~/services/workspace"
-import { useAppStore } from "~/stores/app-store"
+import { getRuntimeMetrics } from "~/services/workspace"
+import { getUserPortrait } from "~/services/user-portrait"
 
 const navItems = [
   { href: "/", label: "对话", Icon: MessageSquare },
+  { href: "/portrait", label: "人格画像", Icon: UserRound },
   { href: "/knowledge-base", label: "记忆", Icon: Brain },
   { href: "/skills", label: "Skill", Icon: SlidersHorizontal },
+  { href: "/models", label: "模型", Icon: Box },
   { href: "/settings", label: "设置", Icon: Settings2 },
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const activeAccountName = useAppStore((state) => state.activeAccountName)
-  const { data: profile } = useQuery({
-    queryKey: ["account-profile"],
-    queryFn: getAccountProfile,
+  const { data: portrait } = useQuery({
+    queryKey: ["user-portrait"],
+    queryFn: getUserPortrait,
+    staleTime: 30_000,
   })
-  const accountName = activeAccountName || profile?.accountName
+  const headerTitle =
+    portrait && portrait.conversationTurns > 0
+      ? portrait.summary.slice(0, 20) +
+        (portrait.summary.length > 20 ? "…" : "")
+      : ""
 
   // App 启动后预加载上次使用的模型（仅在浏览器环境）
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      import("~/services/llm").then(({ preloadModel }) => {
-        preloadModel()
-      })
-    }
-  }, [])
 
   return (
-    <div className="flex h-screen text-foreground overflow-hidden">
+    <div className="flex h-screen overflow-hidden text-foreground">
       {/* 侧边栏 — 玻璃拟态 */}
-      <aside className="shrink-0 w-16 group hover:w-56 transition-all duration-300 ease-out z-30">
-        <div className="glass-warm h-full border-r border-border/10 flex flex-col">
+      <aside className="group z-30 w-16 shrink-0 transition-all duration-300 ease-out hover:w-56">
+        <div className="glass-warm flex h-full flex-col border-r border-border/10">
           {/* 品牌 */}
-          <div className="flex h-14 items-center gap-2.5 px-3 border-b border-border/5 shrink-0">
+          <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border/5 px-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Sparkles className="size-4" />
             </div>
-            <span className="font-display text-sm font-semibold tracking-tight opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+            <span className="font-display text-sm font-semibold tracking-tight whitespace-nowrap opacity-0 transition-opacity duration-200 group-hover:opacity-100">
               Neezy
             </span>
           </div>
 
           {/* 导航 */}
-          <nav className="flex-1 space-y-1 p-2 overflow-hidden">
+          <nav className="flex-1 space-y-1 overflow-hidden p-2">
             {navItems.map((item) => {
               const { href, label, Icon } = item
               return (
@@ -64,48 +64,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   end={href === "/"}
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-3 h-11 rounded-xl px-3 transition-all duration-200",
+                      "flex h-11 items-center gap-3 rounded-xl px-3 transition-all duration-200",
                       "hover:bg-primary/10",
                       isActive && "bg-primary/10 text-primary"
                     )
                   }
                 >
                   <Icon className="size-5 shrink-0" />
-                  <span className="text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <span className="text-sm font-medium whitespace-nowrap opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                     {label}
                   </span>
                 </NavLink>
               )
             })}
           </nav>
-
-          {/* 底部状态 */}
-          <div className="p-2 border-t border-border/5 overflow-hidden shrink-0">
-            <div className="flex items-center gap-3 px-3 py-2">
-              <Database className="size-4 shrink-0 text-emerald-500" />
-              <span className="text-xs text-muted-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                本地向量记忆
-              </span>
-            </div>
-          </div>
         </div>
       </aside>
 
       {/* 主内容区 */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* 顶栏 */}
-        <header className="sticky top-0 z-20 h-14 flex items-center justify-between px-6 bg-background/80 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-sm font-semibold text-muted-foreground">
-              {accountName || "Neezy Studio"}
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between bg-background/80 px-6 backdrop-blur-md">
+          {headerTitle ? (
+            <span className="max-w-md truncate font-display text-sm text-muted-foreground">
+              {headerTitle}
             </span>
-          </div>
+          ) : (
+            <span className="size-2 rounded-full bg-primary/40" aria-hidden />
+          )}
           <div className="flex items-center gap-3">
             <PressureBadge />
           </div>
         </header>
 
-        <main className="px-6 pb-6 flex flex-col min-h-0 flex-1 overflow-auto">{children}</main>
+        <main className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6">
+          {children}
+        </main>
       </div>
     </div>
   )
@@ -140,7 +134,11 @@ function PressureBadge() {
         )}
       />
       <span>
-        {metrics?.pressure === "low" ? "轻松" : metrics?.pressure === "medium" ? "负载中" : "高负载"}
+        {metrics?.pressure === "low"
+          ? "轻松"
+          : metrics?.pressure === "medium"
+            ? "负载中"
+            : "高负载"}
       </span>
     </div>
   )

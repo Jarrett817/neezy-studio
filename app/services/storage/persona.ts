@@ -1,8 +1,14 @@
 // AI 人设 MD 文件存储
 
-import { appDataDir, exists, join, mkdir, readTextFile, writeTextFile } from "~/services/electron-client"
+import {
+  exists,
+  join,
+  mkdir,
+  readTextFile,
+  writeTextFile,
+} from "~/services/electron-client"
+import { getStoragePaths } from "~/services/storage-paths"
 
-const PERSONAS_DIR = "personas"
 const PERSONA_FILE = "current.md"
 
 export type Persona = {
@@ -13,21 +19,13 @@ export type Persona = {
   forbiddenWords: string
 }
 
-// 获取人设目录路径
-async function getPersonasDir(): Promise<string> {
-  const baseDir = await appDataDir()
-  return await join(baseDir, PERSONAS_DIR)
-}
-
-// 获取人设文件路径
 async function getPersonaPath(): Promise<string> {
-  const dir = await getPersonasDir()
-  return await join(dir, PERSONA_FILE)
+  const { personasDir } = await getStoragePaths()
+  return await join(personasDir, PERSONA_FILE)
 }
 
-// 确保目录存在
 async function ensurePersonasDir(): Promise<void> {
-  const dir = await getPersonasDir()
+  const { personasDir: dir } = await getStoragePaths()
   const dirExists = await exists(dir)
   if (!dirExists) {
     await mkdir(dir, { recursive: true })
@@ -115,12 +113,24 @@ export async function getPersona(): Promise<Persona> {
     const path = await getPersonaPath()
     const fileExists = await exists(path)
     if (!fileExists) {
-      return { accountName: "", track: "", persona: "", toneStyle: "", forbiddenWords: "" }
+      return {
+        accountName: "",
+        track: "",
+        persona: "",
+        toneStyle: "",
+        forbiddenWords: "",
+      }
     }
     const content = await readTextFile(path)
     return parsePersonaMd(content)
   } catch {
-    return { accountName: "", track: "", persona: "", toneStyle: "", forbiddenWords: "" }
+    return {
+      accountName: "",
+      track: "",
+      persona: "",
+      toneStyle: "",
+      forbiddenWords: "",
+    }
   }
 }
 

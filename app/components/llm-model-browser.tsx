@@ -1,212 +1,249 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { CheckCircle2, Download, Loader2, Sparkles, Trash2, Zap } from "lucide-react"
-import { toast } from "sonner"
+import { useMemo, type ReactNode } from "react"
+import { Sparkles, Layers, Zap, Loader2 } from "lucide-react"
 
-import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
-import { Progress } from "~/components/ui/progress"
+import { Badge } from "~/components/ui/badge"
 import {
-  deleteModel,
-  downloadModel,
-  getModelCatalog,
-  onModelDownloadProgress,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card"
+import { Progress } from "~/components/ui/progress"
+import { cn } from "~/lib/utils"
+import { useLlmModels } from "~/hooks/use-llm-models"
+import {
   type ModelCatalogItem,
+  type ModelTier,
+  type RuntimeMetrics,
 } from "~/services/electron-client"
-import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
-import { getCurrentModel, getLoadingState, loadModel, subscribeLoadingState } from "~/services/llm"
+import { ModelRecommendationBanner } from "~/components/model-oracle-panel"
 
-const LAST_MODEL_KEY = "neezy-llm-last-model"
+const TIER_SECTIONS: { tier: ModelTier; label: string; hint: string }[] = [
+  { tier: "light", label: "轻量", hint: "占用低、速度快，适合 8GB 内存" },
+  { tier: "balanced", label: "中等", hint: "质量与速度均衡，适合 12GB+ 内存" },
+  { tier: "performance", label: "高性能", hint: "效果更好，建议 16GB+ 内存" },
+]
 
-async function saveLastUsedModel(modelFileName: string): Promise<void> {
-  localStorage.setItem(LAST_MODEL_KEY, modelFileName)
-  try {
-    const settings = await getRuntimeSettings()
-    await saveRuntimeSettings({ ...settings, llmModel: modelFileName })
-  } catch {
-    // localStorage is enough as a fallback.
-  }
+function tierBadgeVariant(tier: ModelTier) {
+  if (tier === "light") return "secondary"
+  if (tier === "balanced") return "outline"
+  return "default"
 }
 
-function modelTone(item: ModelCatalogItem, memoryGb?: number) {
+function modelTone(item: ModelCatalogItem, metrics?: RuntimeMetrics) {
   if (item.installed) return "已准备好"
-  if (memoryGb && memoryGb < item.minMemoryGb) return "这台电脑可能会比较吃力"
-  if (item.minMemoryGb <= 8) return "推荐先试这个"
-  if (item.minMemoryGb <= 12) return "体验更稳"
-  return "适合更复杂的任务"
+  if (metrics && metrics.availableMemoryGb < item.minMemoryGb) {
+    return `建议至少 ${item.minMemoryGb}GB 可用内存`
+  }
+  return item.tierLabel
 }
 
-export function LlmModelBrowser({ memoryGb }: { memoryGb?: number }) {
-  const [items, setItems] = useState<ModelCatalogItem[]>([])
-  const [currentModel, setCurrentModel] = useState<string | null>(getCurrentModel())
-  const [loadingState, setLoadingState] = useState(getLoadingState())
-  const [isRefreshing, setIsRefreshing] = useState(false)
+function ModelCard({
+  item,
+  metrics,
+  isRecommended,
+  isActive,
+  isLoading,
+  onDownload,
+  onUse,
+  useLabel,
+}: {
+  item: ModelCatalogItem
+  metrics?: RuntimeMetrics
+  isRecommended: boolean
+  isActive: boolean
+  isLoading: boolean
+  onDownload: () => void
+  onUse: () => void
+  useLabel: string
+}) {
+  const isDownloading = item.status === "downloading"
+  const progress = item.progress ?? 0
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      setItems(await getModelCatalog())
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "暂时无法读取模型列表")
-    } finally {
-      setIsRefreshing(false)
+  return (
+    <Card
+      className={cn(
+        "rounded-2xl bg-card/70",
+        isRecommended && "ring-1 ring-primary/40"
+      )}
+    >
+      <CardHeader className="pb-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          {item.title}
+          <Badge variant={tierBadgeVariant(item.tier)}>{item.tierLabel}</Badge>
+          {isRecommended && <Badge variant="secondary">推荐</Badge>}
+        </CardTitle>
+        <CardDescription>{item.subtitle}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">{modelTone(item, metrics)}</span>
+          <span className="font-medium">{item.sizeLabel}</span>
+        </div>
+        {isDownloading && (
+          <div className="space-y-1">
+            <Progress value={progress} />
+            <p className="text-xs text-muted-foreground">下载中 {progress || 0}%</p>
+          </div>
+        )}
+        <Button
+          type="button"
+          className="w-full rounded-xl"
+          size="sm"
+          disabled={item.installed ? isActive || isLoading : isDownloading}
+          onClick={item.installed ? onUse : onDownload}
+        >
+          {item.installed
+            ? isLoading
+              ? "加载中..."
+              : isActive
+                ? "使用中"
+                : useLabel
+            : isDownloading
+              ? "下载中"
+              : "下载"}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ModelTierSection({
+  title,
+  icon,
+  items,
+  metrics,
+  recommendedId,
+  activeFileName,
+  loadingFileName,
+  onDownload,
+  onUse,
+  useLabel,
+}: {
+  title: string
+  icon: ReactNode
+  items: ModelCatalogItem[]
+  metrics?: RuntimeMetrics
+  recommendedId: string | null
+  activeFileName: string | null
+  loadingFileName: string | null
+  onDownload: (id: string) => void
+  onUse: (item: ModelCatalogItem) => void
+  useLabel: string
+}) {
+  const byTier = useMemo(() => {
+    const map = new Map<ModelTier, ModelCatalogItem[]>()
+    for (const section of TIER_SECTIONS) map.set(section.tier, [])
+    for (const item of items) {
+      const list = map.get(item.tier) ?? []
+      list.push(item)
+      map.set(item.tier, list)
     }
-  }, [])
-
-  useEffect(() => {
-    refresh()
-    const unsubscribeLoading = subscribeLoadingState(setLoadingState)
-    const unsubscribeDownload = onModelDownloadProgress((next) => {
-      setItems((current) => current.map((item) => item.id === next.id ? next : item))
-    })
-    return () => {
-      unsubscribeLoading()
-      unsubscribeDownload()
-    }
-  }, [refresh])
-
-  useEffect(() => {
-    if (currentModel || items.length === 0) return
-    const saved = localStorage.getItem(LAST_MODEL_KEY)
-    const candidate = items.find((item) => item.installed && (item.fileName === saved || !saved))
-    if (!candidate) return
-
-    loadModel(candidate.fileName)
-      .then(() => setCurrentModel(candidate.fileName))
-      .catch((error) => console.warn("[LLM] Auto-load failed:", error))
-  }, [items, currentModel])
-
-  const recommendedId = useMemo(() => {
-    const available = items.filter((item) => !memoryGb || memoryGb >= item.minMemoryGb)
-    return (available[1] ?? available[0] ?? items[0])?.id
-  }, [items, memoryGb])
-
-  const handleDownload = useCallback(async (modelId: string) => {
-    try {
-      await downloadModel(modelId)
-      await refresh()
-      toast.success("下载完成，可以开始使用了")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "下载失败，请稍后重试")
-    }
-  }, [refresh])
-
-  const handleUse = useCallback(async (item: ModelCatalogItem) => {
-    try {
-      await loadModel(item.fileName)
-      await saveLastUsedModel(item.fileName)
-      setCurrentModel(item.fileName)
-      toast.success(`已切换到 ${item.title}`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "切换失败")
-    }
-  }, [])
-
-  const handleDelete = useCallback(async (modelId: string) => {
-    try {
-      await deleteModel(modelId)
-      await refresh()
-      toast.success("已移除本地模型")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "移除失败")
-    }
-  }, [refresh])
+    return map
+  }, [items])
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold tracking-tight">选择你的本地助手</h2>
+      <div className="flex items-center gap-2">
+        {icon}
+        <h3 className="font-display text-lg font-semibold">{title}</h3>
+      </div>
+      {TIER_SECTIONS.map((section) => {
+        const tierItems = byTier.get(section.tier) ?? []
+        if (tierItems.length === 0) return null
+        return (
+          <div key={section.tier} className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{section.label}</span> —{" "}
+              {section.hint}
+            </p>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {tierItems.map((item) => (
+                <ModelCard
+                  key={item.id}
+                  item={item}
+                  metrics={metrics}
+                  isRecommended={item.id === recommendedId}
+                  isActive={activeFileName === item.fileName}
+                  isLoading={loadingFileName === item.fileName}
+                  onDownload={() => onDownload(item.id)}
+                  onUse={() => onUse(item)}
+                  useLabel={useLabel}
+                />
+              ))}
+            </div>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">选一个合适的能力包，下载后就能离线使用。</p>
-        </div>
-        <Button type="button" variant="outline" size="sm" className="gap-2 rounded-xl" onClick={refresh} disabled={isRefreshing}>
+        )
+      })}
+    </section>
+  )
+}
+
+/** 列表式模型浏览（主流程请用 /models） */
+export function LlmModelBrowser() {
+  const {
+    chatItems,
+    embeddingItems,
+    metrics,
+    currentChat,
+    currentEmbedding,
+    loadingState,
+    embeddingLoadingId,
+    isRefreshing,
+    refresh,
+    handleDownload,
+    handleUseChat,
+    handleUseEmbedding,
+  } = useLlmModels()
+
+  const chatLoadingFile = loadingState.isLoading ? loadingState.loadingModelId : null
+  const embLoadingFile = embeddingLoadingId
+    ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ?? null)
+    : null
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-xl font-semibold">本地模型（列表）</h2>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-2 rounded-xl"
+          onClick={refresh}
+          disabled={isRefreshing}
+        >
           {isRefreshing ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
           刷新
         </Button>
       </div>
-
-      <div className="grid gap-3 lg:grid-cols-3">
-        {items.map((item) => {
-          const isCurrent = currentModel === item.fileName
-          const isLoading = loadingState.isLoading && loadingState.loadingModelId === item.fileName
-          const isDownloading = item.status === "downloading"
-          const progress = item.progress ?? 0
-
-          return (
-            <Card key={item.id} className="rounded-2xl bg-card/70">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      {item.title}
-                      {item.id === recommendedId && <Badge variant="secondary">适合你</Badge>}
-                    </CardTitle>
-                    <CardDescription>{item.subtitle}</CardDescription>
-                  </div>
-                  {isCurrent && <CheckCircle2 className="size-5 text-emerald-500" />}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {item.fit.map((fit) => (
-                    <Badge key={fit} variant="outline">{fit}</Badge>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{modelTone(item, memoryGb)}</span>
-                  <span className="font-medium">{item.sizeLabel}</span>
-                </div>
-
-                {isDownloading && (
-                  <div className="space-y-2">
-                    <Progress value={progress} />
-                    <p className="text-xs text-muted-foreground">正在下载 {progress || 0}%</p>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  {item.installed ? (
-                    <>
-                      <Button
-                        type="button"
-                        className="flex-1 rounded-xl"
-                        disabled={isCurrent || loadingState.isLoading}
-                        onClick={() => handleUse(item)}
-                      >
-                        {isLoading ? "准备中..." : isCurrent ? "使用中" : "使用"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="rounded-xl text-muted-foreground"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={isCurrent || loadingState.isLoading}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      type="button"
-                      className="w-full gap-2 rounded-xl"
-                      onClick={() => handleDownload(item.id)}
-                      disabled={isDownloading}
-                    >
-                      {isDownloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                      {isDownloading ? "下载中" : "下载"}
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
-    </section>
+      {metrics && <ModelRecommendationBanner metrics={metrics} />}
+      <ModelTierSection
+        title="对话模型"
+        icon={<Sparkles className="size-5 text-primary" />}
+        items={chatItems}
+        metrics={metrics}
+        recommendedId={metrics?.recommendedChatId ?? null}
+        activeFileName={currentChat}
+        loadingFileName={chatLoadingFile}
+        onDownload={handleDownload}
+        onUse={handleUseChat}
+        useLabel="用于对话"
+      />
+      <ModelTierSection
+        title="Embedding"
+        icon={<Layers className="size-5 text-primary" />}
+        items={embeddingItems}
+        metrics={metrics}
+        recommendedId={metrics?.recommendedEmbeddingId ?? null}
+        activeFileName={currentEmbedding}
+        loadingFileName={embLoadingFile}
+        onDownload={handleDownload}
+        onUse={handleUseEmbedding}
+        useLabel="用于记忆检索"
+      />
+    </div>
   )
 }

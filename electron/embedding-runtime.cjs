@@ -14,6 +14,7 @@ function resolveNodeLlamaCppRequire() {
 }
 
 let llamaModule = null
+let llamaInstance = null
 let embeddingContext = null
 let loadedFilePath = null
 let loadedModelId = null
@@ -24,6 +25,14 @@ async function getLlamaModule() {
     llamaModule = await req("node-llama-cpp")
   }
   return llamaModule
+}
+
+async function getSharedLlama() {
+  if (!llamaInstance) {
+    const { getLlama } = await getLlamaModule()
+    llamaInstance = await getLlama()
+  }
+  return llamaInstance
 }
 
 async function unloadEmbeddingModel() {
@@ -47,8 +56,8 @@ async function loadEmbeddingModel(filePath, modelId) {
 
   await unloadEmbeddingModel()
 
-  const { getLlama, LlamaEmbeddingContext } = await getLlamaModule()
-  const llama = await getLlama()
+  const { LlamaEmbeddingContext } = await getLlamaModule()
+  const llama = await getSharedLlama()
   const model = await llama.loadModel({ modelPath: filePath })
   embeddingContext = await new LlamaEmbeddingContext({ model })
   loadedFilePath = filePath
@@ -91,6 +100,8 @@ function getEmbeddingStatus() {
 
 module.exports = {
   EMBEDDING_DIM,
+  getLlamaModule,
+  getSharedLlama,
   loadEmbeddingModel,
   unloadEmbeddingModel,
   embedTexts,

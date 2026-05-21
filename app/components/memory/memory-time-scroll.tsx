@@ -96,12 +96,11 @@ function MemoryScrollEntry({
         expanded
           ? "z-10 border-amber-700/25 bg-[#faf4e6] shadow-[inset_0_2px_12px_rgba(120,80,40,0.08),0_8px_28px_-8px_rgba(60,40,20,0.25)]"
           : "border-amber-900/10 bg-[#f8f0dc]/90 hover:shadow-md",
-        keyMem && !expanded && "ring-1 ring-amber-600/35"
+        keyMem && !expanded && "ring-1 ring-amber-600/35",
+        `opacity-[${0.35 + fresh * 0.65}]`,
+        `saturate-[${0.7 + fresh * 0.35}]`,
+        `sepia-[${(1 - fresh) * 0.55}]`
       )}
-      style={{
-        opacity: 0.35 + fresh * 0.65,
-        filter: `sepia(${(1 - fresh) * 0.55}) saturate(${0.7 + fresh * 0.35})`,
-      }}
       onClick={onToggle}
       onPointerDown={startPress}
       onPointerUp={clearPress}
@@ -292,7 +291,6 @@ export function MemoryTimeScroll({
         ref={scrollRef}
         className="relative z-[5] max-h-[min(72vh,720px)] overflow-y-auto overscroll-y-contain scroll-smooth px-4 py-14 md:px-8"
         onScroll={handleScroll}
-        style={{ scrollBehavior: "smooth" }}
       >
         <motion.div style={{ y: parallaxBack }} className="space-y-8 pb-12">
           <p className="text-center text-[10px] tracking-[0.35em] text-amber-900/40">

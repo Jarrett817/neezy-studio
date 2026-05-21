@@ -7,9 +7,9 @@ export type ModelTier = "light" | "balanced" | "performance"
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
-  /** 对话模型文件名（.gguf） */
+  /** 已启用并在启动时由 @electron/llm 加载的对话模型文件名（同时仅一个） */
   llmModel: string
-  /** Embedding 模型文件名 */
+  /** 向量检索时按需加载的 Embedding 模型文件名（不常驻内存） */
   embeddingModel: string
   /** 用户偏好的档位（可选，空则跟随系统推荐） */
   chatTier: ModelTier | ""

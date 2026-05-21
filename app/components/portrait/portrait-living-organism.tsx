@@ -72,18 +72,18 @@ export function PortraitLivingOrganism({
 
   return (
     <div
-      className="relative overflow-hidden rounded-3xl border border-border/30"
-      style={{
-        background: `radial-gradient(ellipse 90% 70% at 50% 38%, ${hsl(stageProfile, 0.18)}, transparent 72%), hsl(var(--card) / 0.4)`,
-      }}
+      className={cn(
+        "relative overflow-hidden rounded-3xl border border-border/30",
+        `bg-[radial-gradient(ellipse_90%_70%_at_50%_38%,${hsl(stageProfile, 0.18)},transparent_72%),hsl(var(--card)/0.4)]`
+      )}
     >
       <motion.div
-        className="pointer-events-none absolute inset-0"
+        className={cn(
+          "pointer-events-none absolute inset-0",
+          `bg-[radial-gradient(ellipse_120%_80%_at_30%_15%,${hsl(stageProfile, 0.12)},transparent_55%)]`
+        )}
         animate={{ opacity: [0.35, 0.7, 0.35] }}
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        style={{
-          background: `radial-gradient(ellipse 120% 80% at 30% 15%, ${hsl(stageProfile, 0.12)}, transparent 55%)`,
-        }}
         aria-hidden
       />
 
@@ -100,12 +100,11 @@ export function PortraitLivingOrganism({
 
             {hasData && (
               <span
-                className="rounded-full px-2 py-0.5 font-medium"
-                style={{
-                  background: hsl(stageProfile, 0.15),
-
-                  color: hsl(stageProfile, 0.95, -8),
-                }}
+                className={cn(
+                  "rounded-full px-2 py-0.5 font-medium",
+                  `bg-[${hsl(stageProfile, 0.15)}]`,
+                  `text-[${hsl(stageProfile, 0.95, -8)}]`
+                )}
               >
                 {STAGE_LABELS[displayStage]}
               </span>
@@ -141,13 +140,11 @@ export function PortraitLivingOrganism({
         />
 
         <div
-          className="relative mx-auto w-full max-w-[min(100%,720px)]"
-          style={{ minHeight: "min(58vh, 520px)" }}
+          className="relative mx-auto min-h-[min(58vh,520px)] w-full max-w-[min(100%,720px)]"
           role="presentation"
         >
           <div
-            className="relative mx-auto aspect-square w-full"
-            style={{ maxWidth: SCENE_SIZE }}
+            className="relative mx-auto aspect-square w-full max-w-[640px]"
           >
             <PortraitLivingScene
               profile={stageProfile}
@@ -186,8 +183,10 @@ export function PortraitLivingOrganism({
           )}
 
           <motion.div
-            className="pointer-events-none absolute -inset-8 -z-10 rounded-[3rem] blur-3xl"
-            style={{ background: hsl(stageProfile, 0.25) }}
+            className={cn(
+              "pointer-events-none absolute -inset-8 -z-10 rounded-[3rem] blur-3xl",
+              `bg-[${hsl(stageProfile, 0.25)}]`
+            )}
             animate={{ opacity: [0.25, 0.55, 0.25], scale: [0.92, 1.08, 0.92] }}
             transition={{
               duration: stageProfile.breathPeriod,
@@ -255,8 +254,7 @@ export function PortraitLivingOrganism({
 
               <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted/80">
                 <motion.div
-                  className="h-full rounded-full"
-                  style={{ background: hsl(stageProfile, 0.75) }}
+                  className={cn("h-full rounded-full", `bg-[${hsl(stageProfile, 0.75)}]`)}
                   initial={{ width: 0 }}
                   animate={{ width: `${dim.score}%` }}
                   transition={{ duration: 1.2, ease: "easeOut" }}
@@ -275,12 +273,11 @@ export function PortraitLivingOrganism({
             {portrait.topics.map((t) => (
               <span
                 key={t.label}
-                className="rounded-full px-2.5 py-1 text-[11px]"
-                style={{
-                  background: hsl(stageProfile, 0.12 + (t.weight / 100) * 0.12),
-
-                  color: hsl(stageProfile, 0.9, -6),
-                }}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px]",
+                  `bg-[${hsl(stageProfile, 0.12 + (t.weight / 100) * 0.12)}]`,
+                  `text-[${hsl(stageProfile, 0.9, -6)}]`
+                )}
               >
                 {t.label}
               </span>

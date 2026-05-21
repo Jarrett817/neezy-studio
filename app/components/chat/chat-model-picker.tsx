@@ -28,7 +28,7 @@ export function ChatModelPicker({
 }) {
   const navigate = useNavigate()
   const { chat } = useActiveModels()
-  const { installed, activeFileName, loading, switchTo } = useChatModelSwitch()
+  const { installed, activeFileName, loading, toggleRun } = useChatModelSwitch()
   const isLoading = loading.isLoading
   const busy = disabled || isLoading
 
@@ -65,7 +65,7 @@ export function ChatModelPicker({
           return
         }
         const item = installed.find((m) => m.fileName === value)
-        if (item) void switchTo(item)
+        if (item) void toggleRun(item)
       }}
       disabled={busy}
     >

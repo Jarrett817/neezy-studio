@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "~/lib/utils"
+import { bootstrapRuntimeModels } from "~/services/model-runtime"
 import { getRuntimeMetrics } from "~/services/workspace"
 import { getUserPortrait } from "~/services/user-portrait"
 
@@ -36,7 +37,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         (portrait.summary.length > 20 ? "…" : "")
       : ""
 
-  // App 启动后预加载上次使用的模型（仅在浏览器环境）
+  React.useEffect(() => {
+    bootstrapRuntimeModels().catch((error) =>
+      console.warn("[model-runtime] bootstrap failed:", error)
+    )
+  }, [])
 
   return (
     <div className="flex h-screen overflow-hidden text-foreground">

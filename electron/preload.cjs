@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getModelCatalog: (kind) => ipcRenderer.invoke("app:get-model-catalog", kind),
   getModelRecommendations: () => ipcRenderer.invoke("app:get-model-recommendations"),
   loadEmbeddingModel: (modelId) => ipcRenderer.invoke("app:load-embedding-model", modelId),
+  unloadEmbeddingModel: () => ipcRenderer.invoke("app:unload-embedding-model"),
+  getChatModelFileInfo: (fileName) =>
+    ipcRenderer.invoke("app:get-chat-model-file-info", fileName),
   getEmbeddings: (texts) => ipcRenderer.invoke("app:get-embeddings", texts),
   getEmbeddingStatus: () => ipcRenderer.invoke("app:get-embedding-status"),
   listLlmModels: () => ipcRenderer.invoke("app:list-llm-models"),

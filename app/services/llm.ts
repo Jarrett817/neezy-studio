@@ -1,9 +1,12 @@
 import {
+  getChatModelFileInfo,
   getEmbeddingsFromMain,
-  getEmbeddingStatus,
   getModelCatalog,
+  getModelRecommendations,
   listLlmModels as listLocalLlmModels,
   loadEmbeddingModel as loadEmbeddingModelInMain,
+  unloadEmbeddingModel as unloadEmbeddingModelInMain,
+  type ModelCatalogItem,
 } from "~/services/electron-client"
 import { getRuntimeSettings } from "~/services/settings"
 
@@ -77,7 +80,25 @@ let lastUsedTime = 0
 const HOT_CACHE_THRESHOLD_MS = 30 * 60 * 1000
 const loadingListeners = new Set<(state: LoadingState) => void>()
 
-/** Electron 渲染进程且 @electron/llm 预加载已注入 */
+function formatLlmLoadError(error: unknown, fileName: string): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "模型加载失败"
+  const nested = raw.replace(/^Error:\s*/i, "").trim()
+  if (/Failed to load model/i.test(nested)) {
+    return [
+      `无法加载 ${fileName}。`,
+      "常见原因：GGUF 未下载完整、显存/内存不足，或量化格式与运行时不兼容。",
+      "可关闭其它占用显存的应用，或先试用较小的模型验证环境。",
+    ].join(" ")
+  }
+  return nested || "模型加载失败"
+}
+
+/** 渲染进程且 @electron/llm 预加载已注入 */
 export function isElectronLlmAvailable(): boolean {
   return typeof window !== "undefined" && window.electronAi != null
 }
@@ -144,13 +165,22 @@ export async function loadModel(
   onProgress?.(progress)
 
   try {
-    await getElectronAi().create({
-      modelAlias: modelId,
-      systemPrompt: options?.systemPrompt,
-      temperature: options?.temperature ?? 0.7,
-      topK: options?.topK ?? 10,
-    })
-    currentModel = modelId
+    const fileInfo = await getChatModelFileInfo(modelId)
+    if (!fileInfo.ok) {
+      throw new Error(fileInfo.reason ?? "模型文件不可用")
+    }
+    try {
+      await unloadEmbeddingModelInMain().catch(() => {})
+      await getElectronAi().create({
+        modelAlias: modelId,
+        systemPrompt: options?.systemPrompt,
+        temperature: options?.temperature ?? 0.7,
+        topK: options?.topK ?? 10,
+      })
+      currentModel = modelId
+    } catch (error) {
+      throw new Error(formatLlmLoadError(error, modelId))
+    }
   } finally {
     loadingState = {
       isLoading: false,
@@ -243,25 +273,49 @@ export async function unloadModel(): Promise<void> {
 
 export function preloadModel(): void {}
 
-async function ensureEmbeddingModelLoaded(): Promise<boolean> {
-  const status = await getEmbeddingStatus()
-  if (status.loaded) return true
+let embeddingQueue: Promise<void> = Promise.resolve()
 
+async function resolveEmbeddingCatalogItem(): Promise<ModelCatalogItem | null> {
   const settings = await getRuntimeSettings()
-  if (!settings.embeddingModel) return false
-
   const catalog = await getModelCatalog("embedding")
-  const match = catalog.find(
-    (item) => item.fileName === settings.embeddingModel && item.installed
+  if (settings.embeddingModel) {
+    const chosen = catalog.find(
+      (item) => item.fileName === settings.embeddingModel && item.installed
+    )
+    if (chosen) return chosen
+  }
+  const metrics = await getModelRecommendations()
+  return (
+    catalog.find(
+      (item) => item.id === metrics.recommendedEmbeddingId && item.installed
+    ) ?? null
   )
-  if (!match) return false
+}
+
+async function withEmbeddingModel<T>(fn: () => Promise<T>): Promise<T | null> {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const prev = embeddingQueue
+  embeddingQueue = prev.then(() => gate)
+  await prev
+
+  const item = await resolveEmbeddingCatalogItem()
+  if (!item) {
+    release()
+    return null
+  }
 
   try {
-    await loadEmbeddingModelInMain(match.id)
-    return true
+    await loadEmbeddingModelInMain(item.id)
+    return await fn()
   } catch (error) {
     console.warn("[embedding] Failed to load model:", error)
-    return false
+    return null
+  } finally {
+    await unloadEmbeddingModelInMain().catch(() => {})
+    release()
   }
 }
 
@@ -269,7 +323,12 @@ export async function loadEmbeddingByFileName(
   fileName: string,
   modelId: string
 ): Promise<void> {
-  await loadEmbeddingModelInMain(modelId)
+  const { startEmbeddingModel } = await import("~/services/model-runtime")
+  const item = (await getModelCatalog("embedding")).find((m) => m.id === modelId)
+  if (item) {
+    await startEmbeddingModel(item)
+    return
+  }
   const settings = await getRuntimeSettings()
   const { saveRuntimeSettings } = await import("~/services/settings")
   await saveRuntimeSettings({ ...settings, embeddingModel: fileName })
@@ -280,15 +339,18 @@ export async function getEmbeddings(_texts: string[]): Promise<number[][]>
 export async function getEmbeddings(
   _texts: string[] | string
 ): Promise<number[][] | number[]> {
-  const ready = await ensureEmbeddingModelLoaded()
-  if (!ready) {
-    console.warn(
-      "[embedding] No embedding model loaded; vector search is disabled."
-    )
-    return Array.isArray(_texts) ? [] : []
-  }
-  if (Array.isArray(_texts)) {
+  const empty = Array.isArray(_texts) ? ([] as number[][]) : ([] as number[])
+  const result = await withEmbeddingModel(async () => {
+    if (Array.isArray(_texts)) {
+      return getEmbeddingsFromMain(_texts)
+    }
     return getEmbeddingsFromMain(_texts)
+  })
+  if (result == null) {
+    console.warn(
+      "[embedding] No embedding model configured; vector search is disabled."
+    )
+    return empty
   }
-  return getEmbeddingsFromMain(_texts)
+  return result
 }

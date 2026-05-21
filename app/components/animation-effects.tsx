@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { createPortal } from "react-dom"
 
+import { cn } from "~/lib/utils"
+
 interface Particle {
   x: number
   y: number
@@ -90,8 +92,7 @@ export function FloatingParticles() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-[1]"
-      style={{ opacity: 0.5 }}
+      className="pointer-events-none fixed inset-0 z-[1] opacity-50"
     />
   )
 }
@@ -127,14 +128,8 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
       {isVisible &&
         createPortal(
           <motion.div
-            className="pointer-events-none fixed z-[9999] size-48 rounded-full"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(255,180,80,0.15) 0%, transparent 70%)",
-              left: mousePos.x - 96,
-              top: mousePos.y - 96,
-            }}
-            animate={{ x: 0, y: 0 }}
+            className="pointer-events-none fixed z-[9999] size-48 rounded-full bg-[radial-gradient(circle,rgba(255,180,80,0.15)_0%,transparent_70%)]"
+            animate={{ x: mousePos.x - 96, y: mousePos.y - 96 }}
             transition={{ type: "spring", stiffness: 150, damping: 15 }}
           />,
           document.body
@@ -272,15 +267,10 @@ export function RippleButton({
       {ripples.map((r) => (
         <motion.span
           key={r.id}
-          className="absolute rounded-full bg-white/30"
-          initial={{ width: 0, height: 0, opacity: 0.5 }}
-          animate={{ width: 200, height: 200, opacity: 0 }}
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30"
+          initial={{ width: 0, height: 0, opacity: 0.5, left: r.x, top: r.y }}
+          animate={{ width: 200, height: 200, opacity: 0, left: r.x, top: r.y }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          style={{
-            left: r.x,
-            top: r.y,
-            transform: "translate(-50%, -50%)",
-          }}
         />
       ))}
       {children}
@@ -346,13 +336,12 @@ export function SparkleBg() {
       {sparks.map((s) => (
         <motion.div
           key={s.id}
-          className="absolute rounded-full bg-amber-200"
-          style={{
-            left: `${s.x}%`,
-            top: `${s.y}%`,
-            width: s.size,
-            height: s.size,
-          }}
+          className={cn(
+            "absolute rounded-full bg-amber-200",
+            `left-[${s.x}%]`,
+            `top-[${s.y}%]`,
+            `size-[${s.size}px]`
+          )}
           animate={{
             opacity: [0.2, 0.8, 0.2],
             scale: [1, 1.5, 1],

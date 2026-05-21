@@ -5,6 +5,7 @@ const fsSync = require("node:fs")
 const os = require("node:os")
 const { spawn } = require("node:child_process")
 const storagePaths = require("./storage-paths.cjs")
+const modelScan = require("./model-scan.cjs")
 const { registerIpcHandlers } = require("./ipc-handlers.cjs")
 
 const isDev = process.argv.includes("--dev")
@@ -54,42 +55,71 @@ function getModelFilePath(model) {
   return path.join(modelsDir(), model.fileName)
 }
 
-function findInstalledModelFile(model) {
-  const names = [model.fileName, ...(model.aliases || [])]
-  for (const name of names) {
-    const fullPath = path.join(modelsDir(), name)
-    if (fsSync.existsSync(fullPath)) return fullPath
-  }
-  return null
+async function readModelsScan() {
+  return modelScan.scanModelsDir(modelsDir())
 }
 
-function modelStatus(model) {
-  const filePath = findInstalledModelFile(model)
+function modelStatusFromScan(model, scan, modelsDirPath) {
+  const filePath = modelScan.findInstalledModelFile(model, modelsDirPath, scan)
   const download = activeDownloads.get(model.id)
+  const part = filePath ? null : modelScan.findPartForModel(model, scan)
+
+  let status = filePath ? "ready" : "available"
+  let progress = null
+  let downloadedBytes = 0
+  let totalBytes = model.sizeBytes
+
+  if (part) {
+    status = "downloading"
+    downloadedBytes = part.bytes
+    progress =
+      totalBytes > 0
+        ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
+        : null
+  }
+
+  if (download) {
+    status = download.status
+    progress = download.progress ?? progress
+    downloadedBytes = download.downloadedBytes ?? downloadedBytes
+    totalBytes = download.totalBytes ?? totalBytes
+  }
+
   return {
     ...model,
     installed: Boolean(filePath),
     path: filePath,
-    fileName: filePath ? path.basename(filePath) : model.fileName,
-    status: download?.status ?? (filePath ? "ready" : "available"),
-    progress: download?.progress ?? null,
-    downloadedBytes: download?.downloadedBytes ?? 0,
-    totalBytes: download?.totalBytes ?? model.sizeBytes,
+    fileName: filePath
+      ? path.basename(filePath)
+      : (part?.fileName ?? model.fileName),
+    status,
+    progress,
+    downloadedBytes,
+    totalBytes,
+    error: download?.error,
   }
 }
 
-function sendModelProgress(modelId) {
+async function resolveModelStatus(model) {
+  const scan = await readModelsScan()
+  return modelStatusFromScan(model, scan, modelsDir())
+}
+
+async function sendModelProgress(modelId) {
   const { findModel } = ensureHeavy()
   const model = findModel(modelId)
   if (!model || !mainWindow) return
-  mainWindow.webContents.send("model-download-progress", modelStatus(model))
+  mainWindow.webContents.send(
+    "model-download-progress",
+    await resolveModelStatus(model)
+  )
 }
 
 function getSqlite(dbPath) {
   return getSqliteRuntime().openDatabase(dbPath)
 }
 
-function runtimeMetrics() {
+async function runtimeMetrics() {
   const { buildModelRecommendations } = ensureHeavy()
   const totalMemoryGb = os.totalmem() / 1024 / 1024 / 1024
   const availableMemoryGb = os.freemem() / 1024 / 1024 / 1024
@@ -104,21 +134,37 @@ function runtimeMetrics() {
     pressure,
   }
 
+  const scan = await readModelsScan()
+  const dir = modelsDir()
   return {
     ...base,
     ...buildModelRecommendations({
       metrics: base,
-      isInstalled: (model) => Boolean(findInstalledModelFile(model)),
+      isInstalled: (model) =>
+        Boolean(modelScan.findInstalledModelFile(model, dir, scan)),
     }),
   }
+}
+
+async function getModelCatalog(kind) {
+  const scan = await readModelsScan()
+  const dir = modelsDir()
+  const models = kind ? ensureHeavy().getModelsByKind(kind) : ensureHeavy().ALL_MODELS
+  return models.map((model) => modelStatusFromScan(model, scan, dir))
 }
 
 async function downloadModel(modelId) {
   const { findModel, downloadModelFile: download } = ensureHeavy()
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
-  if (findInstalledModelFile(model)) return modelStatus(model)
-  if (activeDownloads.has(modelId)) return modelStatus(model)
+  const scan = await readModelsScan()
+  const dir = modelsDir()
+  if (modelScan.findInstalledModelFile(model, dir, scan)) {
+    return modelStatusFromScan(model, scan, dir)
+  }
+  if (activeDownloads.has(modelId)) {
+    return modelStatusFromScan(model, scan, dir)
+  }
 
   await fs.mkdir(modelsDir(), { recursive: true })
   activeDownloads.set(modelId, {
@@ -141,7 +187,7 @@ async function downloadModel(modelId) {
     })
     activeDownloads.delete(modelId)
     sendModelProgress(modelId)
-    return modelStatus(model)
+    return resolveModelStatus(model)
   } catch (error) {
     activeDownloads.set(modelId, {
       status: "error",
@@ -159,16 +205,21 @@ async function deleteModel(modelId) {
   const { findModel } = ensureHeavy()
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
-  const filePath = findInstalledModelFile(model)
-  if (filePath) await fs.rm(filePath, { force: true })
-  return modelStatus(model)
+  const dir = modelsDir()
+  for (const name of modelScan.modelFileCandidates(model)) {
+    await fs.rm(path.join(dir, name), { force: true })
+    await fs.rm(path.join(dir, `${name}.part`), { force: true })
+  }
+  activeDownloads.delete(modelId)
+  return resolveModelStatus(model)
 }
 
 async function loadEmbeddingModel(modelId) {
   const { findModel, embeddingRuntime } = ensureHeavy()
   const model = findModel(modelId)
   if (!model || model.kind !== "embedding") throw new Error("Unknown embedding model")
-  const filePath = findInstalledModelFile(model)
+  const scan = await readModelsScan()
+  const filePath = modelScan.findInstalledModelFile(model, modelsDir(), scan)
   if (!filePath) throw new Error("请先下载 Embedding 模型")
   return embeddingRuntime.loadEmbeddingModel(filePath, model.id)
 }
@@ -179,6 +230,56 @@ function embedTexts(texts) {
 
 function getEmbeddingStatus() {
   return ensureHeavy().embeddingRuntime.getEmbeddingStatus()
+}
+
+async function unloadEmbeddingModel() {
+  await ensureHeavy().embeddingRuntime.unloadEmbeddingModel()
+}
+
+/** @param {string} fileName */
+async function getChatModelFileInfo(fileName) {
+  const { getModelsByKind } = ensureHeavy()
+  const chatModels = getModelsByKind("chat")
+  const catalogMatch = chatModels.find(
+    (m) => m.fileName === fileName || (m.aliases || []).includes(fileName)
+  )
+
+  const scan = await readModelsScan()
+  const dir = modelsDir()
+
+  if (catalogMatch && modelScan.findPartForModel(catalogMatch, scan)) {
+    return {
+      ok: false,
+      reason: "模型仍在下载中（.part），请等待完成或删除后重新下载。",
+    }
+  }
+
+  let filePath = null
+  if (catalogMatch) {
+    filePath = modelScan.findInstalledModelFile(catalogMatch, dir, scan)
+  }
+  if (!filePath && scan.gguf.has(fileName)) {
+    filePath = path.join(dir, fileName)
+  }
+  if (!filePath) {
+    return { ok: false, reason: "模型文件不存在，请先下载或检查 models 目录。" }
+  }
+
+  const stat = await fs.stat(filePath)
+  const expectedBytes = catalogMatch?.sizeBytes ?? null
+  const sizeBytes = stat.size
+  const complete =
+    expectedBytes == null || sizeBytes >= Math.floor(expectedBytes * 0.9)
+
+  return {
+    ok: complete,
+    filePath,
+    sizeBytes,
+    expectedBytes,
+    reason: complete
+      ? null
+      : `模型文件不完整（约 ${Math.round(sizeBytes / 1e6)} MB / 预期 ${Math.round(expectedBytes / 1e6)} MB），请重新下载。`,
+  }
 }
 
 const ipcCtx = {
@@ -204,10 +305,13 @@ const ipcCtx = {
   getModelsByKind(kind) {
     return ensureHeavy().getModelsByKind(kind)
   },
-  modelStatus,
+  getModelCatalog,
+  invalidateModelScanCache: modelScan.invalidateModelScanCache,
   downloadModel,
   deleteModel,
   loadEmbeddingModel,
+  unloadEmbeddingModel,
+  getChatModelFileInfo,
   embedTexts,
   getEmbeddingStatus,
   getSqlite,
@@ -276,7 +380,6 @@ app.whenReady().then(async () => {
       `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
       vecStatus.error ?? ""
     )
-    // 必须在 createWindow 之前加载，否则 renderer 没有 window.electronAi
     const { loadElectronLlm } = ensureHeavy()
     await loadElectronLlm({
       getModelPath: (modelAlias) => path.join(modelsDir(), modelAlias),

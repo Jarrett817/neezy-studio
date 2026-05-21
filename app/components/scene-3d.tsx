@@ -78,27 +78,25 @@ export function TiltCard3D({
   }
 
   return (
-    <div
+    <motion.div
       ref={ref}
       className={cn(scene3dClass.preserve, className)}
       onMouseMove={handleMove}
       onMouseLeave={() => setTilt({ x: 0, y: 0 })}
-      style={
-        reduced
-          ? undefined
-          : {
-              transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-              transition: "transform 0.2s ease-out",
-            }
+      animate={
+        reduced ? undefined : { rotateX: tilt.x, rotateY: tilt.y }
       }
+      transition={{ duration: 0.2, ease: "easeOut" }}
     >
       <div
-        className="h-full w-full"
-        style={reduced ? undefined : { transform: `translateZ(${depth}px)` }}
+        className={cn(
+          "h-full w-full",
+          !reduced && `[transform:translateZ(${depth}px)]`
+        )}
       >
         {children}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -120,8 +118,16 @@ export function MemoryCard3D({
   return (
     <motion.div
       className={cn(scene3dClass.preserve, className)}
-      initial={reduced ? false : { opacity: 0, y: 16, rotateX: 8 }}
-      animate={reduced ? undefined : { opacity: 1, y: 0, rotateX: 0 }}
+      initial={
+        reduced
+          ? false
+          : { opacity: 0, y: 16, rotateX: 8, z: baseZ, rotateY: baseRotate }
+      }
+      animate={
+        reduced
+          ? undefined
+          : { opacity: 1, y: 0, rotateX: 0, z: baseZ, rotateY: baseRotate }
+      }
       transition={{
         delay: index * 0.04,
         duration: 0.45,
@@ -135,13 +141,6 @@ export function MemoryCard3D({
               rotateX: -4,
               rotateY: baseRotate * 0.5,
               transition: { duration: 0.2 },
-            }
-      }
-      style={
-        reduced
-          ? undefined
-          : {
-              transform: `translateZ(${baseZ}px) rotateY(${baseRotate}deg)`,
             }
       }
     >

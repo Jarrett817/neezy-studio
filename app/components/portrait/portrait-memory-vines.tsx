@@ -101,11 +101,9 @@ export function PortraitMemoryVines({
                 },
                 opacity: { duration: 0.35 },
               }}
-              style={{
-                filter: hovered
-                  ? `drop-shadow(0 0 8px ${hsl(profile, 0.6)})`
-                  : undefined,
-              }}
+              className={
+                hovered ? `drop-shadow-[0_0_8px_${hsl(profile, 0.6)}]` : undefined
+              }
             />
             {dim.score > 0 && (
               <motion.circle

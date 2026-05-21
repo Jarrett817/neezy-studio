@@ -17,25 +17,31 @@ import type {
   RuntimeMetrics,
 } from "~/services/electron-client"
 
-function modelSwitchLabel(isActive: boolean, isLoading: boolean) {
+function modelRunLabel(
+  kind: ModelKind,
+  isRunning: boolean,
+  isLoading: boolean
+) {
   if (isLoading) return "加载中"
-  if (isActive) return "使用中"
-  return "切换"
+  if (kind === "embedding") {
+    return isRunning ? "取消" : "选用"
+  }
+  if (isRunning) return "关闭"
+  return "启动"
 }
 
-function fanLayout(slot: number, slotCount: number, selected: boolean) {
+function fanLayout(slot: number, slotCount: number) {
   const center = (slotCount - 1) / 2
   const offset = slot - center
   const spreadStep = slotCount <= 1 ? 0 : Math.min(5.2, 38 / (slotCount - 1))
   const rotateStep = slotCount <= 1 ? 0 : Math.min(10, 66 / (slotCount - 1))
 
   return {
-    offset,
     spreadX: offset * spreadStep,
     rotate: offset * rotateStep,
-    lift: selected ? -28 : -Math.abs(offset) * 5,
-    scale: selected ? 1.06 : 0.92 - Math.abs(offset) * 0.025,
-    z: selected ? 50 : 20 - Math.abs(offset),
+    lift: -Math.abs(offset) * 5,
+    scale: 0.92 - Math.abs(offset) * 0.025,
+    z: 20 - Math.abs(offset),
   }
 }
 
@@ -47,7 +53,7 @@ function ModelTarotCardFace({
   isActive,
   isLoading,
   onDownload,
-  onSwitch,
+  onToggleRun,
   onDelete,
 }: {
   item: ModelCatalogItem
@@ -57,11 +63,12 @@ function ModelTarotCardFace({
   isActive: boolean
   isLoading: boolean
   onDownload: () => void
-  onSwitch: () => void
+  onToggleRun: () => void
   onDelete: () => void
 }) {
-  const switchLabel = modelSwitchLabel(isActive, isLoading)
+  const runLabel = modelRunLabel(kind, isActive, isLoading)
   const isDownloading = item.status === "downloading"
+  const activeBadge = kind === "embedding" ? "已选用" : "运行中"
   const progress = item.progress ?? 0
 
   return (
@@ -73,7 +80,6 @@ function ModelTarotCardFace({
           : "border-primary/40",
         tarotFaceGradient(item.tier)
       )}
-      onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start justify-between gap-1.5">
         <h2 className="font-display text-base leading-snug font-semibold tracking-tight">
@@ -98,7 +104,7 @@ function ModelTarotCardFace({
         )}
         {item.installed && (
           <Badge variant="outline" className="text-[10px]">
-            {isActive ? "当前使用" : "已下载"}
+            {isActive ? activeBadge : "已下载"}
           </Badge>
         )}
       </div>
@@ -142,16 +148,19 @@ function ModelTarotCardFace({
                 type="button"
                 size="sm"
                 className="h-8 flex-1 rounded-lg text-xs"
-                disabled={isActive || isLoading}
-                onClick={onSwitch}
+                disabled={isLoading}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleRun()
+                }}
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-1 size-3 animate-spin" />
-                    {switchLabel}
+                    {runLabel}
                   </>
                 ) : (
-                  switchLabel
+                  runLabel
                 )}
               </Button>
               <Button
@@ -159,7 +168,10 @@ function ModelTarotCardFace({
                 variant="ghost"
                 size="icon"
                 className="size-8 shrink-0 rounded-lg"
-                onClick={onDelete}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
                 disabled={isActive || isLoading}
                 aria-label="移除模型"
               >
@@ -171,7 +183,10 @@ function ModelTarotCardFace({
               type="button"
               size="sm"
               className="h-8 w-full gap-1 rounded-lg text-xs"
-              onClick={onDownload}
+              onClick={(e) => {
+                e.stopPropagation()
+                onDownload()
+              }}
               disabled={isDownloading}
             >
               {isDownloading ? (
@@ -200,7 +215,7 @@ function ModelTarotCard({
   isLoading,
   onSelect,
   onDownload,
-  onSwitch,
+  onToggleRun,
   onDelete,
 }: {
   item: ModelCatalogItem
@@ -214,42 +229,16 @@ function ModelTarotCard({
   isLoading: boolean
   onSelect: () => void
   onDownload: () => void
-  onSwitch: () => void
+  onToggleRun: () => void
   onDelete: () => void
 }) {
-  const { spreadX, rotate, lift, scale, z } = fanLayout(
-    slot,
-    slotCount,
-    selected
-  )
-  const switchLabel = modelSwitchLabel(isActive, isLoading)
-
+  const fan = fanLayout(slot, slotCount)
+  const runLabel = modelRunLabel(kind, isActive, isLoading)
   const cardClass = selected ? "h-[17rem] w-[12.1rem]" : "h-[14rem] w-[10rem]"
+  const layoutSpring = { type: "spring" as const, stiffness: 260, damping: 26 }
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={selected}
-      aria-label={`选择模型 ${item.title}`}
-      className={cn(
-        "absolute bottom-[14%] left-1/2 cursor-pointer will-change-transform",
-        cardClass,
-        isActive && "z-[60]"
-      )}
-      style={{
-        zIndex: z,
-        transformOrigin: "50% 100%",
-        transform: `translateX(calc(-50% + ${spreadX}rem)) translateY(${lift}px) rotate(${rotate}deg) scale(${scale})`,
-      }}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          onSelect()
-        }
-      }}
-    >
+  const glowLayers = (
+    <>
       {isActive && (
         <>
           <div
@@ -268,78 +257,120 @@ function ModelTarotCard({
           aria-hidden
         />
       )}
-      <div className="h-full w-full" style={{ perspective: "1200px" }}>
+    </>
+  )
+
+  const flipFaces = (
+    <>
+      <div
+        className={cn(
+          "absolute inset-0 overflow-hidden rounded-2xl border-2 shadow-md",
+          isActive
+            ? "border-amber-400/85 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
+            : "border-border/45"
+        )}
+        className="[backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
+      >
+        <TarotCardBack tier={item.tier} />
+        {item.installed && !selected && (
+          <div
+            className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background/80 via-background/35 to-transparent px-2.5 pt-8 pb-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 w-full rounded-lg text-xs shadow-sm"
+                  disabled={isLoading}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleRun()
+                  }}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-1 size-3 animate-spin" />
+                      加载中
+                    </>
+                  ) : (
+                    runLabel
+                  )}
+                </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="absolute inset-0 [backface-visibility:hidden] [-webkit-backface-visibility:hidden] [transform:rotateY(180deg)]">
+        <ModelTarotCardFace
+          item={item}
+          kind={kind}
+          metrics={metrics}
+          isRecommended={isRecommended}
+          isActive={isActive}
+          isLoading={isLoading}
+          onDownload={onDownload}
+          onToggleRun={onToggleRun}
+          onDelete={onDelete}
+        />
+      </div>
+    </>
+  )
+
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`选择模型 ${item.title}`}
+      className={cn(
+        "absolute left-1/2 cursor-pointer",
+        cardClass,
+        selected ? "origin-center" : "origin-bottom"
+      )}
+      initial={false}
+      animate={
+        selected
+          ? {
+              top: "34%",
+              bottom: "auto",
+              x: "-50%",
+              y: "-50%",
+              rotate: 0,
+              scale: 1.05,
+              zIndex: 100,
+            }
+          : {
+              top: "auto",
+              bottom: "14%",
+              x: `calc(-50% + ${fan.spreadX}rem)`,
+              y: fan.lift,
+              rotate: fan.rotate,
+              scale: fan.scale,
+              zIndex: fan.z,
+            }
+      }
+      transition={layoutSpring}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+    >
+      {glowLayers}
+      <div className="h-full w-full [perspective:1200px]">
         <motion.div
-          className="relative h-full w-full"
-          style={{ transformStyle: "preserve-3d" }}
+          className="relative h-full w-full [transform-style:preserve-3d]"
           initial={false}
           animate={{ rotateY: selected ? 180 : 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          transition={layoutSpring}
         >
-          <div
-            className={cn(
-              "absolute inset-0 overflow-hidden rounded-2xl border-2 shadow-md",
-              isActive
-                ? "border-amber-400/85 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
-                : "border-border/45"
-            )}
-            style={{ backfaceVisibility: "hidden" }}
-          >
-            <TarotCardBack tier={item.tier} />
-            {item.installed && (
-              <div
-                className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/55 via-black/25 to-transparent px-2.5 pt-8 pb-2.5"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {isActive ? (
-                  <p className="text-center text-[11px] font-medium text-emerald-200">
-                    使用中
-                  </p>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 w-full rounded-lg text-xs shadow-sm"
-                    disabled={isLoading}
-                    onClick={onSwitch}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-1 size-3 animate-spin" />
-                        加载中
-                      </>
-                    ) : (
-                      switchLabel
-                    )}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div
-            className="absolute inset-0"
-            style={{
-              backfaceVisibility: "hidden",
-              transform: "rotateY(180deg)",
-            }}
-          >
-            <ModelTarotCardFace
-              item={item}
-              kind={kind}
-              metrics={metrics}
-              isRecommended={isRecommended}
-              isActive={isActive}
-              isLoading={isLoading}
-              onDownload={onDownload}
-              onSwitch={onSwitch}
-              onDelete={onDelete}
-            />
-          </div>
+          {flipFaces}
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -354,7 +385,7 @@ export function ModelTarotDeck({
   onSelect,
   onDismissSelection,
   onDownload,
-  onSwitch,
+  onToggleRun,
   onDelete,
   className,
 }: {
@@ -368,7 +399,7 @@ export function ModelTarotDeck({
   onSelect: (id: string) => void
   onDismissSelection?: () => void
   onDownload: (id: string) => void
-  onSwitch: (id: string) => void
+  onToggleRun: (id: string) => void
   onDelete: (id: string) => void
   className?: string
 }) {
@@ -378,7 +409,7 @@ export function ModelTarotDeck({
     <div className={cn("h-full min-h-[min(56vh,520px)] w-full", className)}>
       <div className="relative h-full w-full overflow-x-hidden overflow-y-hidden rounded-2xl border border-border/40 bg-gradient-to-b from-amber-50/35 via-card/25 to-muted/35 dark:from-amber-950/20 dark:via-card/10">
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background/40 to-transparent"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-muted/25 to-transparent"
           aria-hidden
         />
         <div className="absolute inset-0">
@@ -410,7 +441,7 @@ export function ModelTarotDeck({
                   isLoading={item.fileName === loadingFileName}
                   onSelect={() => onSelect(item.id)}
                   onDownload={() => onDownload(item.id)}
-                  onSwitch={() => onSwitch(item.id)}
+                  onToggleRun={() => onToggleRun(item.id)}
                   onDelete={() => onDelete(item.id)}
                 />
               ))}

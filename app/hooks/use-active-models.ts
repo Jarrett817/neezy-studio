@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import {
-  getEmbeddingStatus,
-  getModelCatalog,
-  type ModelCatalogItem,
-} from "~/services/electron-client"
+import { getModelCatalog, type ModelCatalogItem } from "~/services/electron-client"
 import { getRuntimeSettings } from "~/services/settings"
 import {
   getCurrentModel,
@@ -58,19 +54,15 @@ export function useActiveModels() {
   const { data: chatCatalog = [] } = useQuery({
     queryKey: ["model-catalog", "chat"],
     queryFn: () => getModelCatalog("chat"),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const { data: embeddingCatalog = [] } = useQuery({
     queryKey: ["model-catalog", "embedding"],
     queryFn: () => getModelCatalog("embedding"),
-    staleTime: 30_000,
-  })
-
-  const { data: embStatus } = useQuery({
-    queryKey: ["embedding-status"],
-    queryFn: getEmbeddingStatus,
-    staleTime: 10_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const chatFileName = chatFile ?? settings?.llmModel ?? null
@@ -83,7 +75,7 @@ export function useActiveModels() {
 
   const embedding: ActiveModelChip = {
     label: displayName(embFileName, embeddingCatalog) ?? "未配置",
-    status: embStatus?.loaded ? "ready" : embFileName ? "idle" : "idle",
+    status: embFileName ? "idle" : "idle",
   }
 
   return { chat, embedding }

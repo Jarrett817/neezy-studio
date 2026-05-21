@@ -1,24 +1,18 @@
 import { useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
 
+import { cn } from "~/lib/utils"
+
 /**
  * 温暖渐变背景 + 浮动光斑
  */
 export function WarmAmbientBg() {
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {/* 基础渐变 */}
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-sky-50/60" />
 
-      {/* 动态光斑 1 */}
       <motion.div
-        className="absolute h-[500px] w-[500px] rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,180,80,0.4) 0%, transparent 70%)",
-          left: "10%",
-          top: "20%",
-        }}
+        className="absolute top-[20%] left-[10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle,rgba(255,180,80,0.4)_0%,transparent_70%)]"
         animate={{
           x: [0, 60, 0],
           y: [0, 40, 0],
@@ -31,15 +25,8 @@ export function WarmAmbientBg() {
         }}
       />
 
-      {/* 动态光斑 2 */}
       <motion.div
-        className="absolute h-[600px] w-[600px] rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(180,220,160,0.35) 0%, transparent 70%)",
-          right: "5%",
-          bottom: "10%",
-        }}
+        className="absolute right-[5%] bottom-[10%] h-[600px] w-[600px] rounded-full bg-[radial-gradient(circle,rgba(180,220,160,0.35)_0%,transparent_70%)]"
         animate={{
           x: [0, -50, 0],
           y: [0, -30, 0],
@@ -53,15 +40,8 @@ export function WarmAmbientBg() {
         }}
       />
 
-      {/* 动态光斑 3 */}
       <motion.div
-        className="absolute h-[400px] w-[400px] rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,200,120,0.35) 0%, transparent 70%)",
-          left: "40%",
-          top: "60%",
-        }}
+        className="absolute top-[60%] left-[40%] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,rgba(255,200,120,0.35)_0%,transparent_70%)]"
         animate={{
           x: [0, 40, 0],
           y: [0, -50, 0],
@@ -75,15 +55,8 @@ export function WarmAmbientBg() {
         }}
       />
 
-      {/* 小的装饰光斑 */}
       <motion.div
-        className="absolute h-[200px] w-[200px] rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(200,160,255,0.3) 0%, transparent 70%)",
-          left: "70%",
-          top: "15%",
-        }}
+        className="absolute top-[15%] left-[70%] h-[200px] w-[200px] rounded-full bg-[radial-gradient(circle,rgba(200,160,255,0.3)_0%,transparent_70%)]"
         animate={{
           x: [0, -30, 0],
           y: [0, 20, 0],
@@ -97,10 +70,7 @@ export function WarmAmbientBg() {
         }}
       />
 
-      {/* 底部暖色 */}
       <div className="absolute right-0 bottom-0 left-0 h-64 bg-gradient-to-t from-orange-100/50 to-transparent" />
-
-      {/* 顶部冷色 */}
       <div className="absolute top-0 right-0 left-0 h-32 bg-gradient-to-b from-sky-100/30 to-transparent" />
     </div>
   )
@@ -126,15 +96,12 @@ export function SparkleBg() {
       {sparks.map((s) => (
         <motion.div
           key={s.id}
-          className="absolute rounded-full"
-          style={{
-            left: `${s.x}%`,
-            top: `${s.y}%`,
-            width: s.size,
-            height: s.size,
-            background: "linear-gradient(135deg, #fbbf24 0%, #f97316 100%)",
-            boxShadow: "0 0 6px rgba(251,191,36,0.6)",
-          }}
+          className={cn(
+            "absolute rounded-full bg-linear-to-br from-amber-400 to-orange-500 shadow-[0_0_6px_rgba(251,191,36,0.6)]",
+            `left-[${s.x}%]`,
+            `top-[${s.y}%]`,
+            `size-[${s.size}px]`
+          )}
           animate={{
             opacity: [0.1, 0.8, 0.1],
             scale: [0.8, 1.2, 0.8],
@@ -184,17 +151,13 @@ export function CursorGlow({ children }: { children: React.ReactNode }) {
     <>
       {children}
       {isVisible && (
-        <div
-          className="pointer-events-none fixed z-[9999] rounded-full"
-          style={{
-            left: mousePos.x - 150,
-            top: mousePos.y - 150,
-            width: 300,
-            height: 300,
-            background:
-              "radial-gradient(circle, rgba(255,180,80,0.25) 0%, rgba(255,180,80,0.1) 40%, transparent 70%)",
-            transition: "left 0.15s ease-out, top 0.15s ease-out",
+        <motion.div
+          className="pointer-events-none fixed z-[9999] h-[300px] w-[300px] rounded-full bg-[radial-gradient(circle,rgba(255,180,80,0.25)_0%,rgba(255,180,80,0.1)_40%,transparent_70%)]"
+          animate={{
+            x: mousePos.x - 150,
+            y: mousePos.y - 150,
           }}
+          transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
         />
       )}
     </>

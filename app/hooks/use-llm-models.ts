@@ -5,7 +5,6 @@ import { toast } from "sonner"
 import {
   deleteModel,
   downloadModel,
-  getEmbeddingStatus,
   getModelCatalog,
   getModelRecommendations,
   onModelDownloadProgress,
@@ -13,51 +12,31 @@ import {
   type ModelKind,
   type RuntimeMetrics,
 } from "~/services/electron-client"
-import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+import {
+  isChatModelRunning,
+  startChatModel,
+  startEmbeddingModel,
+  stopChatModel,
+  stopEmbeddingModel,
+} from "~/services/model-runtime"
+import { getRuntimeSettings } from "~/services/settings"
 import {
   getCurrentModel,
   getLoadingState,
-  isElectronLlmAvailable,
-  loadEmbeddingByFileName,
-  loadModel,
   subscribeLoadingState,
 } from "~/services/llm"
 
-const LAST_CHAT_MODEL_KEY = "neezy-llm-last-model"
-
-async function saveChatModelChoice(fileName: string) {
-  localStorage.setItem(LAST_CHAT_MODEL_KEY, fileName)
-  const settings = await getRuntimeSettings()
-  await saveRuntimeSettings({ ...settings, llmModel: fileName })
-}
-
-async function saveEmbeddingModelChoice(
-  fileName: string,
-  tier: ModelCatalogItem["tier"]
-) {
-  const settings = await getRuntimeSettings()
-  await saveRuntimeSettings({
-    ...settings,
-    embeddingModel: fileName,
-    embeddingTier: tier,
-  })
-}
+const CATALOG_STALE_MS = 0
 
 export function useLlmModels() {
   const queryClient = useQueryClient()
   const [kind, setKind] = useState<ModelKind>("chat")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [chatItems, setChatItems] = useState<ModelCatalogItem[]>([])
-  const [embeddingItems, setEmbeddingItems] = useState<ModelCatalogItem[]>([])
   const [currentChat, setCurrentChat] = useState<string | null>(
     getCurrentModel()
   )
   const [currentEmbedding, setCurrentEmbedding] = useState<string | null>(null)
   const [loadingState, setLoadingState] = useState(getLoadingState())
-  const [embeddingLoadingId, setEmbeddingLoadingId] = useState<string | null>(
-    null
-  )
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const deckSelectionPinned = useRef(false)
 
   const { data: metrics } = useQuery({
@@ -66,84 +45,72 @@ export function useLlmModels() {
     staleTime: 8000,
   })
 
-  const items = kind === "chat" ? chatItems : embeddingItems
+  const {
+    data: chatItems = [],
+    isFetching: chatFetching,
+    refetch: refetchChatCatalog,
+  } = useQuery({
+    queryKey: ["model-catalog", "chat"],
+    queryFn: () => getModelCatalog("chat"),
+    staleTime: CATALOG_STALE_MS,
+    refetchOnWindowFocus: true,
+  })
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      const [chat, embedding, embStatus, settings] = await Promise.all([
-        getModelCatalog("chat"),
-        getModelCatalog("embedding"),
-        getEmbeddingStatus(),
-        getRuntimeSettings(),
-      ])
-      setChatItems(chat)
-      setEmbeddingItems(embedding)
-      setCurrentEmbedding(
-        embStatus.modelId
-          ? settings.embeddingModel
-          : settings.embeddingModel || null
-      )
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "无法读取模型列表")
-    } finally {
-      setIsRefreshing(false)
-    }
+  const {
+    data: embeddingItems = [],
+    isFetching: embeddingFetching,
+    refetch: refetchEmbeddingCatalog,
+  } = useQuery({
+    queryKey: ["model-catalog", "embedding"],
+    queryFn: () => getModelCatalog("embedding"),
+    staleTime: CATALOG_STALE_MS,
+    refetchOnWindowFocus: true,
+  })
+
+  const items = kind === "chat" ? chatItems : embeddingItems
+  const isRefreshing = chatFetching || embeddingFetching
+
+  const syncEmbeddingSelection = useCallback(async () => {
+    const settings = await getRuntimeSettings()
+    setCurrentEmbedding(settings.embeddingModel || null)
   }, [])
 
+  const refresh = useCallback(async () => {
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["model-catalog"] }),
+        refetchChatCatalog(),
+        refetchEmbeddingCatalog(),
+        syncEmbeddingSelection(),
+      ])
+      setCurrentChat(getCurrentModel())
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "无法读取模型列表")
+    }
+  }, [
+    queryClient,
+    refetchChatCatalog,
+    refetchEmbeddingCatalog,
+    syncEmbeddingSelection,
+  ])
+
   useEffect(() => {
-    refresh()
-    const unsubLoading = subscribeLoadingState(setLoadingState)
+    syncEmbeddingSelection().catch(() => {})
+    const unsubLoading = subscribeLoadingState((next) => {
+      setLoadingState(next)
+      if (!next.isLoading) setCurrentChat(getCurrentModel())
+    })
     const unsubDownload = onModelDownloadProgress((next) => {
-      const updater = (list: ModelCatalogItem[]) =>
-        list.map((item) => (item.id === next.id ? next : item))
-      if (next.kind === "chat") setChatItems(updater)
-      else setEmbeddingItems(updater)
+      const key = ["model-catalog", next.kind] as const
+      queryClient.setQueryData<ModelCatalogItem[]>(key, (list) =>
+        (list ?? []).map((item) => (item.id === next.id ? next : item))
+      )
     })
     return () => {
       unsubLoading()
       unsubDownload()
     }
-  }, [refresh])
-
-  useEffect(() => {
-    if (!isElectronLlmAvailable() || currentChat || chatItems.length === 0)
-      return
-    const saved = localStorage.getItem(LAST_CHAT_MODEL_KEY)
-    const candidate = chatItems.find(
-      (item) => item.installed && (!saved || item.fileName === saved)
-    )
-    if (!candidate) return
-    loadModel(candidate.fileName)
-      .then(async () => {
-        setCurrentChat(candidate.fileName)
-        await saveChatModelChoice(candidate.fileName)
-      })
-      .catch((error) => console.warn("[LLM] Auto-load failed:", error))
-  }, [chatItems, currentChat])
-
-  useEffect(() => {
-    if (!metrics || embeddingItems.length === 0) return
-    getRuntimeSettings()
-      .then((settings) => {
-        if (settings.embeddingModel) {
-          setCurrentEmbedding(settings.embeddingModel)
-          return
-        }
-        const recommended = embeddingItems.find(
-          (item) => item.id === metrics.recommendedEmbeddingId && item.installed
-        )
-        if (!recommended) return
-        return loadEmbeddingByFileName(
-          recommended.fileName,
-          recommended.id
-        ).then(() => {
-          setCurrentEmbedding(recommended.fileName)
-          queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        })
-      })
-      .catch(() => {})
-  }, [metrics, embeddingItems, queryClient])
+  }, [queryClient, syncEmbeddingSelection])
 
   useEffect(() => {
     deckSelectionPinned.current = false
@@ -182,16 +149,24 @@ export function useLlmModels() {
     kind === "chat"
       ? (metrics?.recommendedChatId ?? null)
       : (metrics?.recommendedEmbeddingId ?? null)
-  const activeFileName = kind === "chat" ? currentChat : currentEmbedding
-  const loadingFileName =
+
+  const isModelRunning = useCallback(
+    (item: ModelCatalogItem) =>
+      kind === "chat"
+        ? isChatModelRunning(item.fileName)
+        : currentEmbedding === item.fileName,
+    [kind, currentEmbedding]
+  )
+
+  const activeFileName =
     kind === "chat"
-      ? loadingState.isLoading
-        ? loadingState.loadingModelId
-        : null
-      : embeddingLoadingId
-        ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ??
-          null)
-        : null
+      ? currentChat
+      : currentEmbedding
+
+  const loadingFileName =
+    kind === "chat" && loadingState.isLoading
+      ? loadingState.loadingModelId
+      : null
 
   const handleDownload = useCallback(
     async (modelId: string) => {
@@ -206,42 +181,57 @@ export function useLlmModels() {
     [refresh]
   )
 
-  const handleUseChat = useCallback(
+  const handleStartChat = useCallback(
     async (item: ModelCatalogItem) => {
       try {
-        await loadModel(item.fileName)
-        await saveChatModelChoice(item.fileName)
+        await startChatModel(item)
         setCurrentChat(item.fileName)
-        const settings = await getRuntimeSettings()
-        await saveRuntimeSettings({
-          ...settings,
-          llmModel: item.fileName,
-          chatTier: item.tier,
-        })
         queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`对话模型：${item.title}`)
+        toast.success(`已启动：${item.title}`)
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "加载失败")
+        toast.error(error instanceof Error ? error.message : "启动失败")
       }
     },
     [queryClient]
   )
 
-  const handleUseEmbedding = useCallback(
+  const handleStopChat = useCallback(
     async (item: ModelCatalogItem) => {
-      setEmbeddingLoadingId(item.id)
       try {
-        await loadEmbeddingByFileName(item.fileName, item.id)
-        await saveEmbeddingModelChoice(item.fileName, item.tier)
+        await stopChatModel(item.fileName)
+        setCurrentChat(getCurrentModel())
+        queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
+        toast.success(`已关闭：${item.title}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "关闭失败")
+      }
+    },
+    [queryClient]
+  )
+
+  const handleStartEmbedding = useCallback(
+    async (item: ModelCatalogItem) => {
+      try {
+        await startEmbeddingModel(item)
         setCurrentEmbedding(item.fileName)
         queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`Embedding：${item.title}`)
+        toast.success(`已选用：${item.title}（检索时按需加载）`)
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Embedding 加载失败"
-        )
-      } finally {
-        setEmbeddingLoadingId(null)
+        toast.error(error instanceof Error ? error.message : "选用失败")
+      }
+    },
+    [queryClient]
+  )
+
+  const handleStopEmbedding = useCallback(
+    async (item: ModelCatalogItem) => {
+      try {
+        await stopEmbeddingModel(item.fileName)
+        setCurrentEmbedding(null)
+        queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
+        toast.success(`已取消选用：${item.title}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "取消失败")
       }
     },
     [queryClient]
@@ -260,21 +250,40 @@ export function useLlmModels() {
     [refresh]
   )
 
-  const switchToModel = useCallback(
-    async (modelId: string) => {
-      const item = items.find((i) => i.id === modelId)
+  const toggleModelRun = useCallback(
+    async (modelId: string, modelKind: ModelKind = kind) => {
+      const catalog = modelKind === "chat" ? chatItems : embeddingItems
+      const item = catalog.find((i) => i.id === modelId)
       if (!item?.installed) return
-      setSelectedId(modelId)
-      if (kind === "chat") await handleUseChat(item)
-      else await handleUseEmbedding(item)
+      if (modelKind === kind) setSelectedId(modelId)
+      if (modelKind === "chat") {
+        if (isChatModelRunning(item.fileName)) {
+          await handleStopChat(item)
+        } else {
+          await handleStartChat(item)
+        }
+      } else if (currentEmbedding === item.fileName) {
+        await handleStopEmbedding(item)
+      } else {
+        await handleStartEmbedding(item)
+      }
     },
-    [items, kind, handleUseChat, handleUseEmbedding]
+    [
+      kind,
+      chatItems,
+      embeddingItems,
+      currentEmbedding,
+      handleStartChat,
+      handleStopChat,
+      handleStartEmbedding,
+      handleStopEmbedding,
+    ]
   )
 
   const useSelected = useCallback(async () => {
     if (!selectedId) return
-    await switchToModel(selectedId)
-  }, [selectedId, switchToModel])
+    await toggleModelRun(selectedId)
+  }, [selectedId, toggleModelRun])
 
   const selectAdjacent = useCallback(
     (delta: -1 | 1) => {
@@ -304,15 +313,17 @@ export function useLlmModels() {
     activeFileName,
     loadingFileName,
     loadingState,
-    embeddingLoadingId,
     isRefreshing,
+    isModelRunning,
     refresh,
     handleDownload,
     handleDelete,
-    handleUseChat,
-    handleUseEmbedding,
+    handleStartChat,
+    handleStopChat,
+    handleStartEmbedding,
+    handleStopEmbedding,
     useSelected,
-    switchToModel,
+    toggleModelRun,
     selectAdjacent,
   }
 }

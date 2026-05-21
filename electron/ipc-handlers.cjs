@@ -15,10 +15,12 @@ function registerIpcHandlers(ctx) {
   ipcMain.handle("app:save-storage-paths", async (_event, input) => {
     ctx.closeAllSqliteHandles()
     storagePaths.invalidateStoragePathsCache()
+    ctx.invalidateModelScanCache?.()
     return storagePaths.saveStoragePaths(app, input)
   })
   ipcMain.handle("app:reset-storage-paths", async () => {
     ctx.closeAllSqliteHandles()
+    ctx.invalidateModelScanCache?.()
     return storagePaths.resetStoragePaths(app)
   })
   ipcMain.handle("app:pick-directory", async (_event, options = {}) => {
@@ -53,11 +55,7 @@ function registerIpcHandlers(ctx) {
 
   ipcMain.handle("app:get-runtime-metrics", () => ctx.runtimeMetrics())
   ipcMain.handle("app:get-model-recommendations", () => ctx.runtimeMetrics())
-  ipcMain.handle("app:get-model-catalog", async (_event, kind) => {
-    await ctx.fs.mkdir(ctx.modelsDir(), { recursive: true })
-    const models = kind ? ctx.getModelsByKind(kind) : ctx.ALL_MODELS
-    return models.map(ctx.modelStatus)
-  })
+  ipcMain.handle("app:get-model-catalog", (_event, kind) => ctx.getModelCatalog(kind))
   ipcMain.handle("app:list-llm-models", async () => {
     await ctx.fs.mkdir(ctx.modelsDir(), { recursive: true })
     const entries = await ctx.fs.readdir(ctx.modelsDir(), { withFileTypes: true })
@@ -76,6 +74,10 @@ function registerIpcHandlers(ctx) {
   ipcMain.handle("app:download-model", async (_event, modelId) => ctx.downloadModel(modelId))
   ipcMain.handle("app:delete-model", async (_event, modelId) => ctx.deleteModel(modelId))
   ipcMain.handle("app:load-embedding-model", async (_event, modelId) => ctx.loadEmbeddingModel(modelId))
+  ipcMain.handle("app:unload-embedding-model", () => ctx.unloadEmbeddingModel())
+  ipcMain.handle("app:get-chat-model-file-info", (_event, fileName) =>
+    ctx.getChatModelFileInfo(fileName)
+  )
   ipcMain.handle("app:get-embeddings", async (_event, texts) => ctx.embedTexts(texts))
   ipcMain.handle("app:get-embedding-status", () => ctx.getEmbeddingStatus())
 

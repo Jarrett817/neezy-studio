@@ -28,7 +28,7 @@ export default function ModelsRoute() {
     refresh,
     handleDownload,
     handleDelete,
-    switchToModel,
+    toggleModelRun,
   } = useLlmModels()
 
   return (
@@ -90,7 +90,7 @@ export default function ModelsRoute() {
           onSelect={toggleSelectedId}
           onDismissSelection={dismissDeckSelection}
           onDownload={handleDownload}
-          onSwitch={switchToModel}
+          onToggleRun={toggleModelRun}
           onDelete={handleDelete}
         />
       </FadeIn>

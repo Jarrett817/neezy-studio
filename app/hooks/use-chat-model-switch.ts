@@ -6,16 +6,18 @@ import {
   getModelCatalog,
   type ModelCatalogItem,
 } from "~/services/electron-client"
-import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+import {
+  isChatModelRunning,
+  startChatModel,
+  stopChatModel,
+} from "~/services/model-runtime"
+import { getRuntimeSettings } from "~/services/settings"
 import {
   getCurrentModel,
   getLoadingState,
   isElectronLlmAvailable,
-  loadModel,
   subscribeLoadingState,
 } from "~/services/llm"
-
-const LAST_CHAT_MODEL_KEY = "neezy-llm-last-model"
 
 export function useChatModelSwitch() {
   const queryClient = useQueryClient()
@@ -32,7 +34,8 @@ export function useChatModelSwitch() {
   const { data: catalog = [] } = useQuery({
     queryKey: ["model-catalog", "chat"],
     queryFn: () => getModelCatalog("chat"),
-    staleTime: 15_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const { data: settings } = useQuery({
@@ -48,31 +51,31 @@ export function useChatModelSwitch() {
     catalog.find((m) => m.fileName === activeFileName) ??
     null
 
-  const switchTo = useCallback(
+  const toggleRun = useCallback(
     async (item: ModelCatalogItem) => {
       if (!isElectronLlmAvailable()) {
         toast.error("请使用 Electron 启动应用以加载本地模型")
         return
       }
-      if (item.fileName === activeFileName && !loading.isLoading) return
+      if (loading.isLoading) return
 
       try {
-        await loadModel(item.fileName)
-        localStorage.setItem(LAST_CHAT_MODEL_KEY, item.fileName)
-        const nextSettings = await getRuntimeSettings()
-        await saveRuntimeSettings({
-          ...nextSettings,
-          llmModel: item.fileName,
-          chatTier: item.tier,
-        })
-        setChatFile(item.fileName)
-        queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`已切换：${item.title}`)
+        if (isChatModelRunning(item.fileName)) {
+          await stopChatModel(item.fileName)
+          setChatFile(getCurrentModel())
+          queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
+          toast.success(`已关闭：${item.title}`)
+        } else {
+          await startChatModel(item)
+          setChatFile(item.fileName)
+          queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
+          toast.success(`已启动：${item.title}`)
+        }
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "模型加载失败")
+        toast.error(error instanceof Error ? error.message : "操作失败")
       }
     },
-    [activeFileName, loading.isLoading, queryClient]
+    [loading.isLoading, queryClient]
   )
 
   return {
@@ -81,6 +84,7 @@ export function useChatModelSwitch() {
     activeFileName,
     activeItem,
     loading,
-    switchTo,
+    isRunning: (fileName: string) => isChatModelRunning(fileName),
+    toggleRun,
   }
 }

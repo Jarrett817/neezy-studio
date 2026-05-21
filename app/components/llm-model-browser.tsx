@@ -15,6 +15,7 @@ import { cn } from "~/lib/utils"
 import { useLlmModels } from "~/hooks/use-llm-models"
 import {
   type ModelCatalogItem,
+  type ModelKind,
   type ModelTier,
   type RuntimeMetrics,
 } from "~/services/electron-client"
@@ -40,24 +41,34 @@ function modelTone(item: ModelCatalogItem, metrics?: RuntimeMetrics) {
   return item.tierLabel
 }
 
+function modelRunButtonLabel(
+  kind: ModelKind,
+  isActive: boolean,
+  isLoading: boolean
+) {
+  if (isLoading) return "加载中..."
+  if (kind === "embedding") return isActive ? "取消" : "选用"
+  return isActive ? "关闭" : "启动"
+}
+
 function ModelCard({
   item,
+  kind,
   metrics,
   isRecommended,
   isActive,
   isLoading,
   onDownload,
-  onUse,
-  useLabel,
+  onToggleRun,
 }: {
   item: ModelCatalogItem
+  kind: ModelKind
   metrics?: RuntimeMetrics
   isRecommended: boolean
   isActive: boolean
   isLoading: boolean
   onDownload: () => void
-  onUse: () => void
-  useLabel: string
+  onToggleRun: () => void
 }) {
   const isDownloading = item.status === "downloading"
   const progress = item.progress ?? 0
@@ -98,15 +109,11 @@ function ModelCard({
           type="button"
           className="w-full rounded-xl"
           size="sm"
-          disabled={item.installed ? isActive || isLoading : isDownloading}
-          onClick={item.installed ? onUse : onDownload}
+          disabled={item.installed ? isLoading : isDownloading}
+          onClick={item.installed ? onToggleRun : onDownload}
         >
           {item.installed
-            ? isLoading
-              ? "加载中..."
-              : isActive
-                ? "使用中"
-                : "切换"
+            ? modelRunButtonLabel(kind, isActive, isLoading)
             : isDownloading
               ? "下载中"
               : "下载"}
@@ -119,25 +126,25 @@ function ModelCard({
 function ModelTierSection({
   title,
   icon,
+  kind,
   items,
   metrics,
   recommendedId,
   activeFileName,
   loadingFileName,
   onDownload,
-  onUse,
-  useLabel,
+  onToggleRun,
 }: {
   title: string
   icon: ReactNode
+  kind: ModelKind
   items: ModelCatalogItem[]
   metrics?: RuntimeMetrics
   recommendedId: string | null
   activeFileName: string | null
   loadingFileName: string | null
   onDownload: (id: string) => void
-  onUse: (item: ModelCatalogItem) => void
-  useLabel: string
+  onToggleRun: (item: ModelCatalogItem) => void
 }) {
   const byTier = useMemo(() => {
     const map = new Map<ModelTier, ModelCatalogItem[]>()
@@ -172,13 +179,13 @@ function ModelTierSection({
                 <ModelCard
                   key={item.id}
                   item={item}
+                  kind={kind}
                   metrics={metrics}
                   isRecommended={item.id === recommendedId}
                   isActive={activeFileName === item.fileName}
                   isLoading={loadingFileName === item.fileName}
                   onDownload={() => onDownload(item.id)}
-                  onUse={() => onUse(item)}
-                  useLabel={useLabel}
+                  onToggleRun={() => onToggleRun(item)}
                 />
               ))}
             </div>
@@ -198,22 +205,18 @@ export function LlmModelBrowser() {
     currentChat,
     currentEmbedding,
     loadingState,
-    embeddingLoadingId,
     isRefreshing,
     refresh,
     handleDownload,
-    handleUseChat,
-    handleUseEmbedding,
+    handleStartChat,
+    handleStopChat,
+    handleStartEmbedding,
+    handleStopEmbedding,
   } = useLlmModels()
 
   const chatLoadingFile = loadingState.isLoading
     ? loadingState.loadingModelId
     : null
-  const embLoadingFile = embeddingLoadingId
-    ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ??
-      null)
-    : null
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -238,26 +241,34 @@ export function LlmModelBrowser() {
       <ModelTierSection
         title="对话模型"
         icon={<Sparkles className="size-5 text-primary" />}
+        kind="chat"
         items={chatItems}
         metrics={metrics}
         recommendedId={metrics?.recommendedChatId ?? null}
         activeFileName={currentChat}
         loadingFileName={chatLoadingFile}
         onDownload={handleDownload}
-        onUse={handleUseChat}
-        useLabel="用于对话"
+        onToggleRun={(item) => {
+          void (currentChat === item.fileName
+            ? handleStopChat(item)
+            : handleStartChat(item))
+        }}
       />
       <ModelTierSection
-        title="Embedding"
+        title="Embedding（按需加载）"
         icon={<Layers className="size-5 text-primary" />}
+        kind="embedding"
         items={embeddingItems}
         metrics={metrics}
         recommendedId={metrics?.recommendedEmbeddingId ?? null}
         activeFileName={currentEmbedding}
-        loadingFileName={embLoadingFile}
+        loadingFileName={null}
         onDownload={handleDownload}
-        onUse={handleUseEmbedding}
-        useLabel="用于记忆检索"
+        onToggleRun={(item) => {
+          void (currentEmbedding === item.fileName
+            ? handleStopEmbedding(item)
+            : handleStartEmbedding(item))
+        }}
       />
     </div>
   )

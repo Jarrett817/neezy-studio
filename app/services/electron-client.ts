@@ -67,6 +67,14 @@ type ElectronApi = {
   loadEmbeddingModel: (
     modelId: string
   ) => Promise<{ embeddingDim: number; modelId: string | null }>
+  unloadEmbeddingModel: () => Promise<void>
+  getChatModelFileInfo: (fileName: string) => Promise<{
+    ok: boolean
+    filePath?: string
+    sizeBytes?: number
+    expectedBytes?: number | null
+    reason?: string | null
+  }>
   getEmbeddings: (texts: string | string[]) => Promise<number[] | number[][]>
   getEmbeddingStatus: () => Promise<{
     loaded: boolean
@@ -195,6 +203,19 @@ export async function getModelRecommendations(): Promise<RuntimeMetrics> {
 
 export async function loadEmbeddingModel(modelId: string) {
   return getElectronApi().loadEmbeddingModel(modelId)
+}
+
+export async function unloadEmbeddingModel() {
+  return getElectronApi().unloadEmbeddingModel()
+}
+
+export async function getChatModelFileInfo(fileName: string) {
+  return getElectronApi().getChatModelFileInfo(fileName)
+}
+
+/** 渲染进程在 Electron 壳内（有 electronAPI） */
+export function isElectronApp(): boolean {
+  return typeof window !== "undefined" && window.electronAPI != null
 }
 
 export async function getEmbeddingsFromMain(texts: string): Promise<number[]>

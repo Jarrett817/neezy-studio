@@ -92,8 +92,7 @@ export function EchartsBarChart({
   return (
     <div
       ref={hostRef}
-      className={cn("w-full", className)}
-      style={{ height }}
+      className={cn("w-full", `h-[${height}px]`, className)}
       role="img"
       aria-label="柱状图"
     />

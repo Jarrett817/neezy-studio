@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+  <defs>
+    <pattern
+      id="scroll-paper-grain"
+      width="12"
+      height="12"
+      patternUnits="userSpaceOnUse"
+    >
+      <rect width="12" height="12" fill="#f5ecd8" />
+      <circle cx="1.2" cy="1.8" r="0.6" fill="#c4a574" opacity="0.25" />
+      <circle cx="4.5" cy="6.2" r="0.5" fill="#b8956a" opacity="0.2" />
+      <circle cx="8.8" cy="3.4" r="0.7" fill="#d4b896" opacity="0.22" />
+      <circle cx="7.2" cy="9.5" r="0.5" fill="#a08050" opacity="0.18" />
+    </pattern>
+    <linearGradient id="scroll-edge-fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8dcc4" stop-opacity="0.95" />
+      <stop offset="8%" stop-color="#f5ecd8" stop-opacity="0.4" />
+      <stop offset="92%" stop-color="#f5ecd8" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#e0d4bc" stop-opacity="0.9" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" fill="url(#scroll-paper-grain)" />
+  <rect width="100" height="100" fill="url(#scroll-edge-fade)" opacity="0.55" />
+</svg>

@@ -121,7 +121,9 @@ type ElectronApi = {
     path: string | null
     error: string | null
   }>
-  sqliteEnsureVectorSchema: (dbPath: string) => Promise<{ mode: "vec0" | "fallback" }>
+  sqliteEnsureVectorSchema: (
+    dbPath: string
+  ) => Promise<{ mode: "vec0" | "fallback" }>
   sqliteVectorUpsertMemory: (
     dbPath: string,
     id: string,

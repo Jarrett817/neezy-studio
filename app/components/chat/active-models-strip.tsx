@@ -1,7 +1,11 @@
 import { Link } from "react-router"
 import { Brain, Loader2, Sparkles } from "lucide-react"
 
-import { useActiveModels, type ActiveModelChip } from "~/hooks/use-active-models"
+import { ChatModelPicker } from "~/components/chat/chat-model-picker"
+import {
+  useActiveModels,
+  type ActiveModelChip,
+} from "~/hooks/use-active-models"
 import { cn } from "~/lib/utils"
 
 function ModelPill({
@@ -23,7 +27,8 @@ function ModelPill({
           "border-emerald-500/25 bg-emerald-500/8 text-foreground",
         model.status === "loading" &&
           "border-primary/25 bg-primary/8 text-foreground",
-        model.status === "idle" && "border-border/50 bg-muted/40 text-muted-foreground"
+        model.status === "idle" &&
+          "border-border/50 bg-muted/40 text-muted-foreground"
       )}
       title={`${kind}：${model.label}`}
     >
@@ -40,17 +45,26 @@ function ModelPill({
   )
 }
 
-export function ActiveModelsStrip({ className }: { className?: string }) {
+export function ActiveModelsStrip({
+  className,
+  chatSelectable,
+  chatPickerDisabled,
+}: {
+  className?: string
+  chatSelectable?: boolean
+  chatPickerDisabled?: boolean
+}) {
   const { chat, embedding } = useActiveModels()
 
   return (
     <div
-      className={cn(
-        "flex shrink-0 flex-wrap items-center gap-1.5",
-        className
-      )}
+      className={cn("flex shrink-0 flex-wrap items-center gap-1.5", className)}
     >
-      <ModelPill icon={Sparkles} kind="对话" model={chat} />
+      {chatSelectable ? (
+        <ChatModelPicker disabled={chatPickerDisabled} />
+      ) : (
+        <ModelPill icon={Sparkles} kind="对话" model={chat} />
+      )}
       <ModelPill icon={Brain} kind="记忆" model={embedding} />
     </div>
   )

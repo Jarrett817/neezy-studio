@@ -12,7 +12,11 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Progress } from "~/components/ui/progress"
 import { cn } from "~/lib/utils"
-import type { ModelCatalogItem, ModelKind, RuntimeMetrics } from "~/services/electron-client"
+import type {
+  ModelCatalogItem,
+  ModelKind,
+  RuntimeMetrics,
+} from "~/services/electron-client"
 
 export function tierBadgeVariant(tier: ModelCatalogItem["tier"]) {
   if (tier === "light") return "secondary" as const
@@ -28,7 +32,11 @@ export function modelTone(item: ModelCatalogItem, metrics?: RuntimeMetrics) {
   return item.tierLabel
 }
 
-export function ModelRecommendationBanner({ metrics }: { metrics: RuntimeMetrics }) {
+export function ModelRecommendationBanner({
+  metrics,
+}: {
+  metrics: RuntimeMetrics
+}) {
   return (
     <p className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-2.5 text-sm text-muted-foreground">
       <span className="font-medium text-foreground">推荐</span>
@@ -108,10 +116,16 @@ export function ModelOraclePanel({
       <div className="flex flex-1 flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-display text-xl font-semibold tracking-tight">{item.title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{item.subtitle}</p>
+            <h2 className="font-display text-xl font-semibold tracking-tight">
+              {item.title}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {item.subtitle}
+            </p>
           </div>
-          {isActive && <CheckCircle2 className="size-6 shrink-0 text-emerald-500" />}
+          {isActive && (
+            <CheckCircle2 className="size-6 shrink-0 text-emerald-500" />
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1.5">
@@ -129,18 +143,24 @@ export function ModelOraclePanel({
         </div>
 
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">{modelTone(item, metrics)}</span>
+          <span className="text-muted-foreground">
+            {modelTone(item, metrics)}
+          </span>
           <span className="font-medium">{item.sizeLabel}</span>
         </div>
 
         {item.embeddingDim && (
-          <p className="text-xs text-muted-foreground">向量维度 {item.embeddingDim}</p>
+          <p className="text-xs text-muted-foreground">
+            向量维度 {item.embeddingDim}
+          </p>
         )}
 
         {isDownloading && (
           <div className="space-y-1">
             <Progress value={progress} />
-            <p className="text-xs text-muted-foreground">下载中 {progress || 0}%</p>
+            <p className="text-xs text-muted-foreground">
+              下载中 {progress || 0}%
+            </p>
           </div>
         )}
 

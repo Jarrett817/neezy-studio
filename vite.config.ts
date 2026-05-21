@@ -10,7 +10,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   optimizeDeps: {
-    include: ["three", "@react-three/fiber", "@react-three/drei"],
+    include: ["echarts"],
   },
   build: {
     minify: "esbuild",
@@ -19,8 +19,7 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules/@tanstack/react-query")) return "query"
-          if (id.includes("node_modules/three")) return "three"
-          if (id.includes("@react-three")) return "r3f"
+          if (id.includes("node_modules/echarts")) return "echarts"
           if (
             id.includes("lucide-react") ||
             id.includes("class-variance-authority") ||

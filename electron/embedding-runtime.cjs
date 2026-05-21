@@ -1,4 +1,17 @@
+const path = require("node:path")
+const { createRequire } = require("node:module")
+
 const EMBEDDING_DIM = 768
+
+/** 使用 @electron/llm 传递的 node-llama-cpp，避免项目直接依赖 */
+function resolveNodeLlamaCppRequire() {
+  try {
+    return createRequire(require.resolve("node-llama-cpp"))
+  } catch {
+    const llmDir = path.dirname(require.resolve("@electron/llm"))
+    return createRequire(path.join(llmDir, "package.json"))
+  }
+}
 
 let llamaModule = null
 let embeddingContext = null
@@ -7,7 +20,8 @@ let loadedModelId = null
 
 async function getLlamaModule() {
   if (!llamaModule) {
-    llamaModule = await import("node-llama-cpp")
+    const req = resolveNodeLlamaCppRequire()
+    llamaModule = await req("node-llama-cpp")
   }
   return llamaModule
 }

@@ -34,7 +34,8 @@ import {
 import { appendThinkModeHint, parseModelThinking } from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
-const SYSTEM_PROMPT = `你是本地大模型助手，在 Neezy Studio 中为用户服务。回答用中文，语气清晰自然，避免堆砌技术术语。可使用工具：memory_search、memory_add、memory_event、datetime、calculator。需要工具时用 JSON 代码块 {"function":{"name":"...","arguments":{...}}}。`.trim()
+const SYSTEM_PROMPT =
+  `你是本地大模型助手，在 Neezy Studio 中为用户服务。回答用中文，语气清晰自然，避免堆砌技术术语。可使用工具：memory_search、memory_add、memory_event、datetime、calculator。需要工具时用 JSON 代码块 {"function":{"name":"...","arguments":{...}}}。`.trim()
 
 export default function ChatRoute() {
   const queryClient = useQueryClient()
@@ -245,8 +246,12 @@ export default function ChatRoute() {
   return (
     <PageTransition>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center justify-between gap-2 pb-2">
-          <ActiveModelsStrip />
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/10 pb-3">
+          <ActiveModelsStrip
+            className="min-w-0 flex-1"
+            chatSelectable
+            chatPickerDisabled={isGenerating}
+          />
           {messages.length > 0 && (
             <Button
               variant="ghost"
@@ -261,7 +266,7 @@ export default function ChatRoute() {
         </div>
 
         {enabledSkills.length > 0 && (
-          <div className="mb-2 flex shrink-0 gap-1.5 overflow-x-auto pb-1">
+          <div className="mb-2 flex shrink-0 gap-1.5 overflow-x-auto border-b border-border/5 py-2">
             {enabledSkills.map((skill) => (
               <button
                 key={skill.id}
@@ -293,7 +298,11 @@ export default function ChatRoute() {
             >
               <motion.div
                 animate={{ y: [0, -6, 0], scale: [1, 1.03, 1] }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
                 className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/20 to-amber-100/60 shadow-lg dark:to-amber-950/40"
               >
                 <Sparkles className="size-9 text-primary" />
@@ -311,10 +320,7 @@ export default function ChatRoute() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <MessageBubble
-                    message={message}
-                    modelName={chatModelName}
-                  />
+                  <MessageBubble message={message} modelName={chatModelName} />
                 </motion.div>
               ))}
             </div>
@@ -322,11 +328,13 @@ export default function ChatRoute() {
           <div ref={bottomRef} />
         </div>
 
-        <div className="glass-warm mt-2 shrink-0 space-y-2 rounded-2xl border border-border/10 p-3">
+        <div className="mt-3 shrink-0 rounded-2xl border border-border/15 bg-card shadow-sm">
           {attachedFile && (
-            <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-border/10 px-3 py-2">
               <FileText className="size-4 shrink-0 text-primary" />
-              <span className="flex-1 truncate text-xs">{attachedFile.name}</span>
+              <span className="flex-1 truncate text-xs">
+                {attachedFile.name}
+              </span>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -339,8 +347,9 @@ export default function ChatRoute() {
           )}
 
           <Textarea
-            className="min-h-14 resize-none border-none bg-transparent p-0 text-sm shadow-none"
+            className="min-h-[4.5rem] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm leading-relaxed shadow-none focus-visible:border-transparent focus-visible:ring-0"
             placeholder="输入消息…"
+            rows={3}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -348,7 +357,7 @@ export default function ChatRoute() {
             }}
           />
 
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 border-t border-border/10 px-2 py-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -426,7 +435,7 @@ function MessageBubble({
 
       <div
         className={cn(
-          "min-w-0 max-w-[min(100%,42rem)]",
+          "max-w-[min(100%,42rem)] min-w-0",
           isUser ? "items-end" : "items-start"
         )}
       >
@@ -454,7 +463,6 @@ function MessageBubble({
                 <MarkdownContent content={message.content} />
               </div>
             ) : null}
-
           </div>
         )}
       </div>

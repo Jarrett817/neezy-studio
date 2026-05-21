@@ -112,9 +112,7 @@ export function parseModelThinking(text: string): ParsedModelThinking {
     }
   }
 
-  const closeMatch = raw.match(
-    /([\s\S]*?)<\/(?:think|redacted_reasoning)\s*>/i
-  )
+  const closeMatch = raw.match(/([\s\S]*?)<\/(?:think|redacted_reasoning)\s*>/i)
   if (closeMatch) {
     const thinking = closeMatch[1].replace(THINK_OPEN, "").trim()
     const visible = raw
@@ -126,9 +124,7 @@ export function parseModelThinking(text: string): ParsedModelThinking {
 
   const openMatch = raw.match(THINK_OPEN)
   if (openMatch?.index != null) {
-    const thinking = raw
-      .slice(openMatch.index + openMatch[0].length)
-      .trim()
+    const thinking = raw.slice(openMatch.index + openMatch[0].length).trim()
     const visible = raw.slice(0, openMatch.index).trim()
     return { thinking, visible, inThinkBlock: true }
   }

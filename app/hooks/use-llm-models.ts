@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -31,7 +31,10 @@ async function saveChatModelChoice(fileName: string) {
   await saveRuntimeSettings({ ...settings, llmModel: fileName })
 }
 
-async function saveEmbeddingModelChoice(fileName: string, tier: ModelCatalogItem["tier"]) {
+async function saveEmbeddingModelChoice(
+  fileName: string,
+  tier: ModelCatalogItem["tier"]
+) {
   const settings = await getRuntimeSettings()
   await saveRuntimeSettings({
     ...settings,
@@ -46,11 +49,16 @@ export function useLlmModels() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [chatItems, setChatItems] = useState<ModelCatalogItem[]>([])
   const [embeddingItems, setEmbeddingItems] = useState<ModelCatalogItem[]>([])
-  const [currentChat, setCurrentChat] = useState<string | null>(getCurrentModel())
+  const [currentChat, setCurrentChat] = useState<string | null>(
+    getCurrentModel()
+  )
   const [currentEmbedding, setCurrentEmbedding] = useState<string | null>(null)
   const [loadingState, setLoadingState] = useState(getLoadingState())
-  const [embeddingLoadingId, setEmbeddingLoadingId] = useState<string | null>(null)
+  const [embeddingLoadingId, setEmbeddingLoadingId] = useState<string | null>(
+    null
+  )
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const deckSelectionPinned = useRef(false)
 
   const { data: metrics } = useQuery({
     queryKey: ["model-recommendations"],
@@ -72,7 +80,9 @@ export function useLlmModels() {
       setChatItems(chat)
       setEmbeddingItems(embedding)
       setCurrentEmbedding(
-        embStatus.modelId ? settings.embeddingModel : settings.embeddingModel || null
+        embStatus.modelId
+          ? settings.embeddingModel
+          : settings.embeddingModel || null
       )
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "无法读取模型列表")
@@ -97,7 +107,8 @@ export function useLlmModels() {
   }, [refresh])
 
   useEffect(() => {
-    if (!isElectronLlmAvailable() || currentChat || chatItems.length === 0) return
+    if (!isElectronLlmAvailable() || currentChat || chatItems.length === 0)
+      return
     const saved = localStorage.getItem(LAST_CHAT_MODEL_KEY)
     const candidate = chatItems.find(
       (item) => item.installed && (!saved || item.fileName === saved)
@@ -123,7 +134,10 @@ export function useLlmModels() {
           (item) => item.id === metrics.recommendedEmbeddingId && item.installed
         )
         if (!recommended) return
-        return loadEmbeddingByFileName(recommended.fileName, recommended.id).then(() => {
+        return loadEmbeddingByFileName(
+          recommended.fileName,
+          recommended.id
+        ).then(() => {
           setCurrentEmbedding(recommended.fileName)
           queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
         })
@@ -132,22 +146,42 @@ export function useLlmModels() {
   }, [metrics, embeddingItems, queryClient])
 
   useEffect(() => {
+    deckSelectionPinned.current = false
+  }, [kind])
+
+  useEffect(() => {
     if (items.length === 0) {
       setSelectedId(null)
+      deckSelectionPinned.current = false
       return
     }
-    if (selectedId && items.some((i) => i.id === selectedId)) return
+    if (selectedId != null && items.some((i) => i.id === selectedId)) return
+    if (selectedId === null && deckSelectionPinned.current) return
     const activeFile = kind === "chat" ? currentChat : currentEmbedding
     const active = items.find((i) => i.fileName === activeFile)
     const recommendedId =
-      kind === "chat" ? metrics?.recommendedChatId : metrics?.recommendedEmbeddingId
+      kind === "chat"
+        ? metrics?.recommendedChatId
+        : metrics?.recommendedEmbeddingId
     const recommended = items.find((i) => i.id === recommendedId)
     setSelectedId(active?.id ?? recommended?.id ?? items[0].id)
   }, [items, selectedId, kind, currentChat, currentEmbedding, metrics])
 
+  const toggleSelectedId = useCallback((id: string) => {
+    deckSelectionPinned.current = true
+    setSelectedId((prev) => (prev === id ? null : id))
+  }, [])
+
+  const dismissDeckSelection = useCallback(() => {
+    deckSelectionPinned.current = true
+    setSelectedId(null)
+  }, [])
+
   const selectedItem = items.find((i) => i.id === selectedId) ?? null
   const recommendedId =
-    kind === "chat" ? (metrics?.recommendedChatId ?? null) : (metrics?.recommendedEmbeddingId ?? null)
+    kind === "chat"
+      ? (metrics?.recommendedChatId ?? null)
+      : (metrics?.recommendedEmbeddingId ?? null)
   const activeFileName = kind === "chat" ? currentChat : currentEmbedding
   const loadingFileName =
     kind === "chat"
@@ -155,7 +189,8 @@ export function useLlmModels() {
         ? loadingState.loadingModelId
         : null
       : embeddingLoadingId
-        ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ?? null)
+        ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ??
+          null)
         : null
 
   const handleDownload = useCallback(
@@ -202,7 +237,9 @@ export function useLlmModels() {
         queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
         toast.success(`Embedding：${item.title}`)
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Embedding 加载失败")
+        toast.error(
+          error instanceof Error ? error.message : "Embedding 加载失败"
+        )
       } finally {
         setEmbeddingLoadingId(null)
       }
@@ -223,11 +260,21 @@ export function useLlmModels() {
     [refresh]
   )
 
+  const switchToModel = useCallback(
+    async (modelId: string) => {
+      const item = items.find((i) => i.id === modelId)
+      if (!item?.installed) return
+      setSelectedId(modelId)
+      if (kind === "chat") await handleUseChat(item)
+      else await handleUseEmbedding(item)
+    },
+    [items, kind, handleUseChat, handleUseEmbedding]
+  )
+
   const useSelected = useCallback(async () => {
-    if (!selectedItem) return
-    if (kind === "chat") await handleUseChat(selectedItem)
-    else await handleUseEmbedding(selectedItem)
-  }, [selectedItem, kind, handleUseChat, handleUseEmbedding])
+    if (!selectedId) return
+    await switchToModel(selectedId)
+  }, [selectedId, switchToModel])
 
   const selectAdjacent = useCallback(
     (delta: -1 | 1) => {
@@ -248,6 +295,8 @@ export function useLlmModels() {
     metrics: metrics as RuntimeMetrics | undefined,
     selectedId,
     setSelectedId,
+    toggleSelectedId,
+    dismissDeckSelection,
     selectedItem,
     recommendedId,
     currentChat,
@@ -263,6 +312,7 @@ export function useLlmModels() {
     handleUseChat,
     handleUseEmbedding,
     useSelected,
+    switchToModel,
     selectAdjacent,
   }
 }

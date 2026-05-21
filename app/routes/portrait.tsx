@@ -35,29 +35,34 @@ export default function PortraitRoute() {
   }
 
   return (
-    <div className="space-y-4 pt-2 pb-8">
-      <div className="flex items-center justify-end gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="rounded-full"
-          onClick={handleExport}
-          aria-label="导出"
-        >
-          <Download className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="rounded-full text-muted-foreground"
-          disabled={resetMutation.isPending}
-          onClick={() => resetMutation.mutate()}
-          aria-label="清空画像"
-        >
-          <RefreshCw className="size-4" />
-        </Button>
+    <div className="flex min-h-0 flex-1 flex-col gap-4 pb-8">
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <h1 className="font-display text-lg font-semibold tracking-tight">
+          人格画像
+        </h1>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={handleExport}
+            aria-label="导出"
+          >
+            <Download className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-muted-foreground"
+            disabled={resetMutation.isPending}
+            onClick={() => resetMutation.mutate()}
+            aria-label="清空画像"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
       </div>
 
       {isLoading || !portrait ? (

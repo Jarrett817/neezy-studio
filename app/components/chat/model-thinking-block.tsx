@@ -63,7 +63,7 @@ export function ModelThinkingBlock({
         </span>
       </summary>
 
-      <div className="space-y-2 border-t border-border/20 px-3.5 pb-3.5 pt-2">
+      <div className="space-y-2 border-t border-border/20 px-3.5 pt-2 pb-3.5">
         {hasThinking ? (
           <div className="relative max-h-[min(42vh,360px)] overflow-y-auto">
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">

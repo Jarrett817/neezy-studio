@@ -19,7 +19,8 @@ export default function ModelsRoute() {
     items,
     metrics,
     selectedId,
-    setSelectedId,
+    toggleSelectedId,
+    dismissDeckSelection,
     recommendedId,
     activeFileName,
     loadingFileName,
@@ -27,11 +28,11 @@ export default function ModelsRoute() {
     refresh,
     handleDownload,
     handleDelete,
-    useSelected,
+    switchToModel,
   } = useLlmModels()
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col gap-3 min-h-[calc(100dvh-8.5rem)]">
+    <div className="flex min-h-0 min-h-[calc(100dvh-8.5rem)] w-full flex-1 flex-col gap-3">
       <FadeIn className="shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex flex-1 gap-2 rounded-2xl border border-border/40 bg-card/40 p-1.5 backdrop-blur-sm">
@@ -86,10 +87,10 @@ export default function ModelsRoute() {
           recommendedId={recommendedId}
           activeFileName={activeFileName}
           loadingFileName={loadingFileName}
-          useLabel={kind === "chat" ? "载入对话" : "载入记忆"}
-          onSelect={setSelectedId}
+          onSelect={toggleSelectedId}
+          onDismissSelection={dismissDeckSelection}
           onDownload={handleDownload}
-          onUse={useSelected}
+          onSwitch={switchToModel}
           onDelete={handleDelete}
         />
       </FadeIn>

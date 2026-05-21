@@ -39,7 +39,11 @@ export async function searchMemoriesByVector(
     updated_at: number
   }[]
 > {
-  const { rows } = await sqliteVectorSearchMemories(await dbPath(), embedding, limit)
+  const { rows } = await sqliteVectorSearchMemories(
+    await dbPath(),
+    embedding,
+    limit
+  )
   return rows as {
     id: string
     title: string

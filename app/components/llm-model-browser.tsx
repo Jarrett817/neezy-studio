@@ -65,8 +65,10 @@ function ModelCard({
   return (
     <Card
       className={cn(
-        "rounded-2xl bg-card/70",
-        isRecommended && "ring-1 ring-primary/40"
+        "rounded-2xl bg-card/70 transition-shadow",
+        isActive &&
+          "shadow-[0_0_22px_rgba(251,191,36,0.45),0_0_36px_rgba(245,158,11,0.2)] ring-2 ring-amber-400/85",
+        isRecommended && !isActive && "ring-1 ring-primary/40"
       )}
     >
       <CardHeader className="pb-2">
@@ -79,13 +81,17 @@ function ModelCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">{modelTone(item, metrics)}</span>
+          <span className="text-muted-foreground">
+            {modelTone(item, metrics)}
+          </span>
           <span className="font-medium">{item.sizeLabel}</span>
         </div>
         {isDownloading && (
           <div className="space-y-1">
             <Progress value={progress} />
-            <p className="text-xs text-muted-foreground">下载中 {progress || 0}%</p>
+            <p className="text-xs text-muted-foreground">
+              下载中 {progress || 0}%
+            </p>
           </div>
         )}
         <Button
@@ -100,7 +106,7 @@ function ModelCard({
               ? "加载中..."
               : isActive
                 ? "使用中"
-                : useLabel
+                : "切换"
             : isDownloading
               ? "下载中"
               : "下载"}
@@ -156,8 +162,10 @@ function ModelTierSection({
         return (
           <div key={section.tier} className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{section.label}</span> —{" "}
-              {section.hint}
+              <span className="font-medium text-foreground">
+                {section.label}
+              </span>{" "}
+              — {section.hint}
             </p>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {tierItems.map((item) => (
@@ -198,9 +206,12 @@ export function LlmModelBrowser() {
     handleUseEmbedding,
   } = useLlmModels()
 
-  const chatLoadingFile = loadingState.isLoading ? loadingState.loadingModelId : null
+  const chatLoadingFile = loadingState.isLoading
+    ? loadingState.loadingModelId
+    : null
   const embLoadingFile = embeddingLoadingId
-    ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ?? null)
+    ? (embeddingItems.find((i) => i.id === embeddingLoadingId)?.fileName ??
+      null)
     : null
 
   return (
@@ -215,7 +226,11 @@ export function LlmModelBrowser() {
           onClick={refresh}
           disabled={isRefreshing}
         >
-          {isRefreshing ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+          {isRefreshing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Zap className="size-4" />
+          )}
           刷新
         </Button>
       </div>

@@ -1,19 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { BookOpenText, Clock3, Sparkles } from "lucide-react"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
 
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "~/components/ui/chart"
+import { EchartsBarChart } from "~/components/charts/echarts-bar-chart"
 import { Card, CardContent } from "~/components/ui/card"
 import {
   getWorkspaceSnapshot,
@@ -37,7 +25,6 @@ export default function AnalyticsRoute() {
     queryFn: listSkills,
   })
 
-  // Build category distribution from knowledge items
   const categoryData = knowledgeItems.reduce<Record<string, number>>(
     (acc, item) => {
       acc[item.category] = (acc[item.category] || 0) + 1
@@ -48,7 +35,7 @@ export default function AnalyticsRoute() {
 
   const chartData = Object.entries(categoryData).map(([category, count]) => ({
     category,
-    count,
+    value: count,
   }))
 
   const recentKnowledge = [...knowledgeItems]
@@ -70,7 +57,6 @@ export default function AnalyticsRoute() {
         </p>
       </div>
 
-      {/* 概览数字 */}
       <div className="grid gap-4 sm:grid-cols-3">
         {[
           {
@@ -114,41 +100,15 @@ export default function AnalyticsRoute() {
         })}
       </div>
 
-      {/* 知识分类分布 */}
       {chartData.length > 0 && (
         <Card className="bg-card/60">
           <CardContent className="p-6">
             <h2 className="mb-4 text-sm font-semibold">知识库分布</h2>
-            <ChartContainer
-              config={{
-                count: { label: "条目数" },
-              }}
-              className="h-48 w-full"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
-                >
-                  <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    content={<ChartTooltipContent hideIndicator />}
-                    formatter={(value) => [value, "条目"]}
-                  />
-                  <Bar
-                    dataKey="count"
-                    fill="var(--color-primary)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            <EchartsBarChart data={chartData} valueLabel="条目" height={192} />
           </CardContent>
         </Card>
       )}
 
-      {/* 最近知识 */}
       <div className="rounded-2xl bg-card/60 p-6">
         <h2 className="mb-4 text-sm font-semibold">最近添加</h2>
         {recentKnowledge.length === 0 ? (

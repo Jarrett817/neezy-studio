@@ -207,6 +207,22 @@
   background: oklch(0.20 0.015 50);
 }
 
+/* 当前使用中的模型卡牌 — 金色泛光 */
+@keyframes model-active-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
+  }
+}
+.model-card-active-glow {
+  animation: model-active-glow 2.8s ease-in-out infinite;
+}
+
 /* 状态指示灯 */
 @keyframes pulse-warm {
   0%, 100% { opacity: 1; }

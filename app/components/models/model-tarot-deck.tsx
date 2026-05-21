@@ -2,11 +2,11 @@ import { useMemo } from "react"
 import { motion } from "framer-motion"
 import { CheckCircle2, Download, Loader2, Trash2 } from "lucide-react"
 
+import { modelTone, tierBadgeVariant } from "~/components/model-oracle-panel"
 import {
-  modelTone,
-  tierBadgeVariant,
-} from "~/components/model-oracle-panel"
-import { TarotCardBack, tarotFaceGradient } from "~/components/models/tarot-card-art"
+  TarotCardBack,
+  tarotFaceGradient,
+} from "~/components/models/tarot-card-art"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Progress } from "~/components/ui/progress"
@@ -17,11 +17,16 @@ import type {
   RuntimeMetrics,
 } from "~/services/electron-client"
 
+function modelSwitchLabel(isActive: boolean, isLoading: boolean) {
+  if (isLoading) return "加载中"
+  if (isActive) return "使用中"
+  return "切换"
+}
+
 function fanLayout(slot: number, slotCount: number, selected: boolean) {
   const center = (slotCount - 1) / 2
   const offset = slot - center
-  const spreadStep =
-    slotCount <= 1 ? 0 : Math.min(5.2, 38 / (slotCount - 1))
+  const spreadStep = slotCount <= 1 ? 0 : Math.min(5.2, 38 / (slotCount - 1))
   const rotateStep = slotCount <= 1 ? 0 : Math.min(10, 66 / (slotCount - 1))
 
   return {
@@ -41,9 +46,8 @@ function ModelTarotCardFace({
   isRecommended,
   isActive,
   isLoading,
-  useLabel,
   onDownload,
-  onUse,
+  onSwitch,
   onDelete,
 }: {
   item: ModelCatalogItem
@@ -52,18 +56,21 @@ function ModelTarotCardFace({
   isRecommended: boolean
   isActive: boolean
   isLoading: boolean
-  useLabel: string
   onDownload: () => void
-  onUse: () => void
+  onSwitch: () => void
   onDelete: () => void
 }) {
+  const switchLabel = modelSwitchLabel(isActive, isLoading)
   const isDownloading = item.status === "downloading"
   const progress = item.progress ?? 0
 
   return (
     <div
       className={cn(
-        "absolute inset-0 flex min-h-0 flex-col overflow-y-auto rounded-2xl border-2 border-primary/40 bg-gradient-to-br p-3.5 text-left shadow-lg",
+        "absolute inset-0 flex min-h-0 flex-col overflow-y-auto rounded-2xl border-2 bg-gradient-to-br p-3.5 text-left shadow-lg",
+        isActive
+          ? "border-amber-400/90 shadow-[0_0_20px_rgba(251,191,36,0.4)]"
+          : "border-primary/40",
         tarotFaceGradient(item.tier)
       )}
       onClick={(e) => e.stopPropagation()}
@@ -91,14 +98,18 @@ function ModelTarotCardFace({
         )}
         {item.installed && (
           <Badge variant="outline" className="text-[10px]">
-            已下载
+            {isActive ? "当前使用" : "已下载"}
           </Badge>
         )}
       </div>
 
       <div className="mt-1.5 flex flex-wrap gap-1">
         {item.fit.slice(0, 3).map((fit) => (
-          <Badge key={fit} variant="outline" className="text-[10px] font-normal">
+          <Badge
+            key={fit}
+            variant="outline"
+            className="text-[10px] font-normal"
+          >
             {fit}
           </Badge>
         ))}
@@ -106,11 +117,15 @@ function ModelTarotCardFace({
 
       <div className="mt-auto space-y-2 pt-2">
         <div className="flex items-center justify-between gap-2 text-[11px]">
-          <span className="text-muted-foreground">{modelTone(item, metrics)}</span>
+          <span className="text-muted-foreground">
+            {modelTone(item, metrics)}
+          </span>
           <span className="font-medium tabular-nums">{item.sizeLabel}</span>
         </div>
         {item.embeddingDim != null && kind === "embedding" && (
-          <p className="text-[10px] text-muted-foreground">{item.embeddingDim} 维</p>
+          <p className="text-[10px] text-muted-foreground">
+            {item.embeddingDim} 维
+          </p>
         )}
         {isDownloading && (
           <div className="space-y-1">
@@ -128,17 +143,15 @@ function ModelTarotCardFace({
                 size="sm"
                 className="h-8 flex-1 rounded-lg text-xs"
                 disabled={isActive || isLoading}
-                onClick={onUse}
+                onClick={onSwitch}
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-1 size-3 animate-spin" />
-                    加载中
+                    {switchLabel}
                   </>
-                ) : isActive ? (
-                  "使用中"
                 ) : (
-                  useLabel
+                  switchLabel
                 )}
               </Button>
               <Button
@@ -185,10 +198,9 @@ function ModelTarotCard({
   isRecommended,
   isActive,
   isLoading,
-  useLabel,
   onSelect,
   onDownload,
-  onUse,
+  onSwitch,
   onDelete,
 }: {
   item: ModelCatalogItem
@@ -200,17 +212,19 @@ function ModelTarotCard({
   isRecommended: boolean
   isActive: boolean
   isLoading: boolean
-  useLabel: string
   onSelect: () => void
   onDownload: () => void
-  onUse: () => void
+  onSwitch: () => void
   onDelete: () => void
 }) {
-  const { spreadX, rotate, lift, scale, z } = fanLayout(slot, slotCount, selected)
+  const { spreadX, rotate, lift, scale, z } = fanLayout(
+    slot,
+    slotCount,
+    selected
+  )
+  const switchLabel = modelSwitchLabel(isActive, isLoading)
 
-  const cardClass = selected
-    ? "h-[17rem] w-[12.1rem]"
-    : "h-[14rem] w-[10rem]"
+  const cardClass = selected ? "h-[17rem] w-[12.1rem]" : "h-[14rem] w-[10rem]"
 
   return (
     <div
@@ -220,7 +234,8 @@ function ModelTarotCard({
       aria-label={`选择模型 ${item.title}`}
       className={cn(
         "absolute bottom-[14%] left-1/2 cursor-pointer will-change-transform",
-        cardClass
+        cardClass,
+        isActive && "z-[60]"
       )}
       style={{
         zIndex: z,
@@ -235,6 +250,24 @@ function ModelTarotCard({
         }
       }}
     >
+      {isActive && (
+        <>
+          <div
+            className="model-card-active-glow pointer-events-none absolute -inset-4 -z-10 rounded-[1.75rem] bg-amber-400/35 blur-2xl"
+            aria-hidden
+          />
+          <div
+            className="pointer-events-none absolute -inset-1 -z-10 rounded-[1.05rem] shadow-[0_0_22px_rgba(251,191,36,0.55),0_0_40px_rgba(245,158,11,0.25)] ring-2 ring-amber-400/80"
+            aria-hidden
+          />
+        </>
+      )}
+      {selected && !isActive && (
+        <div
+          className="pointer-events-none absolute -inset-2 -z-10 rounded-3xl bg-primary/20 blur-xl"
+          aria-hidden
+        />
+      )}
       <div className="h-full w-full" style={{ perspective: "1200px" }}>
         <motion.div
           className="relative h-full w-full"
@@ -244,10 +277,45 @@ function ModelTarotCard({
           transition={{ type: "spring", stiffness: 260, damping: 26 }}
         >
           <div
-            className="absolute inset-0 overflow-hidden rounded-2xl border-2 border-border/45 shadow-md"
+            className={cn(
+              "absolute inset-0 overflow-hidden rounded-2xl border-2 shadow-md",
+              isActive
+                ? "border-amber-400/85 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
+                : "border-border/45"
+            )}
             style={{ backfaceVisibility: "hidden" }}
           >
             <TarotCardBack tier={item.tier} />
+            {item.installed && (
+              <div
+                className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/55 via-black/25 to-transparent px-2.5 pt-8 pb-2.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {isActive ? (
+                  <p className="text-center text-[11px] font-medium text-emerald-200">
+                    使用中
+                  </p>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 w-full rounded-lg text-xs shadow-sm"
+                    disabled={isLoading}
+                    onClick={onSwitch}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-1 size-3 animate-spin" />
+                        加载中
+                      </>
+                    ) : (
+                      switchLabel
+                    )}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           <div
@@ -264,21 +332,13 @@ function ModelTarotCard({
               isRecommended={isRecommended}
               isActive={isActive}
               isLoading={isLoading}
-              useLabel={useLabel}
               onDownload={onDownload}
-              onUse={onUse}
+              onSwitch={onSwitch}
               onDelete={onDelete}
             />
           </div>
         </motion.div>
       </div>
-
-      {selected && (
-        <div
-          className="pointer-events-none absolute -inset-2 -z-10 rounded-3xl bg-primary/20 blur-xl"
-          aria-hidden
-        />
-      )}
     </div>
   )
 }
@@ -291,10 +351,10 @@ export function ModelTarotDeck({
   recommendedId,
   activeFileName,
   loadingFileName,
-  useLabel,
   onSelect,
+  onDismissSelection,
   onDownload,
-  onUse,
+  onSwitch,
   onDelete,
   className,
 }: {
@@ -305,10 +365,10 @@ export function ModelTarotDeck({
   recommendedId?: string | null
   activeFileName: string | null
   loadingFileName: string | null
-  useLabel: string
   onSelect: (id: string) => void
+  onDismissSelection?: () => void
   onDownload: (id: string) => void
-  onUse: () => void
+  onSwitch: (id: string) => void
   onDelete: (id: string) => void
   className?: string
 }) {
@@ -322,12 +382,20 @@ export function ModelTarotDeck({
           aria-hidden
         />
         <div className="absolute inset-0">
+          {selectedId != null && onDismissSelection && (
+            <button
+              type="button"
+              className="absolute inset-0 z-[1] cursor-default"
+              aria-label="收起卡牌"
+              onClick={onDismissSelection}
+            />
+          )}
           {deck.length === 0 ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               —
             </div>
           ) : (
-            <div className="relative mx-auto h-full w-full max-w-6xl">
+            <div className="relative z-[2] mx-auto h-full w-full max-w-6xl">
               {deck.map((item, slot) => (
                 <ModelTarotCard
                   key={item.id}
@@ -340,10 +408,9 @@ export function ModelTarotDeck({
                   isRecommended={item.id === recommendedId}
                   isActive={item.fileName === activeFileName}
                   isLoading={item.fileName === loadingFileName}
-                  useLabel={useLabel}
                   onSelect={() => onSelect(item.id)}
                   onDownload={() => onDownload(item.id)}
-                  onUse={onUse}
+                  onSwitch={() => onSwitch(item.id)}
                   onDelete={() => onDelete(item.id)}
                 />
               ))}

@@ -34,7 +34,13 @@ async function insertMemoryVector(
   try {
     const embedding = await getEmbeddings(content)
     if (embedding && embedding.length > 0) {
-      await upsertMemorySliceVector(id, content, sessionId, memoryType, embedding)
+      await upsertMemorySliceVector(
+        id,
+        content,
+        sessionId,
+        memoryType,
+        embedding
+      )
     }
   } catch (e) {
     console.warn(`Failed to generate embedding for ${memoryType} slice:`, e)

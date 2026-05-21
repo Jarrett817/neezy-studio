@@ -157,7 +157,6 @@ type ElectronApi = {
   getStoragePaths: () => Promise<StoragePaths>
   saveStoragePaths: (input: {
     dataRoot: string
-    modelsDir: string
   }) => Promise<StoragePaths>
   resetStoragePaths: () => Promise<StoragePaths>
   pickDirectory: (options?: {
@@ -363,7 +362,6 @@ export async function getStoragePaths(): Promise<StoragePaths> {
 
 export async function saveStoragePaths(input: {
   dataRoot: string
-  modelsDir: string
 }): Promise<StoragePaths> {
   return getElectronApi().saveStoragePaths(input)
 }

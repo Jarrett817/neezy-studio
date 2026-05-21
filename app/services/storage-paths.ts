@@ -20,7 +20,6 @@ export type StoragePaths = {
 
 export type StoragePathsInput = {
   dataRoot: string
-  modelsDir: string
 }
 
 export async function getStoragePaths(): Promise<StoragePaths> {

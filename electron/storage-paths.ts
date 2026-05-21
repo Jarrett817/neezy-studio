@@ -21,13 +21,12 @@ function getSystemDefaultPaths(app: App) {
   }
 }
 
-function readOverrides(app: App): { dataRoot?: string; modelsDir?: string } | null {
+function readOverrides(app: App): { dataRoot?: string } | null {
   const configFile = getConfigFilePath(app)
   if (!fsSync.existsSync(configFile)) return null
   try {
     const raw = JSON.parse(fsSync.readFileSync(configFile, "utf8")) as {
       dataRoot?: string
-      modelsDir?: string
     }
     if (!raw || typeof raw !== "object") return null
     return raw
@@ -49,15 +48,13 @@ function normalizeAbsolutePath(value: string, label: string): string {
 
 function buildResolved(
   app: App,
-  overrides: { dataRoot?: string; modelsDir?: string } | null
+  overrides: { dataRoot?: string } | null
 ): StoragePaths {
   const systemDefaults = getSystemDefaultPaths(app)
   const dataRoot = overrides?.dataRoot
-    ? normalizeAbsolutePath(overrides.dataRoot, "数据目录")
+    ? normalizeAbsolutePath(overrides.dataRoot, "存储目录")
     : systemDefaults.dataRoot
-  const modelsDir = overrides?.modelsDir
-    ? normalizeAbsolutePath(overrides.modelsDir, "大模型目录")
-    : path.join(dataRoot, "models")
+  const modelsDir = path.join(dataRoot, "models")
 
   return {
     dataRoot,
@@ -69,7 +66,7 @@ function buildResolved(
     configFile: getConfigFilePath(app),
     defaultDataRoot: systemDefaults.dataRoot,
     defaultModelsDir: systemDefaults.modelsDir,
-    isCustomized: Boolean(overrides?.dataRoot || overrides?.modelsDir),
+    isCustomized: Boolean(overrides?.dataRoot),
   }
 }
 
@@ -97,14 +94,12 @@ export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
 
 export async function saveStoragePaths(
   app: App,
-  input: { dataRoot: string; modelsDir?: string }
+  input: { dataRoot: string }
 ): Promise<StoragePaths> {
-  const dataRoot = normalizeAbsolutePath(input.dataRoot, "数据目录")
-  const modelsDir = input.modelsDir?.trim()
-    ? normalizeAbsolutePath(input.modelsDir, "大模型目录")
-    : path.join(dataRoot, "models")
+  const dataRoot = normalizeAbsolutePath(input.dataRoot, "存储目录")
+  const modelsDir = path.join(dataRoot, "models")
 
-  const nextOverrides = { dataRoot, modelsDir }
+  const nextOverrides = { dataRoot }
   const resolved = buildResolved(app, nextOverrides)
   await ensureStorageDirs(resolved)
   await fs.writeFile(

@@ -88,7 +88,7 @@ function StoragePathsSection() {
 
   useEffect(() => {
     if (paths) {
-      setDraft({ dataRoot: paths.dataRoot, modelsDir: paths.modelsDir })
+      setDraft({ dataRoot: paths.dataRoot })
     }
   }, [paths])
 
@@ -98,7 +98,7 @@ function StoragePathsSection() {
       resetDbCache()
       resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
-      setDraft({ dataRoot: next.dataRoot, modelsDir: next.modelsDir })
+      setDraft({ dataRoot: next.dataRoot })
       toast.success("存储路径已保存", {
         description: "若已下载模型或已有数据，请手动复制到新目录后重启应用。",
       })
@@ -114,7 +114,7 @@ function StoragePathsSection() {
       resetDbCache()
       resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
-      setDraft({ dataRoot: next.dataRoot, modelsDir: next.modelsDir })
+      setDraft({ dataRoot: next.dataRoot })
       toast.success("已恢复系统默认存储位置")
     },
     onError: (error) => {
@@ -125,7 +125,7 @@ function StoragePathsSection() {
   const pickFolder = async (field: keyof StoragePathsInput) => {
     if (!draft) return
     const selected = await pickStorageDirectory({
-      title: field === "dataRoot" ? "选择数据目录" : "选择大模型目录",
+      title: "选择存储目录",
       defaultPath: draft[field],
     })
     if (selected) setDraft({ ...draft, [field]: selected })
@@ -157,19 +157,11 @@ function StoragePathsSection() {
       <div className="space-y-4 rounded-2xl bg-card/60 p-4">
         <PathField
           id="dataRoot"
-          label="数据目录"
-          hint="包含 memories.db、memories/、personas/、skills/"
+          label="存储目录"
+          hint="包含 memories.db、memories/、personas/、skills/、models/"
           value={draft.dataRoot}
           onChange={(value) => setDraft({ ...draft, dataRoot: value })}
           onBrowse={() => pickFolder("dataRoot")}
-        />
-        <PathField
-          id="modelsDir"
-          label="大模型目录"
-          hint="存放 .gguf 文件，可与数据目录在不同磁盘"
-          value={draft.modelsDir}
-          onChange={(value) => setDraft({ ...draft, modelsDir: value })}
-          onBrowse={() => pickFolder("modelsDir")}
         />
 
         <DerivedPaths paths={paths} draft={draft} />
@@ -255,9 +247,9 @@ function DerivedPaths({
 }) {
   const previewDb = `${draft.dataRoot.replace(/\\/g, "/")}/memories.db`
   const previewMemories = `${draft.dataRoot.replace(/\\/g, "/")}/memories/`
+  const previewModels = `${draft.dataRoot.replace(/\\/g, "/")}/models/`
   const defaultNote =
-    draft.dataRoot === paths.defaultDataRoot &&
-    draft.modelsDir === paths.defaultModelsDir
+    draft.dataRoot === paths.defaultDataRoot
       ? "当前为系统默认路径"
       : "保存后生效；换目录不会自动迁移已有文件"
 
@@ -267,7 +259,7 @@ function DerivedPaths({
       <ul className="space-y-1 font-mono break-all">
         <li>数据库：{previewDb}</li>
         <li>记忆 Markdown：{previewMemories}</li>
-        <li>大模型：{draft.modelsDir.replace(/\\/g, "/")}/</li>
+        <li>大模型：{previewModels}</li>
       </ul>
       <p className="mt-2">{defaultNote}</p>
     </div>

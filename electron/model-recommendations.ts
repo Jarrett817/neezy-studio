@@ -1,21 +1,16 @@
-const { getModelsByKind } = require("./model-catalog.cjs")
+import { getModelsByKind } from "./model-catalog"
+import type { ModelDefinition, ModelKind, ModelTier, RuntimeMetricsBase } from "./types"
 
-/** @typedef {"light" | "balanced" | "performance"} ModelTier */
-
-/**
- * @param {object} metrics
- * @param {number} metrics.totalMemoryGb
- * @param {number} metrics.availableMemoryGb
- * @param {number} metrics.cpuCount
- * @param {"low" | "medium" | "high"} metrics.pressure
- * @param {(model: import("./model-catalog.cjs").ModelDefinition) => boolean} isInstalled
- */
-function recommendTiers(metrics) {
+export function recommendTiers(metrics: RuntimeMetricsBase): {
+  chatTier: ModelTier
+  embeddingTier: ModelTier
+  notes: string[]
+} {
   const { totalMemoryGb, availableMemoryGb, pressure } = metrics
 
-  let chatTier = /** @type {ModelTier} */ ("light")
-  let embeddingTier = /** @type {ModelTier} */ ("light")
-  const notes = []
+  let chatTier: ModelTier = "light"
+  let embeddingTier: ModelTier = "light"
+  const notes: string[] = []
 
   if (totalMemoryGb >= 20 && availableMemoryGb >= 10 && pressure === "low") {
     chatTier = "performance"
@@ -47,15 +42,16 @@ function recommendTiers(metrics) {
   return { chatTier, embeddingTier, notes }
 }
 
-/**
- * @param {object} params
- * @param {object} params.metrics
- * @param {(model: object) => boolean} params.isInstalled
- */
-function buildModelRecommendations({ metrics, isInstalled }) {
+export function buildModelRecommendations({
+  metrics,
+  isInstalled,
+}: {
+  metrics: RuntimeMetricsBase
+  isInstalled: (model: ModelDefinition) => boolean
+}) {
   const { chatTier, embeddingTier, notes } = recommendTiers(metrics)
 
-  const pickInTier = (kind, tier) => {
+  const pickInTier = (kind: ModelKind, tier: ModelTier) => {
     const candidates = getModelsByKind(kind).filter((m) => m.tier === tier)
     const installed = candidates.find((m) => isInstalled(m))
     return installed ?? candidates[0] ?? null
@@ -85,5 +81,3 @@ function buildModelRecommendations({ metrics, isInstalled }) {
     embeddingAlternatives: embeddingAlternatives.map((m) => m.id),
   }
 }
-
-module.exports = { recommendTiers, buildModelRecommendations }

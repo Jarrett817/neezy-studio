@@ -5,6 +5,7 @@
 # React Router
 /.react-router/
 /build/
+/dist-electron/
 /sidecar-app/bun-agent*
 /sidecar-app/node_modules/
 /src-tauri/binaries/

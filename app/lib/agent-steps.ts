@@ -77,10 +77,10 @@ export function markAllDone(steps: AgentStep[]): AgentStep[] {
   return steps.map((s) => ({ ...s, status: "done" as const }))
 }
 
-const THINK_OPEN = /<(?:think|redacted_reasoning)\s*>/gi
-const THINK_CLOSE = /<\/(?:think|redacted_reasoning)\s*>/gi
+const THINK_OPEN = /<(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
+const THINK_CLOSE = /<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
 const THINK_PAIRED =
-  /<(?:think|redacted_reasoning)\s*>([\s\S]*?)<\/(?:think|redacted_reasoning)\s*>/gi
+  /<(?:think|redacted_reasoning|redacted_thinking)\s*>([\s\S]*?)<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
 
 export type ParsedModelThinking = {
   thinking: string
@@ -112,7 +112,9 @@ export function parseModelThinking(text: string): ParsedModelThinking {
     }
   }
 
-  const closeMatch = raw.match(/([\s\S]*?)<\/(?:think|redacted_reasoning)\s*>/i)
+  const closeMatch = raw.match(
+    /([\s\S]*?)<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/i
+  )
   if (closeMatch) {
     const thinking = closeMatch[1].replace(THINK_OPEN, "").trim()
     const visible = raw

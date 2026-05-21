@@ -46,6 +46,57 @@ export type ModelCatalogItem = {
   totalBytes: number
 }
 
+export type ChatLoadPayload = {
+  modelPath: string
+  preferLowPower?: boolean
+  systemPrompt?: string
+  temperature?: number
+  topK?: number
+}
+
+export type ModelLayerSplit = "cpu" | "gpu" | "mixed" | "auto"
+
+export type ChatLoadResult = {
+  modelPath: string
+  contextSize: number
+  preferLowPower: boolean
+  fallbackCpu?: boolean
+  gpuLayersOnGpu?: number
+  totalLayers?: number
+  layerSplit?: ModelLayerSplit
+  requestedLayerSplit?: ModelLayerSplit
+}
+
+export type ChatPromptOptions = {
+  temperature?: number
+  topK?: number
+  maxTokens?: number
+}
+
+export type ChatStreamPayload = {
+  requestId: string
+  input: string
+  temperature?: number
+  topK?: number
+  maxTokens?: number
+}
+
+export type ChatStreamSegment = "thought" | "answer"
+
+export type ChatStreamEvent = {
+  requestId: string
+  type: "chunk" | "done" | "error"
+  /** 增量文本（主进程按 token 推送） */
+  delta?: string
+  segment?: ChatStreamSegment
+  error?: string
+}
+
+export type ChatSyncMessage = {
+  role: "system" | "user" | "assistant"
+  content: string
+}
+
 export type StoragePaths = {
   dataRoot: string
   modelsDir: string
@@ -65,9 +116,23 @@ type ElectronApi = {
   getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
   getModelRecommendations: () => Promise<RuntimeMetrics>
   loadEmbeddingModel: (
-    modelId: string
+    modelId: string,
+    preferLowPower?: boolean
   ) => Promise<{ embeddingDim: number; modelId: string | null }>
   unloadEmbeddingModel: () => Promise<void>
+  loadChatModel: (payload: ChatLoadPayload) => Promise<ChatLoadResult>
+  unloadChatModel: () => Promise<void>
+  resetChatHistory: () => Promise<void>
+  primeChatHistory: (messages: ChatSyncMessage[]) => Promise<void>
+  getChatModelStatus: () => Promise<{ loaded: boolean; modelPath: string | null }>
+  chatPrompt: (
+    input: string,
+    options?: ChatPromptOptions
+  ) => Promise<string>
+  chatPromptStream: (payload: ChatStreamPayload) => Promise<void>
+  onChatStream: (
+    handler: (event: ChatStreamEvent) => void
+  ) => () => void
   getChatModelFileInfo: (fileName: string) => Promise<{
     ok: boolean
     filePath?: string
@@ -201,8 +266,48 @@ export async function getModelRecommendations(): Promise<RuntimeMetrics> {
   return getElectronApi().getModelRecommendations()
 }
 
-export async function loadEmbeddingModel(modelId: string) {
-  return getElectronApi().loadEmbeddingModel(modelId)
+export async function loadEmbeddingModel(
+  modelId: string,
+  preferLowPower?: boolean
+) {
+  return getElectronApi().loadEmbeddingModel(modelId, preferLowPower)
+}
+
+export async function loadChatModel(payload: ChatLoadPayload) {
+  return getElectronApi().loadChatModel(payload)
+}
+
+export async function unloadChatModel() {
+  return getElectronApi().unloadChatModel()
+}
+
+export async function resetChatHistoryFromMain() {
+  return getElectronApi().resetChatHistory()
+}
+
+export async function primeChatHistoryFromMain(
+  messages: ChatSyncMessage[]
+) {
+  return getElectronApi().primeChatHistory(messages)
+}
+
+export async function chatPromptFromMain(
+  input: string,
+  options?: ChatPromptOptions
+) {
+  return getElectronApi().chatPrompt(input, options)
+}
+
+export function onChatStreamFromMain(
+  handler: (event: ChatStreamEvent) => void
+): () => void {
+  return getElectronApi().onChatStream(handler)
+}
+
+export async function chatPromptStreamFromMain(
+  payload: ChatStreamPayload
+): Promise<void> {
+  return getElectronApi().chatPromptStream(payload)
 }
 
 export async function unloadEmbeddingModel() {

@@ -1,39 +1,60 @@
-const fsSync = require("node:fs")
-const path = require("node:path")
+import fsSync from "node:fs"
+import path from "node:path"
+import sqliteVec from "sqlite-vec"
 
-let DatabaseSync
+import * as vectorFallback from "./vector-fallback"
+
+type DatabaseSync = {
+  loadExtension: (extPath: string) => void
+  prepare: (sql: string) => {
+    run: (...params: unknown[]) => { lastInsertRowid?: bigint | number; changes?: number }
+    all: (...params: unknown[]) => unknown[]
+    get: () => unknown
+  }
+  exec: (sql: string) => void
+  close: () => void
+}
+
+let DatabaseSyncCtor: new (
+  path: string,
+  options?: { allowExtension?: boolean }
+) => DatabaseSync
+
 try {
-  ;({ DatabaseSync } = require("node:sqlite"))
+  ;({ DatabaseSync: DatabaseSyncCtor } = require("node:sqlite") as {
+    DatabaseSync: typeof DatabaseSyncCtor
+  })
 } catch (error) {
   throw new Error(
-    `当前 Electron 未提供 node:sqlite（${error instanceof Error ? error.message : error}）。请使用 Electron 42+ 或升级 electron 包。`,
+    `当前 Electron 未提供 node:sqlite（${error instanceof Error ? error.message : error}）。请使用 Electron 42+。`,
     { cause: error }
   )
 }
 
-const sqliteVec = require("sqlite-vec")
-const vectorFallback = require("./vector-fallback.cjs")
+const handles = new Map<
+  string,
+  { db: DatabaseSync; vecLoaded: boolean; vecPath: string | null }
+>()
+let lastVecError: string | null = null
 
-const handles = new Map()
-let lastVecError = null
+export class VecUnavailableError extends Error {
+  code = "VEC_UNAVAILABLE"
 
-class VecUnavailableError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message)
     this.name = "VecUnavailableError"
-    this.code = "VEC_UNAVAILABLE"
   }
 }
 
-function resolveDbPath(input) {
+function resolveDbPath(input: string): string {
   return input.startsWith("sqlite:") ? input.slice("sqlite:".length) : input
 }
 
-function usesVecSql(sql) {
+function usesVecSql(sql: string): boolean {
   return /\bvec0\b/i.test(sql) || /\bvec_[a-z]/i.test(sql) || /\bembedding\s+MATCH\b/i.test(sql)
 }
 
-function toVecBinding(value) {
+function toVecBinding(value: unknown): unknown {
   if (
     !Array.isArray(value) ||
     value.length < 16 ||
@@ -42,10 +63,10 @@ function toVecBinding(value) {
   ) {
     return value
   }
-  return new Uint8Array(new Float32Array(value).buffer)
+  return new Uint8Array(new Float32Array(value as number[]).buffer)
 }
 
-function loadVecExtension(db) {
+function loadVecExtension(db: DatabaseSync): string {
   if (typeof db.loadExtension !== "function") {
     throw new Error("DatabaseSync.loadExtension 不可用")
   }
@@ -55,13 +76,13 @@ function loadVecExtension(db) {
   return extPath
 }
 
-function openDatabase(dbPath) {
+export function openDatabase(dbPath: string): DatabaseSync {
   const resolved = resolveDbPath(dbPath)
   if (!handles.has(resolved)) {
     fsSync.mkdirSync(path.dirname(resolved), { recursive: true })
-    const db = new DatabaseSync(resolved, { allowExtension: true })
+    const db = new DatabaseSyncCtor(resolved, { allowExtension: true })
     let vecLoaded = false
-    let vecPath = null
+    let vecPath: string | null = null
     try {
       vecPath = loadVecExtension(db)
       vecLoaded = true
@@ -74,15 +95,15 @@ function openDatabase(dbPath) {
     }
     handles.set(resolved, { db, vecLoaded, vecPath })
   }
-  return handles.get(resolved).db
+  return handles.get(resolved)!.db
 }
 
-function getEntry(dbPath) {
+export function getEntry(dbPath: string) {
   const resolved = resolveDbPath(dbPath)
   if (!handles.has(resolved)) {
     openDatabase(dbPath)
   }
-  const entry = handles.get(resolved)
+  const entry = handles.get(resolved)!
   if (!entry.vecLoaded) {
     try {
       entry.vecPath = loadVecExtension(entry.db)
@@ -96,11 +117,12 @@ function getEntry(dbPath) {
   return entry
 }
 
-function isVecLoaded(dbPath) {
-  return getEntry(dbPath).vecLoaded
+export function closeAll(): void {
+  for (const { db } of handles.values()) db.close()
+  handles.clear()
 }
 
-function getVecStatus(dbPath) {
+export function getVecStatus(dbPath: string) {
   const entry = getEntry(dbPath)
   return {
     available: entry.vecLoaded,
@@ -109,7 +131,7 @@ function getVecStatus(dbPath) {
   }
 }
 
-function ensureVectorSchema(dbPath) {
+export function ensureVectorSchema(dbPath: string) {
   const { db, vecLoaded } = getEntry(dbPath)
   if (vecLoaded) {
     db.exec(`
@@ -127,24 +149,19 @@ function ensureVectorSchema(dbPath) {
         embedding FLOAT[768]
       )
     `)
-    return { mode: "vec0" }
+    return { mode: "vec0" as const }
   }
   vectorFallback.ensureFallbackTables(db)
-  return { mode: "fallback" }
+  return { mode: "fallback" as const }
 }
 
-function closeAll() {
-  for (const { db } of handles.values()) db.close()
-  handles.clear()
-}
-
-function bindParams(params) {
+function bindParams(params: unknown): unknown[] {
   if (params == null) return []
   const list = Array.isArray(params) ? params : [params]
   return list.map(toVecBinding)
 }
 
-function runStatement(dbPath, sql, params = []) {
+export function runStatement(dbPath: string, sql: string, params: unknown[] = []) {
   const { db, vecLoaded } = getEntry(dbPath)
   if (!vecLoaded && usesVecSql(sql)) {
     throw new VecUnavailableError(
@@ -158,7 +175,7 @@ function runStatement(dbPath, sql, params = []) {
   }
 }
 
-function selectStatement(dbPath, sql, params = []) {
+export function selectStatement(dbPath: string, sql: string, params: unknown[] = []) {
   const { db, vecLoaded } = getEntry(dbPath)
   if (!vecLoaded && usesVecSql(sql)) {
     throw new VecUnavailableError(
@@ -168,15 +185,4 @@ function selectStatement(dbPath, sql, params = []) {
   return db.prepare(sql).all(...bindParams(params))
 }
 
-module.exports = {
-  VecUnavailableError,
-  openDatabase,
-  getEntry,
-  closeAll,
-  isVecLoaded,
-  getVecStatus,
-  ensureVectorSchema,
-  runStatement,
-  selectStatement,
-  vectorFallback,
-}
+export { vectorFallback }

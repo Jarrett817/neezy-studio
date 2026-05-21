@@ -1,50 +1,6 @@
-/** @typedef {"light" | "balanced" | "performance"} ModelTier */
+import type { ModelDefinition, ModelKind, ModelTier } from "./types"
 
-/** @typedef {"chat" | "embedding"} ModelKind */
-
-/**
-
- * @typedef {object} ModelDefinition
-
- * @property {string} id
-
- * @property {ModelKind} kind
-
- * @property {ModelTier} tier
-
- * @property {string} tierLabel
-
- * @property {string} title
-
- * @property {string} subtitle
-
- * @property {string} fileName
-
- * @property {string[]} [aliases]
-
- * @property {string} sizeLabel
-
- * @property {number} sizeBytes
-
- * @property {number} minMemoryGb
-
- * @property {number} [embeddingDim]
-
- * @property {string[]} fit
-
- * @property {string} repo
-
- * @property {string} repoPath
-
- * @property {string} [revision]
-
- */
-
-/** 统一使用 bartowski 等社区的 Q4_K_M 量化 GGUF，便于本地推理与下载校验 */
-
-/** @type {ModelDefinition[]} */
-
-const CHAT_MODELS = [
+export const CHAT_MODELS: ModelDefinition[] = [
   // —— 轻量 ——
 
   {
@@ -534,7 +490,7 @@ const CHAT_MODELS = [
 
 /** @type {ModelDefinition[]} */
 
-const EMBEDDING_MODELS = [
+export const EMBEDDING_MODELS: ModelDefinition[] = [
   {
     id: "nomic-embed-q4-light",
 
@@ -638,28 +594,15 @@ const EMBEDDING_MODELS = [
   },
 ]
 
-const ALL_MODELS = [...CHAT_MODELS, ...EMBEDDING_MODELS]
+export const ALL_MODELS = [...CHAT_MODELS, ...EMBEDDING_MODELS]
 
-const TIER_ORDER = { light: 0, balanced: 1, performance: 2 }
+export const TIER_ORDER: Record<ModelTier, number> = { light: 0, balanced: 1, performance: 2 }
 
-function getModelsByKind(kind) {
+export function getModelsByKind(kind: ModelKind) {
   return ALL_MODELS.filter((m) => m.kind === kind)
 }
 
-function findModel(modelId) {
+export function findModel(modelId: string) {
   return ALL_MODELS.find((m) => m.id === modelId) ?? null
 }
 
-module.exports = {
-  CHAT_MODELS,
-
-  EMBEDDING_MODELS,
-
-  ALL_MODELS,
-
-  TIER_ORDER,
-
-  getModelsByKind,
-
-  findModel,
-}

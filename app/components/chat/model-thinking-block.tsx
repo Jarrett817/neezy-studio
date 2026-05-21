@@ -19,7 +19,7 @@ export function ModelThinkingBlock({
   const hasTools = Boolean(toolCalls?.length)
   const hasThinking = thinking.trim().length > 0
 
-  if (!hasThinking && !hasTools) return null
+  if (!hasThinking && !hasTools && !isStreaming) return null
 
   if (!hasThinking && hasTools) {
     return (
@@ -32,6 +32,23 @@ export function ModelThinkingBlock({
             {toolLabel(tc.name)}
           </span>
         ))}
+      </div>
+    )
+  }
+
+  if (!hasThinking && isStreaming) {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-xl border border-border/30 bg-muted/25 px-3.5 py-2.5 text-sm",
+          className
+        )}
+      >
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+        <span className="font-medium text-foreground">思考中</span>
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {modelName}
+        </span>
       </div>
     )
   }

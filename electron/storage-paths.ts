@@ -1,16 +1,19 @@
-const path = require("node:path")
-const fs = require("node:fs/promises")
-const fsSync = require("node:fs")
+import type { App } from "electron"
+import fs from "node:fs/promises"
+import fsSync from "node:fs"
+import path from "node:path"
 
-const CONFIG_NAME = "storage-paths.json"
+import type { StoragePaths } from "./types"
 
-let cachedPaths = null
+export const CONFIG_NAME = "storage-paths.json"
 
-function getConfigFilePath(app) {
+let cachedPaths: StoragePaths | null = null
+
+export function getConfigFilePath(app: App): string {
   return path.join(app.getPath("userData"), CONFIG_NAME)
 }
 
-function getSystemDefaultPaths(app) {
+function getSystemDefaultPaths(app: App) {
   const dataRoot = app.getPath("userData")
   return {
     dataRoot,
@@ -18,11 +21,14 @@ function getSystemDefaultPaths(app) {
   }
 }
 
-function readOverrides(app) {
+function readOverrides(app: App): { dataRoot?: string; modelsDir?: string } | null {
   const configFile = getConfigFilePath(app)
   if (!fsSync.existsSync(configFile)) return null
   try {
-    const raw = JSON.parse(fsSync.readFileSync(configFile, "utf8"))
+    const raw = JSON.parse(fsSync.readFileSync(configFile, "utf8")) as {
+      dataRoot?: string
+      modelsDir?: string
+    }
     if (!raw || typeof raw !== "object") return null
     return raw
   } catch {
@@ -30,7 +36,7 @@ function readOverrides(app) {
   }
 }
 
-function normalizeAbsolutePath(value, label) {
+function normalizeAbsolutePath(value: string, label: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${label}不能为空`)
   }
@@ -41,7 +47,10 @@ function normalizeAbsolutePath(value, label) {
   return resolved
 }
 
-function buildResolved(app, overrides) {
+function buildResolved(
+  app: App,
+  overrides: { dataRoot?: string; modelsDir?: string } | null
+): StoragePaths {
   const systemDefaults = getSystemDefaultPaths(app)
   const dataRoot = overrides?.dataRoot
     ? normalizeAbsolutePath(overrides.dataRoot, "数据目录")
@@ -64,18 +73,21 @@ function buildResolved(app, overrides) {
   }
 }
 
-function resolveStoragePaths(app, { fresh = false } = {}) {
+export function resolveStoragePaths(
+  app: App,
+  { fresh = false }: { fresh?: boolean } = {}
+): StoragePaths {
   if (!fresh && cachedPaths) return cachedPaths
   const overrides = readOverrides(app)
   cachedPaths = buildResolved(app, overrides)
   return cachedPaths
 }
 
-function invalidateStoragePathsCache() {
+export function invalidateStoragePathsCache(): void {
   cachedPaths = null
 }
 
-async function ensureStorageDirs(paths) {
+export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
   await fs.mkdir(paths.dataRoot, { recursive: true })
   await fs.mkdir(paths.modelsDir, { recursive: true })
   await fs.mkdir(paths.memoriesDir, { recursive: true })
@@ -83,7 +95,10 @@ async function ensureStorageDirs(paths) {
   await fs.mkdir(paths.skillsDir, { recursive: true })
 }
 
-async function saveStoragePaths(app, input) {
+export async function saveStoragePaths(
+  app: App,
+  input: { dataRoot: string; modelsDir?: string }
+): Promise<StoragePaths> {
   const dataRoot = normalizeAbsolutePath(input.dataRoot, "数据目录")
   const modelsDir = input.modelsDir?.trim()
     ? normalizeAbsolutePath(input.modelsDir, "大模型目录")
@@ -92,12 +107,16 @@ async function saveStoragePaths(app, input) {
   const nextOverrides = { dataRoot, modelsDir }
   const resolved = buildResolved(app, nextOverrides)
   await ensureStorageDirs(resolved)
-  await fs.writeFile(getConfigFilePath(app), JSON.stringify(nextOverrides, null, 2), "utf8")
+  await fs.writeFile(
+    getConfigFilePath(app),
+    JSON.stringify(nextOverrides, null, 2),
+    "utf8"
+  )
   invalidateStoragePathsCache()
   return resolveStoragePaths(app, { fresh: true })
 }
 
-async function resetStoragePaths(app) {
+export async function resetStoragePaths(app: App): Promise<StoragePaths> {
   const configFile = getConfigFilePath(app)
   if (fsSync.existsSync(configFile)) {
     await fs.rm(configFile, { force: true })
@@ -106,14 +125,4 @@ async function resetStoragePaths(app) {
   const resolved = resolveStoragePaths(app, { fresh: true })
   await ensureStorageDirs(resolved)
   return resolved
-}
-
-module.exports = {
-  CONFIG_NAME,
-  getConfigFilePath,
-  resolveStoragePaths,
-  saveStoragePaths,
-  resetStoragePaths,
-  invalidateStoragePathsCache,
-  ensureStorageDirs,
 }

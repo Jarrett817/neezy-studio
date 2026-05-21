@@ -184,10 +184,16 @@ export function useLlmModels() {
   const handleStartChat = useCallback(
     async (item: ModelCatalogItem) => {
       try {
-        await startChatModel(item)
+        const loadInfo = await startChatModel(item)
         setCurrentChat(item.fileName)
         queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`已启动：${item.title}`)
+        const splitHint =
+          loadInfo?.layerSplit === "mixed" && loadInfo.gpuLayersOnGpu != null
+            ? `（GPU ${loadInfo.gpuLayersOnGpu}/${loadInfo.totalLayers ?? "?"} 层）`
+            : loadInfo?.layerSplit === "cpu" || loadInfo?.fallbackCpu
+              ? "（CPU）"
+              : ""
+        toast.success(`已启动：${item.title}${splitHint}`)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "启动失败")
       }

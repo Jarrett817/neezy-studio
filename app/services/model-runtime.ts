@@ -1,6 +1,7 @@
 import {
   getModelCatalog,
   unloadEmbeddingModel,
+  type ChatLoadResult,
   type ModelCatalogItem,
 } from "~/services/electron-client"
 import {
@@ -47,18 +48,21 @@ export function isChatModelRunning(fileName: string): boolean {
   return getCurrentModel() === fileName
 }
 
-export async function startChatModel(item: ModelCatalogItem): Promise<void> {
+export async function startChatModel(
+  item: ModelCatalogItem
+): Promise<ChatLoadResult | undefined> {
   if (getCurrentModel() !== item.fileName) {
     await unloadModel()
   }
   await unloadEmbeddingModel().catch(() => {})
-  await loadModel(item.fileName)
+  const loadInfo = await loadModel(item.fileName)
   const settings = await getRuntimeSettings()
   await saveRuntimeSettings({
     ...settings,
     llmModel: item.fileName,
     chatTier: item.tier,
   })
+  return loadInfo
 }
 
 export async function stopChatModel(fileName?: string): Promise<void> {

@@ -23,7 +23,7 @@ import { PageTransition } from "~/components/animation-effects"
 import { MarkdownContent } from "~/components/markdown-content"
 import { listSkills } from "~/services/workspace"
 import { runAgent, type AgentMessage } from "~/agents/llm-agent"
-import { getCurrentModel } from "~/services/llm"
+import { getCurrentModel, resetChat } from "~/services/llm"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
 import { addConversationSlice } from "~/services/storage/memory-vectors"
 import { rememberConversationTurn } from "~/services/memory-profile"
@@ -164,14 +164,8 @@ export default function ChatRoute() {
         maxSteps: 5,
         temperature: 0.7,
         maxTokens: 2048,
-        onChunk: (raw) => {
-          const parsed = parseModelThinking(raw)
-          patchAssistant(assistantId, {
-            content: parsed.inThinkBlock
-              ? parsed.visible
-              : parsed.visible || raw,
-            thinking: parsed.thinking,
-          })
+        onStream: ({ thinking, content }) => {
+          patchAssistant(assistantId, { thinking, content })
         },
         onToolCall: (name, args, toolResult) => {
           const current = getMessage(assistantId)
@@ -185,10 +179,12 @@ export default function ChatRoute() {
       })
 
       const parsed = parseModelThinking(result.content)
+      const finalThinking =
+        getMessage(assistantId)?.thinking?.trim() || parsed.thinking
 
       patchAssistant(assistantId, {
         content: parsed.visible || result.content,
-        thinking: parsed.thinking,
+        thinking: finalThinking,
         isStreaming: false,
       })
 
@@ -257,7 +253,10 @@ export default function ChatRoute() {
               variant="ghost"
               size="icon"
               className="size-9 shrink-0 rounded-full text-muted-foreground"
-              onClick={clearConversation}
+              onClick={() => {
+                clearConversation()
+                resetChat().catch(() => {})
+              }}
               aria-label="清空对话"
             >
               <Trash2 className="size-4" />
@@ -418,7 +417,9 @@ function MessageBubble({
   const isError = message.role === "error"
   const showThinking =
     message.role === "assistant" &&
-    (Boolean(message.thinking?.trim()) || Boolean(message.toolCalls?.length))
+    (Boolean(message.isStreaming) ||
+      Boolean(message.thinking?.trim()) ||
+      Boolean(message.toolCalls?.length))
 
   return (
     <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>

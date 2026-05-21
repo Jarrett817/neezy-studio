@@ -381,7 +381,9 @@ function RuntimeSection({
               }
               className="size-4 rounded"
             />
-            <Label htmlFor="preferLowPower">优先低功耗模式</Label>
+            <Label htmlFor="preferLowPower">
+              优先低功耗（全 CPU）；关闭时按显存自动分配 GPU 层（类似 Ollama）
+            </Label>
           </div>
           <Button
             type="button"

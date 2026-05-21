@@ -1,6 +1,16 @@
-const EMBEDDING_DIM = 768
+import { EMBEDDING_DIM } from "./types"
 
-function ensureFallbackTables(db) {
+export type SqliteDb = {
+  exec: (sql: string) => void
+  prepare: (sql: string) => {
+    run: (...params: unknown[]) => void
+    all: (...params: unknown[]) => unknown[]
+  }
+}
+
+export { EMBEDDING_DIM }
+
+export function ensureFallbackTables(db: SqliteDb): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS memory_embeddings_fallback (
       id TEXT PRIMARY KEY,
@@ -18,17 +28,17 @@ function ensureFallbackTables(db) {
   `)
 }
 
-function toBlob(embedding) {
+function toBlob(embedding: number[] | Float32Array): Uint8Array {
   const arr = Array.isArray(embedding) ? new Float32Array(embedding) : embedding
   return new Uint8Array(arr.buffer)
 }
 
-function fromBlob(blob) {
+function fromBlob(blob: Uint8Array | ArrayBuffer): Float32Array {
   const bytes = blob instanceof Uint8Array ? blob : new Uint8Array(blob)
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 }
 
-function cosine(a, b) {
+function cosine(a: Float32Array, b: Float32Array): number {
   const len = Math.min(a.length, b.length)
   let dot = 0
   let na = 0
@@ -42,24 +52,33 @@ function cosine(a, b) {
   return denom === 0 ? 0 : dot / denom
 }
 
-function upsertMemoryEmbedding(db, id, embedding) {
+export function upsertMemoryEmbedding(
+  db: SqliteDb,
+  id: string,
+  embedding: number[]
+): void {
   db.prepare(
     `INSERT OR REPLACE INTO memory_embeddings_fallback (id, embedding) VALUES (?, ?)`
   ).run(id, toBlob(embedding))
 }
 
-function deleteMemoryEmbedding(db, id) {
+export function deleteMemoryEmbedding(db: SqliteDb, id: string): void {
   db.prepare(`DELETE FROM memory_embeddings_fallback WHERE id = ?`).run(id)
 }
 
-function searchMemories(db, queryEmbedding, limit) {
+export function searchMemories(
+  db: SqliteDb,
+  queryEmbedding: number[],
+  limit: number
+): Record<string, unknown>[] {
   const rows = db
     .prepare(
       `SELECT m.id, m.title, m.category, m.content, m.file_path, m.created_at, m.updated_at, e.embedding
        FROM memory_items m
        INNER JOIN memory_embeddings_fallback e ON m.id = e.id`
     )
-    .all()
+    .all() as (Record<string, unknown> & { embedding: Uint8Array })[]
+
   const query = new Float32Array(queryEmbedding)
   return rows
     .map((row) => ({
@@ -79,25 +98,40 @@ function searchMemories(db, queryEmbedding, limit) {
     }))
 }
 
-function upsertMemorySlice(db, id, content, sessionId, memoryType, embedding) {
+export function upsertMemorySlice(
+  db: SqliteDb,
+  id: string,
+  content: string,
+  sessionId: string | null,
+  memoryType: string,
+  embedding: number[]
+): void {
   db.prepare(
     `INSERT OR REPLACE INTO memory_vector_slices_fallback
      (id, content, session_id, memory_type, embedding) VALUES (?, ?, ?, ?, ?)`
   ).run(id, content, sessionId, memoryType, toBlob(embedding))
 }
 
-function searchMemorySlices(db, queryEmbedding, limit, memoryType) {
+export function searchMemorySlices(
+  db: SqliteDb,
+  queryEmbedding: number[],
+  limit: number,
+  memoryType: string | null
+): Record<string, unknown>[] {
   let sql = `
     SELECT m.id, m.session_id, m.memory_type, m.content_preview, m.created_at, f.content, f.embedding
     FROM memory_slice_metadata m
     INNER JOIN memory_vector_slices_fallback f ON m.id = f.id
   `
-  const params = []
+  const params: unknown[] = []
   if (memoryType) {
     sql += ` WHERE f.memory_type = ?`
     params.push(memoryType)
   }
-  const rows = db.prepare(sql).all(...params)
+  const rows = db.prepare(sql).all(...params) as (Record<string, unknown> & {
+    embedding: Uint8Array
+  })[]
+
   const query = new Float32Array(queryEmbedding)
   return rows
     .map((row) => ({
@@ -114,14 +148,4 @@ function searchMemorySlices(db, queryEmbedding, limit, memoryType) {
       content_preview: row.content_preview,
       created_at: row.created_at,
     }))
-}
-
-module.exports = {
-  EMBEDDING_DIM,
-  ensureFallbackTables,
-  upsertMemoryEmbedding,
-  deleteMemoryEmbedding,
-  searchMemories,
-  upsertMemorySlice,
-  searchMemorySlices,
 }

@@ -1,57 +1,63 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron")
-const path = require("node:path")
-const fs = require("node:fs/promises")
-const fsSync = require("node:fs")
-const os = require("node:os")
-const { spawn } = require("node:child_process")
-const storagePaths = require("./storage-paths.cjs")
-const modelScan = require("./model-scan.cjs")
-const { registerIpcHandlers } = require("./ipc-handlers.cjs")
+import { app, BrowserWindow, dialog, ipcMain } from "electron"
+import { spawn, type ChildProcess } from "node:child_process"
+import fs from "node:fs/promises"
+import fsSync from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
+import * as chatLlmRuntime from "./chat-llm-runtime"
+import * as embeddingRuntime from "./embedding-runtime"
+import { downloadModelFile } from "./model-download"
+import {
+  ALL_MODELS,
+  findModel,
+  getModelsByKind,
+} from "./model-catalog"
+import { buildModelRecommendations } from "./model-recommendations"
+import * as modelScan from "./model-scan"
+import * as storagePaths from "./storage-paths"
+import { registerIpcHandlers } from "./ipc-handlers"
+import type {
+  ChatLoadPayload,
+  ChatLoadResult,
+  ChatPromptOptions,
+  ModelDefinition,
+  ModelDownloadState,
+  ModelKind,
+  StoragePaths,
+} from "./types"
 
 const isDev = process.argv.includes("--dev")
-let devServer = null
-let mainWindow = null
-let sqliteRuntime = null
-const activeDownloads = new Map()
+let devServer: ChildProcess | null = null
+let mainWindow: BrowserWindow | null = null
+let sqliteRuntimeModule: typeof import("./sqlite-runtime") | null = null
+
+const activeDownloads = new Map<string, ModelDownloadState>()
 
 function getSqliteRuntime() {
-  if (!sqliteRuntime) {
-    sqliteRuntime = require("./sqlite-runtime.cjs")
+  if (!sqliteRuntimeModule) {
+    sqliteRuntimeModule = require("./sqlite-runtime") as typeof import("./sqlite-runtime")
   }
-  return sqliteRuntime
+  return sqliteRuntimeModule
 }
 
-let heavy = null
-
-function ensureHeavy() {
-  if (heavy) return heavy
-  heavy = {
-    loadElectronLlm: require("@electron/llm/main").loadElectronLlm,
-    downloadModelFile: require("./model-download.cjs").downloadModelFile,
-    ...require("./model-catalog.cjs"),
-    buildModelRecommendations: require("./model-recommendations.cjs").buildModelRecommendations,
-    embeddingRuntime: require("./embedding-runtime.cjs"),
-  }
-  return heavy
-}
-
-function getPaths() {
+function getPaths(): StoragePaths {
   return storagePaths.resolveStoragePaths(app)
 }
 
-function appDataDir() {
+function appDataDir(): string {
   return getPaths().dataRoot
 }
 
-function modelsDir() {
+function modelsDir(): string {
   return getPaths().modelsDir
 }
 
-function closeAllSqliteHandles() {
-  if (sqliteRuntime) sqliteRuntime.closeAll()
+function closeAllSqliteHandles(): void {
+  getSqliteRuntime().closeAll()
 }
 
-function getModelFilePath(model) {
+function getModelFilePath(model: ModelDefinition): string {
   return path.join(modelsDir(), model.fileName)
 }
 
@@ -59,13 +65,17 @@ async function readModelsScan() {
   return modelScan.scanModelsDir(modelsDir())
 }
 
-function modelStatusFromScan(model, scan, modelsDirPath) {
+function modelStatusFromScan(
+  model: ModelDefinition,
+  scan: Awaited<ReturnType<typeof readModelsScan>>,
+  modelsDirPath: string
+) {
   const filePath = modelScan.findInstalledModelFile(model, modelsDirPath, scan)
   const download = activeDownloads.get(model.id)
   const part = filePath ? null : modelScan.findPartForModel(model, scan)
 
   let status = filePath ? "ready" : "available"
-  let progress = null
+  let progress: number | null = null
   let downloadedBytes = 0
   let totalBytes = model.sizeBytes
 
@@ -89,9 +99,7 @@ function modelStatusFromScan(model, scan, modelsDirPath) {
     ...model,
     installed: Boolean(filePath),
     path: filePath,
-    fileName: filePath
-      ? path.basename(filePath)
-      : (part?.fileName ?? model.fileName),
+    fileName: filePath ? path.basename(filePath) : (part?.fileName ?? model.fileName),
     status,
     progress,
     downloadedBytes,
@@ -100,31 +108,27 @@ function modelStatusFromScan(model, scan, modelsDirPath) {
   }
 }
 
-async function resolveModelStatus(model) {
+async function resolveModelStatus(model: ModelDefinition) {
   const scan = await readModelsScan()
   return modelStatusFromScan(model, scan, modelsDir())
 }
 
-async function sendModelProgress(modelId) {
-  const { findModel } = ensureHeavy()
+async function sendModelProgress(modelId: string) {
   const model = findModel(modelId)
   if (!model || !mainWindow) return
-  mainWindow.webContents.send(
-    "model-download-progress",
-    await resolveModelStatus(model)
-  )
+  mainWindow.webContents.send("model-download-progress", await resolveModelStatus(model))
 }
 
-function getSqlite(dbPath) {
+function getSqlite(dbPath: string) {
   return getSqliteRuntime().openDatabase(dbPath)
 }
 
 async function runtimeMetrics() {
-  const { buildModelRecommendations } = ensureHeavy()
   const totalMemoryGb = os.totalmem() / 1024 / 1024 / 1024
   const availableMemoryGb = os.freemem() / 1024 / 1024 / 1024
   const usedRatio = totalMemoryGb === 0 ? 0 : 1 - availableMemoryGb / totalMemoryGb
-  const pressure = usedRatio > 0.82 ? "high" : usedRatio > 0.65 ? "medium" : "low"
+  const pressure: import("./types").MemoryPressure =
+    usedRatio > 0.82 ? "high" : usedRatio > 0.65 ? "medium" : "low"
 
   const base = {
     cpuCount: os.cpus().length,
@@ -140,21 +144,19 @@ async function runtimeMetrics() {
     ...base,
     ...buildModelRecommendations({
       metrics: base,
-      isInstalled: (model) =>
-        Boolean(modelScan.findInstalledModelFile(model, dir, scan)),
+      isInstalled: (model) => Boolean(modelScan.findInstalledModelFile(model, dir, scan)),
     }),
   }
 }
 
-async function getModelCatalog(kind) {
+async function getModelCatalog(kind?: ModelKind) {
   const scan = await readModelsScan()
   const dir = modelsDir()
-  const models = kind ? ensureHeavy().getModelsByKind(kind) : ensureHeavy().ALL_MODELS
+  const models = kind ? getModelsByKind(kind) : ALL_MODELS
   return models.map((model) => modelStatusFromScan(model, scan, dir))
 }
 
-async function downloadModel(modelId) {
-  const { findModel, downloadModelFile: download } = ensureHeavy()
+async function downloadModel(modelId: string) {
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
   const scan = await readModelsScan()
@@ -177,7 +179,7 @@ async function downloadModel(modelId) {
 
   try {
     const destination = getModelFilePath(model)
-    await download(model, destination, ({ downloadedBytes, totalBytes, progress }) => {
+    await downloadModelFile(model, destination, ({ downloadedBytes, totalBytes, progress }) => {
       const state = activeDownloads.get(modelId)
       if (!state) return
       state.downloadedBytes = downloadedBytes
@@ -201,8 +203,7 @@ async function downloadModel(modelId) {
   }
 }
 
-async function deleteModel(modelId) {
-  const { findModel } = ensureHeavy()
+async function deleteModel(modelId: string) {
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
   const dir = modelsDir()
@@ -214,31 +215,50 @@ async function deleteModel(modelId) {
   return resolveModelStatus(model)
 }
 
-async function loadEmbeddingModel(modelId) {
-  const { findModel, embeddingRuntime } = ensureHeavy()
+async function loadEmbeddingModel(modelId: string, preferLowPower = false) {
+  await chatLlmRuntime.unloadChatModel().catch(() => {})
   const model = findModel(modelId)
   if (!model || model.kind !== "embedding") throw new Error("Unknown embedding model")
   const scan = await readModelsScan()
   const filePath = modelScan.findInstalledModelFile(model, modelsDir(), scan)
   if (!filePath) throw new Error("请先下载 Embedding 模型")
-  return embeddingRuntime.loadEmbeddingModel(filePath, model.id)
+  return embeddingRuntime.loadEmbeddingModel(filePath, model.id, { preferLowPower })
 }
 
-function embedTexts(texts) {
-  return ensureHeavy().embeddingRuntime.embedTexts(texts)
+async function loadChatModel(payload: ChatLoadPayload): Promise<ChatLoadResult> {
+  await embeddingRuntime.unloadEmbeddingModel().catch(() => {})
+  return chatLlmRuntime.loadChatModel(payload.modelPath, payload)
+}
+
+async function unloadChatModel(): Promise<void> {
+  return chatLlmRuntime.unloadChatModel()
+}
+
+function resetChatHistory(): void {
+  chatLlmRuntime.resetChatHistory()
+}
+
+async function chatPrompt(input: string, options?: ChatPromptOptions): Promise<string> {
+  return chatLlmRuntime.chatPrompt(input, options)
+}
+
+function getChatModelStatus() {
+  return chatLlmRuntime.getChatModelStatus()
+}
+
+function embedTexts(texts: string | string[]) {
+  return embeddingRuntime.embedTexts(texts)
 }
 
 function getEmbeddingStatus() {
-  return ensureHeavy().embeddingRuntime.getEmbeddingStatus()
+  return embeddingRuntime.getEmbeddingStatus()
 }
 
-async function unloadEmbeddingModel() {
-  await ensureHeavy().embeddingRuntime.unloadEmbeddingModel()
+async function unloadEmbeddingModel(): Promise<void> {
+  await embeddingRuntime.unloadEmbeddingModel()
 }
 
-/** @param {string} fileName */
-async function getChatModelFileInfo(fileName) {
-  const { getModelsByKind } = ensureHeavy()
+async function getChatModelFileInfo(fileName: string) {
   const chatModels = getModelsByKind("chat")
   const catalogMatch = chatModels.find(
     (m) => m.fileName === fileName || (m.aliases || []).includes(fileName)
@@ -254,7 +274,7 @@ async function getChatModelFileInfo(fileName) {
     }
   }
 
-  let filePath = null
+  let filePath: string | null = null
   if (catalogMatch) {
     filePath = modelScan.findInstalledModelFile(catalogMatch, dir, scan)
   }
@@ -278,7 +298,7 @@ async function getChatModelFileInfo(fileName) {
     expectedBytes,
     reason: complete
       ? null
-      : `模型文件不完整（约 ${Math.round(sizeBytes / 1e6)} MB / 预期 ${Math.round(expectedBytes / 1e6)} MB），请重新下载。`,
+      : `模型文件不完整（约 ${Math.round(sizeBytes / 1e6)} MB / 预期 ${Math.round(expectedBytes! / 1e6)} MB），请重新下载。`,
   }
 }
 
@@ -300,17 +320,21 @@ const ipcCtx = {
   closeAllSqliteHandles,
   runtimeMetrics,
   get ALL_MODELS() {
-    return ensureHeavy().ALL_MODELS
+    return ALL_MODELS
   },
-  getModelsByKind(kind) {
-    return ensureHeavy().getModelsByKind(kind)
-  },
+  getModelsByKind,
   getModelCatalog,
   invalidateModelScanCache: modelScan.invalidateModelScanCache,
   downloadModel,
   deleteModel,
   loadEmbeddingModel,
   unloadEmbeddingModel,
+  loadChatModel,
+  unloadChatModel,
+  resetChatHistory,
+  chatPrompt,
+  chatPromptStream: chatLlmRuntime.chatPromptStream,
+  getChatModelStatus,
   getChatModelFileInfo,
   embedTexts,
   getEmbeddingStatus,
@@ -321,9 +345,10 @@ const ipcCtx = {
 }
 
 registerIpcHandlers(ipcCtx)
+
 console.log("[main] IPC handlers registered (app:get-storage-paths, …)")
 
-async function waitForDevServer(url, timeoutMs = 90_000) {
+async function waitForDevServer(url: string, timeoutMs = 90_000) {
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     try {
@@ -346,7 +371,7 @@ async function createWindow() {
     title: "Neezy Studio",
     center: true,
     webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -380,16 +405,14 @@ app.whenReady().then(async () => {
       `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
       vecStatus.error ?? ""
     )
-    const { loadElectronLlm } = ensureHeavy()
-    await loadElectronLlm({
-      getModelPath: (modelAlias) => path.join(modelsDir(), modelAlias),
-    })
-
     startDevServer()
     await createWindow()
   } catch (error) {
     console.error("[main] startup failed:", error)
-    dialog.showErrorBox("Neezy Studio 启动失败", error instanceof Error ? error.message : String(error))
+    dialog.showErrorBox(
+      "Neezy Studio 启动失败",
+      error instanceof Error ? error.message : String(error)
+    )
     app.quit()
   }
 
@@ -405,7 +428,8 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
-  if (sqliteRuntime) sqliteRuntime.closeAll()
-  if (heavy) heavy.embeddingRuntime.unloadEmbeddingModel().catch(() => {})
+  if (sqliteRuntimeModule) sqliteRuntimeModule.closeAll()
+  embeddingRuntime.unloadEmbeddingModel().catch(() => {})
+  chatLlmRuntime.unloadChatModel().catch(() => {})
   if (devServer) devServer.kill()
 })

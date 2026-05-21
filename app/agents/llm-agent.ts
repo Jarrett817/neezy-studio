@@ -1,6 +1,10 @@
-// Local LLM Agent - powered by @electron/llm
+// Local LLM Agent - powered by node-llama-cpp (main process)
 
-import { streamChat, type ChatMessage } from "~/services/llm"
+import {
+  streamChat,
+  type ChatMessage,
+  type ChatStreamUpdate,
+} from "~/services/llm"
 import { getToolByName, getToolDefinitions } from "~/services/agent-tools"
 
 export type AgentMessage = {
@@ -14,6 +18,7 @@ export type AgentOptions = {
   temperature?: number
   maxTokens?: number
   onChunk?: (content: string) => void
+  onStream?: (update: ChatStreamUpdate) => void
   onToolCall?: (
     name: string,
     args: Record<string, unknown>,
@@ -77,15 +82,15 @@ export async function runAgent(
     for await (const chunk of streamChat(chatMessages, {
       temperature,
       maxTokens,
-      onChunk: (content) => {
-        lastContent = content
-        if (content.length > 0) options.onPhase?.("writing", "组织语言")
-        options.onChunk?.(content)
+      onStream: (update) => {
+        lastContent = update.content
+        if (update.thinking.length > 0) options.onPhase?.("model", "深度推理中")
+        else if (update.content.length > 0) options.onPhase?.("writing", "组织语言")
+        options.onStream?.(update)
+        options.onChunk?.(update.content)
       },
     })) {
       lastContent = chunk.content
-      if (chunk.content.length > 0) options.onPhase?.("writing", "组织语言")
-      options.onChunk?.(chunk.content)
     }
 
     let hasToolCall = false

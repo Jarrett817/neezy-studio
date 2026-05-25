@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { ChevronRight, Loader2 } from "lucide-react"
 
 import { toolLabel } from "~/lib/agent-steps"
@@ -16,8 +17,15 @@ export function ModelThinkingBlock({
   toolCalls?: { name: string }[]
   className?: string
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const hasTools = Boolean(toolCalls?.length)
   const hasThinking = thinking.trim().length > 0
+
+  useEffect(() => {
+    if (!isStreaming || !hasThinking) return
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [thinking, isStreaming, hasThinking])
 
   if (!hasThinking && !hasTools && !isStreaming) return null
 
@@ -45,9 +53,9 @@ export function ModelThinkingBlock({
         )}
       >
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-        <span className="font-medium text-foreground">思考中</span>
+        <span className="font-medium text-foreground">准备回复</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {modelName}
+          {modelName} · 正在载入上下文
         </span>
       </div>
     )
@@ -55,7 +63,7 @@ export function ModelThinkingBlock({
 
   return (
     <details
-      open={isStreaming}
+      open={isStreaming || hasThinking}
       className={cn(
         "group/think overflow-hidden rounded-xl border border-border/30 bg-muted/25",
         className
@@ -82,7 +90,10 @@ export function ModelThinkingBlock({
 
       <div className="space-y-2 border-t border-border/20 px-3.5 pt-2 pb-3.5">
         {hasThinking ? (
-          <div className="relative max-h-[min(42vh,360px)] overflow-y-auto">
+          <div
+            ref={scrollRef}
+            className="relative max-h-[min(42vh,360px)] overflow-y-auto"
+          >
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
               {thinking}
             </p>

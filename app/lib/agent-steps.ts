@@ -161,12 +161,68 @@ export function modelMayEmitThinking(modelFileName: string | null | undefined) {
   )
 }
 
-/** Qwen3：在用户消息后追加 /think 以启用思考模式 */
-export function appendThinkModeHint(
+/** 非 Qwen3 等模型：用 XML 思考块，便于流式展示推理过程 */
+export function modelUsesXmlThinking(
+  modelFileName: string | null | undefined
+): boolean {
+  if (!modelFileName || modelMayEmitThinking(modelFileName)) return false
+  const n = modelFileName.toLowerCase()
+  return (
+    n.includes("qwen2.5") ||
+    n.includes("qwen2") ||
+    n.includes("llama") ||
+    n.includes("mistral") ||
+    n.includes("gemma")
+  )
+}
+
+export function getThinkingSystemAddon(
+  modelFileName: string | null | undefined
+): string {
+  if (modelMayEmitThinking(modelFileName)) return ""
+  if (!modelUsesXmlThinking(modelFileName)) return ""
+  const thinkOpen = "<" + "think" + ">"
+  const thinkClose = "</" + "think" + ">"
+  return (
+    "\n\n回答前请先在 " +
+    thinkOpen +
+    " 标签内写出简要推理（用户可见），闭合 " +
+    thinkClose +
+    " 后再写面向用户的正文。"
+  )
+}
+
+/** 合并主进程 thought 段与 answer 内嵌思考标签 */
+export function mergeStreamThinking(
+  nativeThinking: string,
+  rawAnswer: string
+): ParsedModelThinking {
+  const parsed = parseModelThinking(rawAnswer)
+  const thinking = [nativeThinking.trim(), parsed.thinking.trim()]
+    .filter(Boolean)
+    .join("\n\n")
+  const visible = parsed.inThinkBlock ? parsed.visible : parsed.visible || rawAnswer
+  return {
+    thinking,
+    visible,
+    inThinkBlock: parsed.inThinkBlock,
+  }
+}
+
+/** Qwen3：/think；其它 Instruct 靠 system 中的 XML 说明 */
+export function appendModelReplyHints(
   userContent: string,
   modelFileName: string | null | undefined
 ) {
   if (!modelMayEmitThinking(modelFileName)) return userContent
   if (/\/think\b/i.test(userContent)) return userContent
   return `${userContent}\n\n/think`
+}
+
+/** @deprecated 使用 appendModelReplyHints */
+export function appendThinkModeHint(
+  userContent: string,
+  modelFileName: string | null | undefined
+) {
+  return appendModelReplyHints(userContent, modelFileName)
 }

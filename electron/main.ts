@@ -5,13 +5,19 @@ import fsSync from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import { setAgentToolRuntimeContext } from "./agent-tools-runtime"
 import * as chatLlmRuntime from "./chat-llm-runtime"
+import { getLlamaGpuRuntimeInfo } from "./node-llama-runtime"
 import * as embeddingRuntime from "./embedding-runtime"
-import { downloadModelFile } from "./model-download"
+import { downloadModelFile, tryResolveInstalledModel } from "./model-download"
 import {
-  ALL_MODELS,
+  ensureModelRegistry,
   findModel,
+  getAllModels,
+  getKnownModelFileNames,
   getModelsByKind,
+  invalidateModelCatalogCache,
+  setModelCatalogUpdateHandler,
 } from "./model-catalog"
 import { buildModelRecommendations } from "./model-recommendations"
 import * as modelScan from "./model-scan"
@@ -32,7 +38,11 @@ let devServer: ChildProcess | null = null
 let mainWindow: BrowserWindow | null = null
 let sqliteRuntimeModule: typeof import("./sqlite-runtime") | null = null
 
-const activeDownloads = new Map<string, ModelDownloadState>()
+type ActiveModelDownload = ModelDownloadState & {
+  cancel?: () => Promise<void>
+}
+
+const activeDownloads = new Map<string, ActiveModelDownload>()
 
 function getSqliteRuntime() {
   if (!sqliteRuntimeModule) {
@@ -57,9 +67,6 @@ function closeAllSqliteHandles(): void {
   getSqliteRuntime().closeAll()
 }
 
-function getModelFilePath(model: ModelDefinition): string {
-  return path.join(modelsDir(), model.fileName)
-}
 
 async function readModelsScan() {
   return modelScan.scanModelsDir(modelsDir())
@@ -105,15 +112,25 @@ function modelStatusFromScan(
     downloadedBytes,
     totalBytes,
     error: download?.error,
+    cancellable: download?.cancellable,
   }
 }
 
+async function refreshModelCatalog(): Promise<void> {
+  invalidateModelCatalogCache()
+  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
+  void ensureModelRegistry(modelsDir(), { waitForRecommended: true })
+}
+
 async function resolveModelStatus(model: ModelDefinition) {
+  const dir = modelsDir()
+  await ensureModelRegistry(dir, { waitForRecommended: false })
   const scan = await readModelsScan()
-  return modelStatusFromScan(model, scan, modelsDir())
+  return modelStatusFromScan(model, scan, dir)
 }
 
 async function sendModelProgress(modelId: string) {
+  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
   const model = findModel(modelId)
   if (!model || !mainWindow) return
   mainWindow.webContents.send("model-download-progress", await resolveModelStatus(model))
@@ -130,67 +147,105 @@ async function runtimeMetrics() {
   const pressure: import("./types").MemoryPressure =
     usedRatio > 0.82 ? "high" : usedRatio > 0.65 ? "medium" : "low"
 
+  let gpuInfo: Awaited<ReturnType<typeof getLlamaGpuRuntimeInfo>> | null = null
+  try {
+    gpuInfo = await getLlamaGpuRuntimeInfo()
+  } catch {
+    gpuInfo = null
+  }
+
   const base = {
     cpuCount: os.cpus().length,
     cpuUsagePercent: Math.round(os.loadavg()[0] * 100) / 100,
     totalMemoryGb: Math.round(totalMemoryGb * 10) / 10,
     availableMemoryGb: Math.round(availableMemoryGb * 10) / 10,
     pressure,
+    gpuLabel: gpuInfo?.gpuLabel,
+    vramUsedPercent: gpuInfo?.vramUsedPercent,
+    vramSummary: gpuInfo?.vramSummary,
+    gpuInspectLines: gpuInfo?.inspectLines,
   }
 
   const scan = await readModelsScan()
   const dir = modelsDir()
+  await ensureModelRegistry(dir, { waitForRecommended: false })
+  const catalog = await getAllModels(dir)
   return {
     ...base,
     ...buildModelRecommendations({
       metrics: base,
+      catalog,
       isInstalled: (model) => Boolean(modelScan.findInstalledModelFile(model, dir, scan)),
     }),
   }
 }
 
 async function getModelCatalog(kind?: ModelKind) {
-  const scan = await readModelsScan()
   const dir = modelsDir()
-  const models = kind ? getModelsByKind(kind) : ALL_MODELS
+  await ensureModelRegistry(dir, { waitForRecommended: false })
+  const scan = await readModelsScan()
+  const models = kind ? getModelsByKind(kind) : await getAllModels(dir)
   return models.map((model) => modelStatusFromScan(model, scan, dir))
 }
 
+function broadcastModelCatalogUpdated(): void {
+  if (!mainWindow) return
+  mainWindow.webContents.send("model-catalog-updated")
+}
+
 async function downloadModel(modelId: string) {
+  const dir = modelsDir()
+  await ensureModelRegistry(dir, { waitForRecommended: false })
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
+  if (model.isLocalOnly) throw new Error("本机模型无需下载")
+
+  const resolvedPath = await tryResolveInstalledModel(model, dir)
   const scan = await readModelsScan()
-  const dir = modelsDir()
-  if (modelScan.findInstalledModelFile(model, dir, scan)) {
+  if (resolvedPath || modelScan.findInstalledModelFile(model, dir, scan)) {
     return modelStatusFromScan(model, scan, dir)
   }
   if (activeDownloads.has(modelId)) {
     return modelStatusFromScan(model, scan, dir)
   }
 
-  await fs.mkdir(modelsDir(), { recursive: true })
+  await fs.mkdir(dir, { recursive: true })
+  const handle = downloadModelFile(model, dir, ({ downloadedBytes, totalBytes, progress }) => {
+    const state = activeDownloads.get(modelId)
+    if (!state) return
+    state.downloadedBytes = downloadedBytes
+    state.totalBytes = totalBytes || state.totalBytes
+    state.progress = progress
+    sendModelProgress(modelId)
+  })
+
   activeDownloads.set(modelId, {
     status: "downloading",
     progress: 0,
     downloadedBytes: 0,
     totalBytes: model.sizeBytes,
+    cancellable: true,
+    cancel: handle.cancel,
   })
   sendModelProgress(modelId)
 
   try {
-    const destination = getModelFilePath(model)
-    await downloadModelFile(model, destination, ({ downloadedBytes, totalBytes, progress }) => {
-      const state = activeDownloads.get(modelId)
-      if (!state) return
-      state.downloadedBytes = downloadedBytes
-      state.totalBytes = totalBytes || state.totalBytes
-      state.progress = progress
-      sendModelProgress(modelId)
-    })
+    await handle.promise
+    invalidateModelCatalogCache()
+    await ensureModelRegistry(dir, { waitForRecommended: false })
+    void ensureModelRegistry(dir, { waitForRecommended: true })
     activeDownloads.delete(modelId)
     sendModelProgress(modelId)
     return resolveModelStatus(model)
   } catch (error) {
+    const aborted =
+      error instanceof Error &&
+      (error.name === "AbortError" || error.message.includes("abort"))
+    activeDownloads.delete(modelId)
+    if (aborted) {
+      sendModelProgress(modelId)
+      return resolveModelStatus(model)
+    }
     activeDownloads.set(modelId, {
       status: "error",
       progress: null,
@@ -203,20 +258,37 @@ async function downloadModel(modelId: string) {
   }
 }
 
-async function deleteModel(modelId: string) {
+async function cancelModelDownload(modelId: string) {
+  const active = activeDownloads.get(modelId)
+  if (active?.cancel) {
+    await active.cancel()
+  }
+  activeDownloads.delete(modelId)
+  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
   const model = findModel(modelId)
   if (!model) throw new Error("Unknown model")
+  return resolveModelStatus(model)
+}
+
+async function deleteModel(modelId: string) {
   const dir = modelsDir()
+  await ensureModelRegistry(dir, { waitForRecommended: false })
+  const model = findModel(modelId)
+  if (!model) throw new Error("Unknown model")
   for (const name of modelScan.modelFileCandidates(model)) {
     await fs.rm(path.join(dir, name), { force: true })
     await fs.rm(path.join(dir, `${name}.part`), { force: true })
   }
   activeDownloads.delete(modelId)
+  invalidateModelCatalogCache()
+  await ensureModelRegistry(dir, { waitForRecommended: false })
+  void ensureModelRegistry(dir, { waitForRecommended: true })
   return resolveModelStatus(model)
 }
 
 async function loadEmbeddingModel(modelId: string, preferLowPower = false) {
   await chatLlmRuntime.unloadChatModel().catch(() => {})
+  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
   const model = findModel(modelId)
   if (!model || model.kind !== "embedding") throw new Error("Unknown embedding model")
   const scan = await readModelsScan()
@@ -259,6 +331,7 @@ async function unloadEmbeddingModel(): Promise<void> {
 }
 
 async function getChatModelFileInfo(fileName: string) {
+  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
   const chatModels = getModelsByKind("chat")
   const catalogMatch = chatModels.find(
     (m) => m.fileName === fileName || (m.aliases || []).includes(fileName)
@@ -278,8 +351,11 @@ async function getChatModelFileInfo(fileName: string) {
   if (catalogMatch) {
     filePath = modelScan.findInstalledModelFile(catalogMatch, dir, scan)
   }
-  if (!filePath && scan.gguf.has(fileName)) {
-    filePath = path.join(dir, fileName)
+  if (!filePath) {
+    const bytes = scan.gguf.get(fileName)
+    if (bytes != null) {
+      filePath = path.join(dir, fileName)
+    }
   }
   if (!filePath) {
     return { ok: false, reason: "模型文件不存在，请先下载或检查 models 目录。" }
@@ -319,13 +395,14 @@ const ipcCtx = {
   modelsDir,
   closeAllSqliteHandles,
   runtimeMetrics,
-  get ALL_MODELS() {
-    return ALL_MODELS
-  },
+  ensureModelRegistry,
+  getKnownModelFileNames,
   getModelsByKind,
   getModelCatalog,
+  refreshModelCatalog,
   invalidateModelScanCache: modelScan.invalidateModelScanCache,
   downloadModel,
+  cancelModelDownload,
   deleteModel,
   loadEmbeddingModel,
   unloadEmbeddingModel,
@@ -343,6 +420,19 @@ const ipcCtx = {
     return getSqliteRuntime()
   },
 }
+
+setAgentToolRuntimeContext({
+  getPaths,
+  runSelect: (dbPath, sql, params) =>
+    getSqliteRuntime().selectStatement(dbPath, sql, params ?? []) as Record<
+      string,
+      unknown
+    >[],
+  runExecute: (dbPath, sql, params) => {
+    getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
+  },
+  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
+})
 
 registerIpcHandlers(ipcCtx)
 
@@ -398,8 +488,12 @@ function startDevServer() {
 
 app.whenReady().then(async () => {
   try {
+    setModelCatalogUpdateHandler(() => broadcastModelCatalogUpdated())
     const paths = getPaths()
     await storagePaths.ensureStorageDirs(paths)
+    void ensureModelRegistry(modelsDir(), { waitForRecommended: true }).catch((error) => {
+      console.warn("[main] model catalog warmup failed:", error)
+    })
     const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
     console.log(
       `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,

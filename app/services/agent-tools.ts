@@ -123,6 +123,16 @@ export function getToolByName(name: string): Tool | undefined {
   return AVAILABLE_TOOLS.find((t) => t.name === name)
 }
 
+/** 写入 system 的短说明，避免整份 JSON schema 拉长 prefill。 */
+export function getCompactToolSystemHint(): string {
+  return [
+    "",
+    "可用工具（需用时输出 JSON 代码块）：",
+    "memory_search(query)、memory_add(title,content,category?)、memory_event(content)、datetime()、calculator(expression)。",
+    '格式：```json\n{"function":{"name":"工具名","arguments":{...}}}\n```',
+  ].join("\n")
+}
+
 export function getToolDefinitions(): {
   type: "function"
   function: {

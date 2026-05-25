@@ -31,7 +31,12 @@ import {
   getPortraitContextForPrompt,
   updatePortraitFromConversation,
 } from "~/services/user-portrait"
-import { appendThinkModeHint, parseModelThinking } from "~/lib/agent-steps"
+import {
+  appendModelReplyHints,
+  getThinkingSystemAddon,
+  mergeStreamThinking,
+  parseModelThinking,
+} from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
 const SYSTEM_PROMPT =
@@ -150,22 +155,30 @@ export default function ChatRoute() {
         content: m.content,
       }))
     const modelFile = getCurrentModel()
-    const userForAgent = appendThinkModeHint(userContent, modelFile)
-    agentMessages.push({ role: "user", content: userForAgent })
-
     try {
       const portraitContext = await getPortraitContextForPrompt()
+      const userForAgent = appendModelReplyHints(
+        portraitContext ? `${userContent}\n${portraitContext}` : userContent,
+        modelFile
+      )
+      agentMessages.push({ role: "user", content: userForAgent })
+
       const basePrompt = activeSkill
         ? `${SYSTEM_PROMPT}\n\n当前技能: ${activeSkill}`
         : SYSTEM_PROMPT
+      const thinkAddon = getThinkingSystemAddon(modelFile)
 
       const result = await runAgent(agentMessages, {
-        systemPrompt: `${basePrompt}${portraitContext}`,
+        systemPrompt: `${basePrompt}${thinkAddon}`,
         maxSteps: 5,
         temperature: 0.7,
         maxTokens: 2048,
         onStream: ({ thinking, content }) => {
-          patchAssistant(assistantId, { thinking, content })
+          const display = mergeStreamThinking(thinking, content)
+          patchAssistant(assistantId, {
+            thinking: display.thinking,
+            content: display.visible,
+          })
         },
         onToolCall: (name, args, toolResult) => {
           const current = getMessage(assistantId)

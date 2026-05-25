@@ -53,6 +53,7 @@ function ModelTarotCardFace({
   isActive,
   isLoading,
   onDownload,
+  onCancelDownload,
   onToggleRun,
   onDelete,
 }: {
@@ -63,11 +64,13 @@ function ModelTarotCardFace({
   isActive: boolean
   isLoading: boolean
   onDownload: () => void
+  onCancelDownload?: () => void
   onToggleRun: () => void
   onDelete: () => void
 }) {
   const runLabel = modelRunLabel(kind, isActive, isLoading)
   const isDownloading = item.status === "downloading"
+  const canCancel = isDownloading && item.cancellable && onCancelDownload
   const activeBadge = kind === "embedding" ? "已选用" : "运行中"
   const progress = item.progress ?? 0
 
@@ -182,19 +185,25 @@ function ModelTarotCardFace({
             <Button
               type="button"
               size="sm"
+              variant={canCancel ? "outline" : "default"}
               className="h-8 w-full gap-1 rounded-lg text-xs"
               onClick={(e) => {
                 e.stopPropagation()
-                onDownload()
+                if (canCancel) onCancelDownload()
+                else onDownload()
               }}
-              disabled={isDownloading}
+              disabled={isDownloading && !canCancel}
             >
-              {isDownloading ? (
+              {isDownloading && !canCancel ? (
                 <Loader2 className="size-3 animate-spin" />
-              ) : (
+              ) : canCancel ? null : (
                 <Download className="size-3" />
               )}
-              {isDownloading ? `${progress || 0}%` : "下载"}
+              {canCancel
+                ? "取消"
+                : isDownloading
+                  ? `${progress || 0}%`
+                  : "下载"}
             </Button>
           )}
         </div>
@@ -215,6 +224,7 @@ function ModelTarotCard({
   isLoading,
   onSelect,
   onDownload,
+  onCancelDownload,
   onToggleRun,
   onDelete,
 }: {
@@ -229,6 +239,7 @@ function ModelTarotCard({
   isLoading: boolean
   onSelect: () => void
   onDownload: () => void
+  onCancelDownload?: () => void
   onToggleRun: () => void
   onDelete: () => void
 }) {
@@ -264,12 +275,11 @@ function ModelTarotCard({
     <>
       <div
         className={cn(
-          "absolute inset-0 overflow-hidden rounded-2xl border-2 shadow-md",
+          "absolute inset-0 overflow-hidden rounded-2xl border-2 shadow-md [backface-visibility:hidden] [-webkit-backface-visibility:hidden]",
           isActive
             ? "border-amber-400/85 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
             : "border-border/45"
         )}
-        className="[backface-visibility:hidden] [-webkit-backface-visibility:hidden]"
       >
         <TarotCardBack tier={item.tier} />
         {item.installed && !selected && (
@@ -310,6 +320,7 @@ function ModelTarotCard({
           isActive={isActive}
           isLoading={isLoading}
           onDownload={onDownload}
+          onCancelDownload={onCancelDownload}
           onToggleRun={onToggleRun}
           onDelete={onDelete}
         />
@@ -385,6 +396,7 @@ export function ModelTarotDeck({
   onSelect,
   onDismissSelection,
   onDownload,
+  onCancelDownload,
   onToggleRun,
   onDelete,
   className,
@@ -399,6 +411,7 @@ export function ModelTarotDeck({
   onSelect: (id: string) => void
   onDismissSelection?: () => void
   onDownload: (id: string) => void
+  onCancelDownload?: (id: string) => void
   onToggleRun: (id: string) => void
   onDelete: (id: string) => void
   className?: string
@@ -441,6 +454,11 @@ export function ModelTarotDeck({
                   isLoading={item.fileName === loadingFileName}
                   onSelect={() => onSelect(item.id)}
                   onDownload={() => onDownload(item.id)}
+                  onCancelDownload={
+                    onCancelDownload
+                      ? () => onCancelDownload(item.id)
+                      : undefined
+                  }
                   onToggleRun={() => onToggleRun(item.id)}
                   onDelete={() => onDelete(item.id)}
                 />

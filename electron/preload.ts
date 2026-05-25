@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getBuildInfo: () => ipcRenderer.invoke("app:get-build-info"),
   getRuntimeMetrics: () => ipcRenderer.invoke("app:get-runtime-metrics"),
   getModelCatalog: (kind?: string) => ipcRenderer.invoke("app:get-model-catalog", kind),
+  rebuildModelCatalog: () => ipcRenderer.invoke("app:rebuild-model-catalog"),
   getModelRecommendations: () => ipcRenderer.invoke("app:get-model-recommendations"),
   loadEmbeddingModel: (modelId: string, preferLowPower?: boolean) =>
     ipcRenderer.invoke("app:load-embedding-model", modelId, preferLowPower),
@@ -30,7 +31,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getEmbeddingStatus: () => ipcRenderer.invoke("app:get-embedding-status"),
   listLlmModels: () => ipcRenderer.invoke("app:list-llm-models"),
   downloadModel: (modelId: string) => ipcRenderer.invoke("app:download-model", modelId),
+  cancelModelDownload: (modelId: string) =>
+    ipcRenderer.invoke("app:cancel-model-download", modelId),
   deleteModel: (modelId: string) => ipcRenderer.invoke("app:delete-model", modelId),
+  onModelCatalogUpdated: (handler: () => void) => {
+    const listener = () => handler()
+    ipcRenderer.on("model-catalog-updated", listener)
+    return () => ipcRenderer.removeListener("model-catalog-updated", listener)
+  },
   onModelDownloadProgress: (handler: (item: unknown) => void) => {
     const listener = (_event: unknown, payload: unknown) => handler(payload)
     ipcRenderer.on("model-download-progress", listener as Parameters<typeof ipcRenderer.on>[1])

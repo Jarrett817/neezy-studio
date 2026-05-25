@@ -1,12 +1,9 @@
-import { downloadFile, fileDownloadInfo } from "@huggingface/hub"
-import fs from "node:fs/promises"
-import fsSync from "node:fs"
 import path from "node:path"
-import { Readable } from "node:stream"
-import type { ReadableStream as NodeReadableStream } from "node:stream/web"
-import { pipeline } from "node:stream/promises"
-import { createWriteStream } from "node:fs"
 
+import type { CombinedModelDownloader, ModelFileAccessTokens } from "node-llama-cpp"
+
+import { getModelUri } from "./model-uri"
+import { getLlamaModule } from "./node-llama-runtime"
 import type { ModelDefinition } from "./types"
 
 export const HUB_ENDPOINTS = [
@@ -14,90 +11,237 @@ export const HUB_ENDPOINTS = [
   { hubUrl: "https://huggingface.co", label: "huggingface.co" },
 ] as const
 
-export async function downloadModelFile(
-  model: ModelDefinition,
-  destination: string,
-  onProgress: (progress: {
-    downloadedBytes: number
-    totalBytes: number
-    progress: number | null
-  }) => void
-): Promise<{ source: string }> {
-  await fs.mkdir(path.dirname(destination), { recursive: true })
+function resolveHfToken(): ModelFileAccessTokens | undefined {
+  const token = process.env.HF_TOKEN?.trim()
+  return token ? { huggingFace: token } : undefined
+}
 
-  const tempPath = `${destination}.part`
-  if (fsSync.existsSync(tempPath)) {
-    await fs.rm(tempPath, { force: true })
-  }
-
-  let lastError: unknown = null
-  for (const endpoint of HUB_ENDPOINTS) {
-    try {
-      await downloadFromHub(model, destination, tempPath, endpoint.hubUrl, onProgress)
-      return { source: endpoint.label }
-    } catch (error) {
-      lastError = error
-      if (fsSync.existsSync(tempPath)) {
-        await fs.rm(tempPath, { force: true })
-      }
+/** 多分片 URI 均在 fileOptions 中列出时，用 combineModelDownloaders 并行拉取 */
+export function collectMultiPartDownloadUris(
+  selectedUri: string,
+  candidates: string[]
+): string[] {
+  const partMatch = selectedUri.match(/\.gguf\.part(\d+)of(\d+)/i)
+  if (partMatch) {
+    const total = parseInt(partMatch[2], 10)
+    const prefix = selectedUri.replace(/\.gguf\.part\d+of\d+/i, "")
+    const parts = candidates.filter((u) => {
+      const m = u.match(/\.gguf\.part(\d+)of(\d+)/i)
+      return m !== null && m[2] === partMatch[2] && u.startsWith(prefix)
+    })
+    if (parts.length >= total) {
+      return parts.sort((a, b) => {
+        const na = parseInt(a.match(/\.gguf\.part(\d+)of/i)?.[1] ?? "0", 10)
+        const nb = parseInt(b.match(/\.gguf\.part(\d+)of/i)?.[1] ?? "0", 10)
+        return na - nb
+      })
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(String(lastError ?? "Download failed"))
+  const splitMatch = selectedUri.match(/-(\d+)-of-(\d+)\./)
+  if (splitMatch) {
+    const total = parseInt(splitMatch[2], 10)
+    const idx = selectedUri.indexOf(splitMatch[0])
+    const prefix = selectedUri.slice(0, idx)
+    const parts = candidates.filter((u) => {
+      const m = u.match(/-(\d+)-of-(\d+)\./)
+      return m !== null && m[2] === splitMatch[2] && u.startsWith(prefix)
+    })
+    if (parts.length >= total) {
+      return parts.sort((a, b) => {
+        const na = parseInt(a.match(/-(\d+)-of-/i)?.[1] ?? "0", 10)
+        const nb = parseInt(b.match(/-(\d+)-of-/i)?.[1] ?? "0", 10)
+        return na - nb
+      })
+    }
+  }
+
+  return [selectedUri]
 }
 
-async function downloadFromHub(
+export async function tryResolveInstalledModel(
   model: ModelDefinition,
-  destination: string,
-  tempPath: string,
+  modelsDir: string
+): Promise<string | null> {
+  if (model.isLocalOnly) return model.modelUri
+
+  const { resolveModelFile } = await getLlamaModule()
+  const tokens = resolveHfToken()
+
+  for (const endpoint of HUB_ENDPOINTS) {
+    try {
+      return await resolveModelFile(getModelUri(model), {
+        directory: modelsDir,
+        fileName: model.fileName,
+        download: false,
+        tokens,
+        endpoints: { huggingFace: endpoint.hubUrl },
+      })
+    } catch {
+      // try next hub
+    }
+  }
+  return null
+}
+
+export type ModelDownloadProgress = {
+  downloadedBytes: number
+  totalBytes: number
+  progress: number | null
+}
+
+export type ModelDownloadHandle = {
+  promise: Promise<{ source: string; filePath: string }>
+  cancel: () => Promise<void>
+}
+
+async function downloadWithCombinedUris(
+  model: ModelDefinition,
+  modelsDir: string,
+  uris: string[],
+  tokens: ModelFileAccessTokens | undefined,
   hubUrl: string,
-  onProgress: (progress: {
-    downloadedBytes: number
-    totalBytes: number
-    progress: number | null
-  }) => void
-): Promise<void> {
-  const repoParams = {
-    repo: { type: "model" as const, name: model.repo },
-    path: model.repoPath,
-    revision: model.revision ?? "main",
-    hubUrl,
-  }
+  onProgress: (p: ModelDownloadProgress) => void,
+  signal: AbortSignal
+): Promise<{ filePath: string; downloader: CombinedModelDownloader }> {
+  const { createModelDownloader, combineModelDownloaders } = await getLlamaModule()
 
-  const info = await fileDownloadInfo(repoParams)
-  if (!info) {
-    throw new Error(`在 Hugging Face 上未找到文件：${model.repo}/${model.repoPath}`)
-  }
+  const downloaders = await Promise.all(
+    uris.map((uri) =>
+      createModelDownloader({
+        modelUri: uri,
+        dirPath: modelsDir,
+        showCliProgress: false,
+        skipExisting: true,
+        tokens,
+        endpoints: { huggingFace: hubUrl },
+      })
+    )
+  )
 
-  const totalBytes = info.size || model.sizeBytes || 0
-  onProgress({ downloadedBytes: 0, totalBytes, progress: totalBytes > 0 ? 0 : null })
-
-  const blob = await downloadFile({
-    ...repoParams,
-    downloadInfo: info,
-    xet: true,
-  })
-  if (!blob) {
-    throw new Error("下载响应为空")
-  }
-
-  let downloadedBytes = 0
-  const stream = Readable.fromWeb(blob.stream() as NodeReadableStream<Uint8Array>)
-  stream.on("data", (chunk: Buffer) => {
-    downloadedBytes += chunk.length
-    const progress =
-      totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : null
-    onProgress({ downloadedBytes, totalBytes, progress })
+  const combined = await combineModelDownloaders(downloaders, {
+    showCliProgress: false,
+    onProgress: ({ totalSize, downloadedSize }) => {
+      const totalBytes = totalSize > 0 ? totalSize : model.sizeBytes
+      const progress =
+        totalSize > 0
+          ? Math.min(100, Math.round((downloadedSize / totalSize) * 100))
+          : null
+      onProgress({ downloadedBytes: downloadedSize, totalBytes, progress })
+    },
   })
 
-  await pipeline(stream, createWriteStream(tempPath))
-
-  const stat = await fs.stat(tempPath)
-  if (info.size > 0 && stat.size !== info.size) {
-    throw new Error(`文件不完整：期望 ${info.size} 字节，实际 ${stat.size} 字节`)
+  const paths = await combined.download({ signal })
+  const normalized = paths.map((p) => path.normalize(p))
+  const preferred = normalized.find((p) => path.basename(p) === model.fileName)
+  return {
+    filePath: preferred ?? normalized[0] ?? paths[0],
+    downloader: combined,
   }
+}
 
-  await fs.rename(tempPath, destination)
+async function downloadWithResolveModelFile(
+  model: ModelDefinition,
+  modelsDir: string,
+  tokens: ModelFileAccessTokens | undefined,
+  hubUrl: string,
+  onProgress: (p: ModelDownloadProgress) => void,
+  signal: AbortSignal
+): Promise<string> {
+  const { resolveModelFile } = await getLlamaModule()
+  return resolveModelFile(getModelUri(model), {
+    directory: modelsDir,
+    fileName: model.fileName,
+    download: "auto",
+    cli: false,
+    tokens,
+    endpoints: { huggingFace: hubUrl },
+    signal,
+    onProgress: ({ totalSize, downloadedSize }) => {
+      const totalBytes = totalSize > 0 ? totalSize : model.sizeBytes
+      const progress =
+        totalSize > 0
+          ? Math.min(100, Math.round((downloadedSize / totalSize) * 100))
+          : null
+      onProgress({ downloadedBytes: downloadedSize, totalBytes, progress })
+    },
+  })
+}
+
+/**
+ * resolveModelFile（单文件）或 combineModelDownloaders（多 URI 分片并列）。
+ */
+export function downloadModelFile(
+  model: ModelDefinition,
+  modelsDir: string,
+  onProgress: (progress: ModelDownloadProgress) => void,
+  signal?: AbortSignal
+): ModelDownloadHandle {
+  const abortController = new AbortController()
+  const effectiveSignal = signal ?? abortController.signal
+  let cancelTarget: CombinedModelDownloader | null = null
+
+  const promise = (async (): Promise<{ source: string; filePath: string }> => {
+    if (model.isLocalOnly) {
+      throw new Error("本机模型无需下载")
+    }
+
+    const tokens = resolveHfToken()
+    const uris =
+      model.downloadUris && model.downloadUris.length > 1
+        ? model.downloadUris
+        : [getModelUri(model)]
+
+    let lastError: unknown = null
+    for (const endpoint of HUB_ENDPOINTS) {
+      try {
+        onProgress({
+          downloadedBytes: 0,
+          totalBytes: model.sizeBytes,
+          progress: 0,
+        })
+
+        let filePath: string
+        if (uris.length > 1) {
+          const combinedResult = await downloadWithCombinedUris(
+            model,
+            modelsDir,
+            uris,
+            tokens,
+            endpoint.hubUrl,
+            onProgress,
+            effectiveSignal
+          )
+          cancelTarget = combinedResult.downloader
+          filePath = combinedResult.filePath
+        } else {
+          filePath = await downloadWithResolveModelFile(
+            model,
+            modelsDir,
+            tokens,
+            endpoint.hubUrl,
+            onProgress,
+            effectiveSignal
+          )
+        }
+
+        return { source: endpoint.label, filePath: path.normalize(filePath) }
+      } catch (error) {
+        if (effectiveSignal.aborted) throw error
+        lastError = error
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError ?? "模型下载失败"))
+  })()
+
+  return {
+    promise,
+    cancel: async () => {
+      abortController.abort()
+      await cancelTarget?.cancel().catch(() => {})
+    },
+  }
 }

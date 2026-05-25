@@ -1,7 +1,7 @@
+import { mergeStreamThinking } from "~/lib/agent-steps"
 import {
   chatPromptFromMain,
   chatPromptStreamFromMain,
-  primeChatHistoryFromMain,
   resetChatHistoryFromMain,
   getChatModelFileInfo,
   type ChatSyncMessage,
@@ -235,6 +235,7 @@ export async function* streamChat(
   options?: {
     temperature?: number
     maxTokens?: number
+    useFunctions?: boolean
     onChunk?: (content: string) => void
     onStream?: (update: ChatStreamUpdate) => void
   }
@@ -247,9 +248,6 @@ export async function* streamChat(
   touchLastUsed()
 
   const { prompt, primeMessages } = resolveStreamInput(messages)
-  if (primeMessages?.length) {
-    await primeChatHistoryFromMain(primeMessages)
-  }
 
   const requestId = crypto.randomUUID()
   let thinkingAccum = ""
@@ -259,29 +257,33 @@ export async function* streamChat(
   let streamDone = false
   let wake: (() => void) | null = null
 
-  let flushScheduled = false
-  const schedulePush = () => {
-    if (flushScheduled) return
-    flushScheduled = true
-    queueMicrotask(() => {
-      flushScheduled = false
-      const update = { thinking: thinkingAccum, content: contentAccum }
-      pending.push(update)
-      options?.onStream?.(update)
-      options?.onChunk?.(contentAccum)
-      wake?.()
-    })
+  const pushStreamUpdate = () => {
+    const display = mergeStreamThinking(thinkingAccum, contentAccum)
+    const update = { thinking: display.thinking, content: display.visible }
+    if (pending.length > 0) pending[0] = update
+    else pending.push(update)
+    wake?.()
   }
 
   const unsubscribe = onChatStreamFromMain((event) => {
     if (event.requestId !== requestId) return
+    if (event.type === "start") {
+      options?.onStream?.({ thinking: thinkingAccum, content: contentAccum })
+      return
+    }
     if (event.type === "chunk" && event.delta) {
       if (event.segment === "thought") {
         thinkingAccum += event.delta
       } else {
         contentAccum += event.delta
       }
-      schedulePush()
+      const display = mergeStreamThinking(thinkingAccum, contentAccum)
+      options?.onStream?.({
+        thinking: display.thinking,
+        content: display.visible,
+      })
+      options?.onChunk?.(display.visible)
+      pushStreamUpdate()
     } else if (event.type === "error") {
       streamError = new Error(event.error ?? "对话流式输出失败")
       streamDone = true
@@ -296,9 +298,11 @@ export async function* streamChat(
     const invokePromise = chatPromptStreamFromMain({
       requestId,
       input: prompt,
+      primeMessages,
       temperature: options?.temperature,
       topK: 10,
       maxTokens: options?.maxTokens,
+      useFunctions: options?.useFunctions,
     })
 
     while (!streamDone || pending.length > 0) {
@@ -316,7 +320,12 @@ export async function* streamChat(
     if (streamError) throw streamError
 
     syncedMessageCount = messages.length
-    yield { thinking: thinkingAccum, content: contentAccum, done: true }
+    const finalDisplay = mergeStreamThinking(thinkingAccum, contentAccum)
+    yield {
+      thinking: finalDisplay.thinking,
+      content: finalDisplay.visible,
+      done: true,
+    }
   } finally {
     unsubscribe()
   }

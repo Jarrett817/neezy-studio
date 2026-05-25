@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  cancelModelDownload,
   deleteModel,
   downloadModel,
   getModelCatalog,
   getModelRecommendations,
+  rebuildModelCatalog,
+  onModelCatalogUpdated,
   onModelDownloadProgress,
   type ModelCatalogItem,
   type ModelKind,
@@ -70,6 +73,21 @@ export function useLlmModels() {
   const items = kind === "chat" ? chatItems : embeddingItems
   const isRefreshing = chatFetching || embeddingFetching
 
+  const localChatItems = useMemo(
+    () =>
+      chatItems.filter(
+        (i) => i.catalogSection === "local" || i.isLocalOnly === true
+      ),
+    [chatItems]
+  )
+  const recommendedChatItems = useMemo(
+    () => chatItems.filter((i) => i.catalogSection === "recommended"),
+    [chatItems]
+  )
+  const isRecommendedCatalogLoading =
+    recommendedChatItems.length === 0 &&
+    (isRefreshing || localChatItems.length > 0)
+
   const syncEmbeddingSelection = useCallback(async () => {
     const settings = await getRuntimeSettings()
     setCurrentEmbedding(settings.embeddingModel || null)
@@ -77,8 +95,10 @@ export function useLlmModels() {
 
   const refresh = useCallback(async () => {
     try {
+      await rebuildModelCatalog()
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["model-catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-recommendations"] }),
         refetchChatCatalog(),
         refetchEmbeddingCatalog(),
         syncEmbeddingSelection(),
@@ -92,6 +112,7 @@ export function useLlmModels() {
     refetchChatCatalog,
     refetchEmbeddingCatalog,
     syncEmbeddingSelection,
+    rebuildModelCatalog,
   ])
 
   useEffect(() => {
@@ -106,9 +127,14 @@ export function useLlmModels() {
         (list ?? []).map((item) => (item.id === next.id ? next : item))
       )
     })
+    const unsubCatalog = onModelCatalogUpdated(() => {
+      void queryClient.invalidateQueries({ queryKey: ["model-catalog"] })
+      void queryClient.invalidateQueries({ queryKey: ["model-recommendations"] })
+    })
     return () => {
       unsubLoading()
       unsubDownload()
+      unsubCatalog()
     }
   }, [queryClient, syncEmbeddingSelection])
 
@@ -176,6 +202,19 @@ export function useLlmModels() {
         toast.success("下载完成")
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "下载失败")
+      }
+    },
+    [refresh]
+  )
+
+  const handleCancelDownload = useCallback(
+    async (modelId: string) => {
+      try {
+        await cancelModelDownload(modelId)
+        await refresh()
+        toast.info("已取消下载")
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "取消失败")
       }
     },
     [refresh]
@@ -306,6 +345,9 @@ export function useLlmModels() {
     setKind,
     items,
     chatItems,
+    localChatItems,
+    recommendedChatItems,
+    isRecommendedCatalogLoading,
     embeddingItems,
     metrics: metrics as RuntimeMetrics | undefined,
     selectedId,
@@ -323,6 +365,7 @@ export function useLlmModels() {
     isModelRunning,
     refresh,
     handleDownload,
+    handleCancelDownload,
     handleDelete,
     handleStartChat,
     handleStopChat,

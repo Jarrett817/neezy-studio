@@ -2,6 +2,7 @@ import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
 
 export type ModelTier = "light" | "balanced" | "performance"
 export type ModelKind = "chat" | "embedding"
+export type CatalogSection = "recommended" | "local"
 
 export type RuntimeMetrics = {
   cpuCount: number
@@ -9,6 +10,10 @@ export type RuntimeMetrics = {
   totalMemoryGb: number
   availableMemoryGb: number
   pressure: "low" | "medium" | "high"
+  gpuLabel?: string
+  vramUsedPercent?: number
+  vramSummary?: string
+  gpuInspectLines?: string[]
   chatTier: ModelTier
   embeddingTier: ModelTier
   recommendedChatId: string | null
@@ -28,22 +33,30 @@ type DirEntry = {
 export type ModelCatalogItem = {
   id: string
   kind: ModelKind
+  catalogSection?: CatalogSection
   tier: ModelTier
   tierLabel: string
   title: string
   subtitle: string
+  description?: string
+  modelUri?: string
+  abilities?: string[]
   fileName: string
   sizeLabel: string
   sizeBytes: number
   minMemoryGb: number
+  compatibilityScore?: number
+  resolvedContextSize?: number
   embeddingDim?: number
   fit: string[]
+  isLocalOnly?: boolean
   installed: boolean
   path: string | null
   status: "available" | "ready" | "downloading" | "error"
   progress: number | null
   downloadedBytes: number
   totalBytes: number
+  cancellable?: boolean
 }
 
 export type ChatLoadPayload = {
@@ -76,16 +89,18 @@ export type ChatPromptOptions = {
 export type ChatStreamPayload = {
   requestId: string
   input: string
+  primeMessages?: ChatSyncMessage[]
   temperature?: number
   topK?: number
   maxTokens?: number
+  useFunctions?: boolean
 }
 
 export type ChatStreamSegment = "thought" | "answer"
 
 export type ChatStreamEvent = {
   requestId: string
-  type: "chunk" | "done" | "error"
+  type: "start" | "chunk" | "done" | "error"
   /** 增量文本（主进程按 token 推送） */
   delta?: string
   segment?: ChatStreamSegment
@@ -114,6 +129,7 @@ type ElectronApi = {
   getBuildInfo: () => Promise<BuildInfo>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
+  rebuildModelCatalog: () => Promise<void>
   getModelRecommendations: () => Promise<RuntimeMetrics>
   loadEmbeddingModel: (
     modelId: string,
@@ -149,7 +165,9 @@ type ElectronApi = {
   }>
   listLlmModels: () => Promise<{ id: string; name: string; path: string }[]>
   downloadModel: (modelId: string) => Promise<ModelCatalogItem>
+  cancelModelDownload: (modelId: string) => Promise<ModelCatalogItem>
   deleteModel: (modelId: string) => Promise<ModelCatalogItem>
+  onModelCatalogUpdated: (handler: () => void) => () => void
   onModelDownloadProgress: (
     handler: (item: ModelCatalogItem) => void
   ) => () => void
@@ -261,6 +279,10 @@ export async function getModelCatalog(
   return getElectronApi().getModelCatalog(kind)
 }
 
+export async function rebuildModelCatalog(): Promise<void> {
+  return getElectronApi().rebuildModelCatalog()
+}
+
 export async function getModelRecommendations(): Promise<RuntimeMetrics> {
   return getElectronApi().getModelRecommendations()
 }
@@ -342,8 +364,18 @@ export async function downloadModel(
   return getElectronApi().downloadModel(modelId)
 }
 
+export async function cancelModelDownload(
+  modelId: string
+): Promise<ModelCatalogItem> {
+  return getElectronApi().cancelModelDownload(modelId)
+}
+
 export async function deleteModel(modelId: string): Promise<ModelCatalogItem> {
   return getElectronApi().deleteModel(modelId)
+}
+
+export function onModelCatalogUpdated(handler: () => void): () => void {
+  return getElectronApi().onModelCatalogUpdated(handler)
 }
 
 export function onModelDownloadProgress(

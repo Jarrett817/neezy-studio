@@ -26,6 +26,14 @@ export function tierBadgeVariant(tier: ModelCatalogItem["tier"]) {
 
 export function modelTone(item: ModelCatalogItem, metrics?: RuntimeMetrics) {
   if (item.installed) return "已准备好"
+  if (item.compatibilityScore != null) {
+    const pct = Math.round(item.compatibilityScore * 100)
+    const ctx =
+      item.resolvedContextSize != null && item.resolvedContextSize >= 1024
+        ? ` · ${Math.round(item.resolvedContextSize / 1024)}K 上下文`
+        : ""
+    return `${pct}% 兼容${ctx}`
+  }
   if (metrics && metrics.availableMemoryGb < item.minMemoryGb) {
     return `建议至少 ${item.minMemoryGb}GB 可用内存`
   }

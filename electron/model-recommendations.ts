@@ -1,15 +1,14 @@
-import { getModelsByKind } from "./model-catalog"
-import type { ModelDefinition, ModelKind, ModelTier, RuntimeMetricsBase } from "./types"
+import type { ModelDefinition, ModelKind, RuntimeMetricsBase } from "./types"
 
 export function recommendTiers(metrics: RuntimeMetricsBase): {
-  chatTier: ModelTier
-  embeddingTier: ModelTier
+  chatTier: import("./types").ModelTier
+  embeddingTier: import("./types").ModelTier
   notes: string[]
 } {
   const { totalMemoryGb, availableMemoryGb, pressure } = metrics
 
-  let chatTier: ModelTier = "light"
-  let embeddingTier: ModelTier = "light"
+  let chatTier: import("./types").ModelTier = "light"
+  let embeddingTier: import("./types").ModelTier = "light"
   const notes: string[] = []
 
   if (totalMemoryGb >= 20 && availableMemoryGb >= 10 && pressure === "low") {
@@ -42,42 +41,62 @@ export function recommendTiers(metrics: RuntimeMetricsBase): {
   return { chatTier, embeddingTier, notes }
 }
 
+function sortByCompatibility(models: ModelDefinition[]): ModelDefinition[] {
+  return [...models].sort(
+    (a, b) =>
+      (b.compatibilityScore ?? 0) - (a.compatibilityScore ?? 0) ||
+      a.sizeBytes - b.sizeBytes
+  )
+}
+
 export function buildModelRecommendations({
   metrics,
+  catalog,
   isInstalled,
 }: {
   metrics: RuntimeMetricsBase
+  catalog: ModelDefinition[]
   isInstalled: (model: ModelDefinition) => boolean
 }) {
   const { chatTier, embeddingTier, notes } = recommendTiers(metrics)
 
-  const pickInTier = (kind: ModelKind, tier: ModelTier) => {
-    const candidates = getModelsByKind(kind).filter((m) => m.tier === tier)
-    const installed = candidates.find((m) => isInstalled(m))
-    return installed ?? candidates[0] ?? null
+  const chatPool = sortByCompatibility(catalog.filter((m) => m.kind === "chat"))
+  const embPool = sortByCompatibility(catalog.filter((m) => m.kind === "embedding"))
+
+  const pickBest = (pool: ModelDefinition[], tier: import("./types").ModelTier) => {
+    const inTier = pool.filter((m) => m.tier === tier)
+    const candidates = inTier.length > 0 ? inTier : pool
+    return candidates.find((m) => isInstalled(m)) ?? candidates[0] ?? null
   }
 
-  const recommendedChat = pickInTier("chat", chatTier)
-  const recommendedEmbedding = pickInTier("embedding", embeddingTier)
+  const recommendedChat = pickBest(chatPool, chatTier)
+  const recommendedEmbedding = pickBest(embPool, embeddingTier)
 
-  const chatAlternatives = getModelsByKind("chat")
-    .filter((m) => m.tier === chatTier && m.id !== recommendedChat?.id)
+  const chatAlternatives = chatPool
+    .filter((m) => m.id !== recommendedChat?.id)
     .slice(0, 4)
+    .map((m) => m.id)
 
-  const embeddingAlternatives = getModelsByKind("embedding")
-    .filter((m) => m.tier === embeddingTier && m.id !== recommendedEmbedding?.id)
+  const embeddingAlternatives = embPool
+    .filter((m) => m.id !== recommendedEmbedding?.id)
     .slice(0, 2)
+    .map((m) => m.id)
+
+  const compatNote =
+    recommendedChat?.compatibilityScore != null
+      ? ` 对话模型与本机兼容性约 ${Math.round(recommendedChat.compatibilityScore * 100)}%。`
+      : ""
 
   return {
     chatTier,
     embeddingTier,
     recommendedChatId: recommendedChat?.id ?? null,
     recommendedEmbeddingId: recommendedEmbedding?.id ?? null,
-    recommendedReason: notes.join(" "),
+    recommendedReason: notes.join(" ") + compatNote,
     systemSummary: `本机约 ${metrics.totalMemoryGb}GB 内存，可用 ${metrics.availableMemoryGb}GB，${metrics.cpuCount} 核 CPU，当前负载「${
       metrics.pressure === "low" ? "低" : metrics.pressure === "medium" ? "中" : "高"
     }」。`,
-    chatAlternatives: chatAlternatives.map((m) => m.id),
-    embeddingAlternatives: embeddingAlternatives.map((m) => m.id),
+    chatAlternatives,
+    embeddingAlternatives,
   }
 }

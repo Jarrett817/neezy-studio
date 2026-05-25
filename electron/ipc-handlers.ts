@@ -77,12 +77,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:get-model-catalog", (_event, kind?: import("./types").ModelKind) =>
     ctx.getModelCatalog(kind)
   )
+  ipcMain.handle("app:rebuild-model-catalog", () => ctx.refreshModelCatalog())
   ipcMain.handle("app:list-llm-models", async () => {
     await ctx.fs.mkdir(ctx.modelsDir(), { recursive: true })
+    await ctx.ensureModelRegistry(ctx.modelsDir(), { waitForRecommended: false })
     const entries = await ctx.fs.readdir(ctx.modelsDir(), { withFileTypes: true })
-    const catalogFiles = new Set(
-      ctx.ALL_MODELS.flatMap((model) => [model.fileName, ...(model.aliases || [])])
-    )
+    const catalogFiles = new Set(ctx.getKnownModelFileNames())
     return entries
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"))
       .map((entry) => ({
@@ -93,6 +93,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       }))
   })
   ipcMain.handle("app:download-model", async (_event, modelId: string) => ctx.downloadModel(modelId))
+  ipcMain.handle("app:cancel-model-download", (_event, modelId: string) =>
+    ctx.cancelModelDownload(modelId)
+  )
   ipcMain.handle("app:delete-model", async (_event, modelId: string) => ctx.deleteModel(modelId))
   ipcMain.handle("app:load-embedding-model", async (_event, modelId: string, preferLowPower?: boolean) =>
     ctx.loadEmbeddingModel(modelId, Boolean(preferLowPower))
@@ -115,52 +118,36 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     ctx.chatPrompt(input, options)
   )
   ipcMain.handle("app:chat-prompt-stream", async (event, payload) => {
-    const { requestId, input, temperature, topK, maxTokens } = payload as {
-      requestId: string
-      input: string
-      temperature?: number
-      topK?: number
-      maxTokens?: number
-    }
-    try {
-      const pending: { thought: string; answer: string } = { thought: "", answer: "" }
-      let flushScheduled = false
-      const flush = () => {
-        flushScheduled = false
-        if (pending.thought) {
-          event.sender.send("app:chat-stream", {
-            requestId,
-            type: "chunk",
-            segment: "thought",
-            delta: pending.thought,
-          })
-          pending.thought = ""
-        }
-        if (pending.answer) {
-          event.sender.send("app:chat-stream", {
-            requestId,
-            type: "chunk",
-            segment: "answer",
-            delta: pending.answer,
-          })
-          pending.answer = ""
-        }
+    const { requestId, input, primeMessages, temperature, topK, maxTokens, useFunctions } =
+      payload as {
+        requestId: string
+        input: string
+        primeMessages?: { role: "system" | "user" | "assistant"; content: string }[]
+        temperature?: number
+        topK?: number
+        maxTokens?: number
+        useFunctions?: boolean
       }
-      const scheduleFlush = () => {
-        if (flushScheduled) return
-        flushScheduled = true
-        setImmediate(flush)
+    try {
+      event.sender.send("app:chat-stream", { requestId, type: "start" })
+      if (primeMessages?.length) {
+        primeChatHistory(messagesToChatHistory(primeMessages))
       }
 
       for await (const { segment, delta } of chatPromptStream(input, {
         temperature,
         topK,
         maxTokens,
+        useFunctions,
       })) {
-        pending[segment] += delta
-        scheduleFlush()
+        if (!delta) continue
+        event.sender.send("app:chat-stream", {
+          requestId,
+          type: "chunk",
+          segment,
+          delta,
+        })
       }
-      flush()
       event.sender.send("app:chat-stream", { requestId, type: "done", content: "" })
     } catch (error) {
       event.sender.send("app:chat-stream", {

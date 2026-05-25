@@ -59,6 +59,7 @@ function ModelCard({
   isActive,
   isLoading,
   onDownload,
+  onCancelDownload,
   onToggleRun,
 }: {
   item: ModelCatalogItem
@@ -68,9 +69,11 @@ function ModelCard({
   isActive: boolean
   isLoading: boolean
   onDownload: () => void
+  onCancelDownload?: () => void
   onToggleRun: () => void
 }) {
   const isDownloading = item.status === "downloading"
+  const canCancel = isDownloading && item.cancellable && onCancelDownload
   const progress = item.progress ?? 0
 
   return (
@@ -88,12 +91,21 @@ function ModelCard({
           <Badge variant={tierBadgeVariant(item.tier)}>{item.tierLabel}</Badge>
           {isRecommended && <Badge variant="secondary">推荐</Badge>}
         </CardTitle>
-        <CardDescription>{item.subtitle}</CardDescription>
+        <CardDescription className="line-clamp-3">
+          {item.subtitle}
+          {item.compatibilityScore != null && (
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {modelTone(item, metrics)}
+            </span>
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">
-            {modelTone(item, metrics)}
+            {item.installed || item.compatibilityScore == null
+              ? modelTone(item, metrics)
+              : item.tierLabel}
           </span>
           <span className="font-medium">{item.sizeLabel}</span>
         </div>
@@ -109,14 +121,23 @@ function ModelCard({
           type="button"
           className="w-full rounded-xl"
           size="sm"
-          disabled={item.installed ? isLoading : isDownloading}
-          onClick={item.installed ? onToggleRun : onDownload}
+          variant={canCancel ? "outline" : "default"}
+          disabled={item.installed ? isLoading : isDownloading && !canCancel}
+          onClick={
+            canCancel
+              ? onCancelDownload
+              : item.installed
+                ? onToggleRun
+                : onDownload
+          }
         >
           {item.installed
             ? modelRunButtonLabel(kind, isActive, isLoading)
-            : isDownloading
-              ? "下载中"
-              : "下载"}
+            : canCancel
+              ? "取消下载"
+              : isDownloading
+                ? "下载中"
+                : "下载"}
         </Button>
       </CardContent>
     </Card>
@@ -133,6 +154,7 @@ function ModelTierSection({
   activeFileName,
   loadingFileName,
   onDownload,
+  onCancelDownload,
   onToggleRun,
 }: {
   title: string
@@ -144,6 +166,7 @@ function ModelTierSection({
   activeFileName: string | null
   loadingFileName: string | null
   onDownload: (id: string) => void
+  onCancelDownload?: (id: string) => void
   onToggleRun: (item: ModelCatalogItem) => void
 }) {
   const byTier = useMemo(() => {
@@ -185,6 +208,11 @@ function ModelTierSection({
                   isActive={activeFileName === item.fileName}
                   isLoading={loadingFileName === item.fileName}
                   onDownload={() => onDownload(item.id)}
+                  onCancelDownload={
+                    onCancelDownload
+                      ? () => onCancelDownload(item.id)
+                      : undefined
+                  }
                   onToggleRun={() => onToggleRun(item)}
                 />
               ))}
@@ -208,6 +236,7 @@ export function LlmModelBrowser() {
     isRefreshing,
     refresh,
     handleDownload,
+    handleCancelDownload,
     handleStartChat,
     handleStopChat,
     handleStartEmbedding,
@@ -248,6 +277,7 @@ export function LlmModelBrowser() {
         activeFileName={currentChat}
         loadingFileName={chatLoadingFile}
         onDownload={handleDownload}
+        onCancelDownload={handleCancelDownload}
         onToggleRun={(item) => {
           void (currentChat === item.fileName
             ? handleStopChat(item)
@@ -264,6 +294,7 @@ export function LlmModelBrowser() {
         activeFileName={currentEmbedding}
         loadingFileName={null}
         onDownload={handleDownload}
+        onCancelDownload={handleCancelDownload}
         onToggleRun={(item) => {
           void (currentEmbedding === item.fileName
             ? handleStopEmbedding(item)

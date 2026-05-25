@@ -1,6 +1,7 @@
 import type { LlamaEmbeddingContext, LlamaModel } from "node-llama-cpp"
 
-import { describeLayerSplit, resolveEmbeddingLoadPolicy } from "./llm-load-policy"
+import { describeLayerSplit } from "./llm-load-policy"
+import { resolveEmbeddingRuntimeConfig } from "./llm-insights-policy"
 import { acquireLlama, getLlamaModule } from "./node-llama-runtime"
 import { EMBEDDING_DIM } from "./types"
 
@@ -32,13 +33,14 @@ export async function loadEmbeddingModel(
   await unloadEmbeddingModel()
 
   const preferLowPower = Boolean(options.preferLowPower)
-  const policy = resolveEmbeddingLoadPolicy(preferLowPower)
   const llama = await acquireLlama(preferLowPower)
+  const runtime = await resolveEmbeddingRuntimeConfig(filePath, preferLowPower, llama)
   const model: LlamaModel = await llama.loadModel({
     modelPath: filePath,
-    gpuLayers: policy.gpuLayers,
+    gpuLayers: runtime.gpuLayers,
+    useMmap: runtime.useMmap,
   })
-  embeddingContext = await model.createEmbeddingContext()
+  embeddingContext = await model.createEmbeddingContext({ contextSize: 512 })
   loadedFilePath = filePath
   loadedModelId = modelId ?? null
 
@@ -46,7 +48,7 @@ export async function loadEmbeddingModel(
     embeddingDim: EMBEDDING_DIM,
     modelId: loadedModelId,
     ...describeLayerSplit(model),
-    layerSplit: policy.layerSplit,
+    layerSplit: (model.gpuLayers ?? 0) <= 0 ? "cpu" : "auto",
   }
 }
 

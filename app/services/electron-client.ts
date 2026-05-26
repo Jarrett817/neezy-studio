@@ -126,6 +126,11 @@ export type StoragePaths = {
 }
 
 type ElectronApi = {
+  invoke: <T = unknown>(channel: string, data?: unknown) => Promise<T>
+  on: <T = unknown>(
+    channel: string,
+    handler: (event: unknown, data: T) => void
+  ) => () => void
   getBuildInfo: () => Promise<BuildInfo>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
@@ -246,11 +251,17 @@ type ElectronApi = {
 
 declare global {
   interface Window {
-    electronAPI?: ElectronApi
+    electronAPI?: ElectronApi & {
+      invoke: <T = unknown>(channel: string, data?: unknown) => Promise<T>
+      on: <T = unknown>(
+        channel: string,
+        handler: (event: unknown, data: T) => void
+      ) => () => void
+    }
   }
 }
 
-function getElectronApi(): ElectronApi {
+export function getElectronApi(): ElectronApi {
   if (typeof window === "undefined" || !window.electronAPI) {
     throw new Error(
       "Electron API 不可用。请使用 bun run electron:dev 启动桌面应用，不要单独打开浏览器访问 localhost。"

@@ -102,4 +102,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     memoryType?: string | null
   ) =>
     ipcRenderer.invoke("sqlite:vector-search-slices", dbPath, embedding, limit, memoryType),
+  invoke: <T = unknown>(channel: string, data?: unknown): Promise<T> =>
+    ipcRenderer.invoke(channel, data),
+  on: <T = unknown>(
+    channel: string,
+    handler: (event: unknown, data: T) => void
+  ) => {
+    const listener = (_event: unknown, data: T) => handler(_event, data)
+    ipcRenderer.on(channel, listener as Parameters<typeof ipcRenderer.on>[1])
+    return () => ipcRenderer.removeListener(channel, listener as Parameters<typeof ipcRenderer.on>[1])
+  },
 })

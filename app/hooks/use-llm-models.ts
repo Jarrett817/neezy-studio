@@ -85,8 +85,7 @@ export function useLlmModels() {
     [chatItems]
   )
   const isRecommendedCatalogLoading =
-    recommendedChatItems.length === 0 &&
-    (isRefreshing || localChatItems.length > 0)
+    recommendedChatItems.length === 0 && isRefreshing
 
   const syncEmbeddingSelection = useCallback(async () => {
     const settings = await getRuntimeSettings()

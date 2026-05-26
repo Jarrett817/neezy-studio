@@ -251,7 +251,7 @@ function DerivedPaths({
   const defaultNote =
     draft.dataRoot === paths.defaultDataRoot
       ? "当前为系统默认路径"
-      : "保存后生效；换目录不会自动迁移已有文件"
+      : "保存后生效；换目录不会自动迁移已有文件。Ollama 模型目录在由本应用启动 serve 时生效；若托盘 Ollama 已在运行，需退出后重启应用"
 
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
@@ -259,7 +259,7 @@ function DerivedPaths({
       <ul className="space-y-1 font-mono break-all">
         <li>数据库：{previewDb}</li>
         <li>记忆 Markdown：{previewMemories}</li>
-        <li>大模型：{previewModels}</li>
+        <li>Ollama 模型（OLLAMA_MODELS）：{previewModels}</li>
       </ul>
       <p className="mt-2">{defaultNote}</p>
     </div>

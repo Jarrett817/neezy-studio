@@ -54,6 +54,8 @@ let loadingState: LoadingState = {
 let lastUsedTime = 0
 
 const HOT_CACHE_THRESHOLD_MS = 30 * 60 * 1000
+/** 发给主进程的历史条数上限，避免长对话拖慢首 token */
+const CHAT_PRIME_MESSAGE_LIMIT = 24
 const loadingListeners = new Set<(state: LoadingState) => void>()
 
 function formatLlmLoadError(error: unknown, fileName: string): string {
@@ -64,11 +66,10 @@ function formatLlmLoadError(error: unknown, fileName: string): string {
         ? error
         : "模型加载失败"
   const nested = raw.replace(/^Error:\s*/i, "").trim()
-  if (/Failed to load model|ErrorOutOfDeviceMemory|failed to allocate/i.test(nested)) {
+  if (/Failed to load|InsufficientMemory|out of memory|显存|VRAM/i.test(nested)) {
     return [
       `无法加载 ${fileName}。`,
-      "常见原因：显存不足（独显仅 2GB 时请开启「优先低功耗」）、GGUF 未下载完整，或其它程序占用 GPU。",
-      "可在设置中开启低功耗（CPU + 较小上下文），或关闭 Ollama 等占显存程序后重试。",
+      "请确认 Ollama 已运行、模型已 pull，并尝试更小模型或释放显存。",
     ].join(" ")
   }
   return nested || "模型加载失败"
@@ -98,7 +99,7 @@ function formatPrompt(messages: ChatMessage[]): string {
     .concat("\n\nAssistant:\n")
 }
 
-/** 用 LlamaChatSession 增量对话，避免每轮重算整段 history（对齐 Ollama 式 TTFT）。 */
+/** 增量对话：仅发送新消息，历史由主进程 Ollama 会话维护。 */
 function resolveStreamInput(messages: ChatMessage[]): {
   prompt: string
   primeMessages?: ChatSyncMessage[]
@@ -108,7 +109,7 @@ function resolveStreamInput(messages: ChatMessage[]): {
     return { prompt: formatPrompt(messages) }
   }
   if (syncedMessageCount === 0) {
-    const history = messages.slice(0, -1)
+    const history = messages.slice(0, -1).slice(-CHAT_PRIME_MESSAGE_LIMIT)
     return {
       prompt: last.content,
       primeMessages:
@@ -147,7 +148,7 @@ export async function loadModel(
   if (!isElectronLlmAvailable()) return undefined
   if (currentModel === modelId) return undefined
 
-  const progress = { progress: 0, text: "Loading local GGUF model..." }
+  const progress = { progress: 0, text: "正在连接 Ollama 模型…" }
   loadingState = {
     isLoading: true,
     loadingModelId: modelId,
@@ -203,6 +204,17 @@ export function shouldKeepHot(): boolean {
   return lastUsedTime > 0 && Date.now() - lastUsedTime < HOT_CACHE_THRESHOLD_MS
 }
 
+async function ensureChatModelLoaded(): Promise<void> {
+  if (currentModel) return
+  const settings = await getRuntimeSettings()
+  if (!settings.llmModel) {
+    throw new Error(
+      "未选择 Ollama 对话模型，请先在模型页下载并启动模型。"
+    )
+  }
+  await loadModel(settings.llmModel)
+}
+
 export async function chat(
   messages: ChatMessage[],
   options?: {
@@ -211,11 +223,7 @@ export async function chat(
     onChunk?: (content: string) => void
   }
 ): Promise<string> {
-  if (!currentModel) {
-    throw new Error(
-      "No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first."
-    )
-  }
+  await ensureChatModelLoaded()
   touchLastUsed()
   const content = await chatPromptFromMain(formatPrompt(messages), {
     temperature: options?.temperature,
@@ -240,11 +248,7 @@ export async function* streamChat(
     onStream?: (update: ChatStreamUpdate) => void
   }
 ): AsyncGenerator<ChatStreamUpdate & { done: boolean }> {
-  if (!currentModel) {
-    throw new Error(
-      "No local GGUF model is loaded. Put a .gguf file in the app models folder and load it first."
-    )
-  }
+  await ensureChatModelLoaded()
   touchLastUsed()
 
   const { prompt, primeMessages } = resolveStreamInput(messages)
@@ -252,50 +256,29 @@ export async function* streamChat(
   const requestId = crypto.randomUUID()
   let thinkingAccum = ""
   let contentAccum = ""
-  const pending: ChatStreamUpdate[] = []
   let streamError: Error | null = null
-  let streamDone = false
-  let wake: (() => void) | null = null
 
-  const pushStreamUpdate = () => {
+  const applyChunk = (segment: "thought" | "answer", delta: string) => {
+    if (segment === "thought") thinkingAccum += delta
+    else contentAccum += delta
     const display = mergeStreamThinking(thinkingAccum, contentAccum)
     const update = { thinking: display.thinking, content: display.visible }
-    if (pending.length > 0) pending[0] = update
-    else pending.push(update)
-    wake?.()
+    options?.onStream?.(update)
+    options?.onChunk?.(display.visible)
+    return update
   }
 
   const unsubscribe = onChatStreamFromMain((event) => {
     if (event.requestId !== requestId) return
-    if (event.type === "start") {
-      options?.onStream?.({ thinking: thinkingAccum, content: contentAccum })
-      return
-    }
     if (event.type === "chunk" && event.delta) {
-      if (event.segment === "thought") {
-        thinkingAccum += event.delta
-      } else {
-        contentAccum += event.delta
-      }
-      const display = mergeStreamThinking(thinkingAccum, contentAccum)
-      options?.onStream?.({
-        thinking: display.thinking,
-        content: display.visible,
-      })
-      options?.onChunk?.(display.visible)
-      pushStreamUpdate()
+      applyChunk(event.segment === "thought" ? "thought" : "answer", event.delta)
     } else if (event.type === "error") {
       streamError = new Error(event.error ?? "对话流式输出失败")
-      streamDone = true
-      wake?.()
-    } else if (event.type === "done") {
-      streamDone = true
-      wake?.()
     }
   })
 
   try {
-    const invokePromise = chatPromptStreamFromMain({
+    await chatPromptStreamFromMain({
       requestId,
       input: prompt,
       primeMessages,
@@ -305,27 +288,16 @@ export async function* streamChat(
       useFunctions: options?.useFunctions,
     })
 
-    while (!streamDone || pending.length > 0) {
-      while (pending.length > 0) {
-        const update = pending.shift()!
-        yield { ...update, done: false }
-      }
-      if (streamDone) break
-      await new Promise<void>((resolve) => {
-        wake = resolve
-      })
-    }
-
-    await invokePromise
     if (streamError) throw streamError
 
     syncedMessageCount = messages.length
     const finalDisplay = mergeStreamThinking(thinkingAccum, contentAccum)
-    yield {
+    const finalUpdate = {
       thinking: finalDisplay.thinking,
       content: finalDisplay.visible,
-      done: true,
+      done: true as const,
     }
+    yield finalUpdate
   } finally {
     unsubscribe()
   }

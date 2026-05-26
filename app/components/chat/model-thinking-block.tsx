@@ -8,18 +8,25 @@ export function ModelThinkingBlock({
   modelName,
   thinking,
   isStreaming,
+  hasAnswerContent = false,
   toolCalls,
   className,
 }: {
   modelName: string
   thinking: string
   isStreaming: boolean
+  /** 正文已在流式输出（Ollama 多数模型不走 thinking 字段） */
+  hasAnswerContent?: boolean
   toolCalls?: { name: string }[]
   className?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const hasTools = Boolean(toolCalls?.length)
   const hasThinking = thinking.trim().length > 0
+
+  if (isStreaming && !hasThinking && !hasTools && hasAnswerContent) {
+    return null
+  }
 
   useEffect(() => {
     if (!isStreaming || !hasThinking) return
@@ -53,9 +60,9 @@ export function ModelThinkingBlock({
         )}
       >
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-        <span className="font-medium text-foreground">准备回复</span>
+        <span className="font-medium text-foreground">生成中</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {modelName} · 正在载入上下文
+          {modelName} · 等待 Ollama 响应
         </span>
       </div>
     )

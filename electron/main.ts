@@ -5,30 +5,19 @@ import fsSync from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { setAgentToolRuntimeContext } from "./agent-tools-runtime"
-import * as chatLlmRuntime from "./chat-llm-runtime"
-import { getLlamaGpuRuntimeInfo } from "./node-llama-runtime"
-import * as embeddingRuntime from "./embedding-runtime"
-import { downloadModelFile, tryResolveInstalledModel } from "./model-download"
-import {
-  ensureModelRegistry,
-  findModel,
-  getAllModels,
-  getKnownModelFileNames,
-  getModelsByKind,
-  invalidateModelCatalogCache,
-  setModelCatalogUpdateHandler,
-} from "./model-catalog"
-import { buildModelRecommendations } from "./model-recommendations"
-import * as modelScan from "./model-scan"
+import { setAgentToolRuntimeContext } from "./ollama/agent-tools"
+import * as ollamaCatalog from "./ollama/catalog"
+import * as ollamaChat from "./ollama/chat-runtime"
+import * as ollamaEmbed from "./ollama/embed-runtime"
+import { configureOllamaStorage } from "./ollama/env"
+import { ensureOllama } from "./ollama/lifecycle"
+import { getOllamaRuntimeMetrics, getModelCatalogItems } from "./ollama/metrics"
 import * as storagePaths from "./storage-paths"
 import { registerIpcHandlers } from "./ipc-handlers"
 import type {
   ChatLoadPayload,
   ChatLoadResult,
   ChatPromptOptions,
-  ModelDefinition,
-  ModelDownloadState,
   ModelKind,
   StoragePaths,
 } from "./types"
@@ -38,11 +27,10 @@ let devServer: ChildProcess | null = null
 let mainWindow: BrowserWindow | null = null
 let sqliteRuntimeModule: typeof import("./sqlite-runtime") | null = null
 
-type ActiveModelDownload = ModelDownloadState & {
-  cancel?: () => Promise<void>
-}
-
-const activeDownloads = new Map<string, ActiveModelDownload>()
+const activeDownloads = new Map<
+  string,
+  { progress: number; ollamaName: string }
+>()
 
 function getSqliteRuntime() {
   if (!sqliteRuntimeModule) {
@@ -63,129 +51,12 @@ function modelsDir(): string {
   return getPaths().modelsDir
 }
 
+function syncOllamaStorageEnv(): void {
+  configureOllamaStorage(modelsDir())
+}
+
 function closeAllSqliteHandles(): void {
   getSqliteRuntime().closeAll()
-}
-
-
-async function readModelsScan() {
-  return modelScan.scanModelsDir(modelsDir())
-}
-
-function modelStatusFromScan(
-  model: ModelDefinition,
-  scan: Awaited<ReturnType<typeof readModelsScan>>,
-  modelsDirPath: string
-) {
-  const filePath = modelScan.findInstalledModelFile(model, modelsDirPath, scan)
-  const download = activeDownloads.get(model.id)
-  const part = filePath ? null : modelScan.findPartForModel(model, scan)
-
-  let status = filePath ? "ready" : "available"
-  let progress: number | null = null
-  let downloadedBytes = 0
-  let totalBytes = model.sizeBytes
-
-  if (part) {
-    status = "downloading"
-    downloadedBytes = part.bytes
-    progress =
-      totalBytes > 0
-        ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
-        : null
-  }
-
-  if (download) {
-    status = download.status
-    progress = download.progress ?? progress
-    downloadedBytes = download.downloadedBytes ?? downloadedBytes
-    totalBytes = download.totalBytes ?? totalBytes
-  }
-
-  return {
-    ...model,
-    installed: Boolean(filePath),
-    path: filePath,
-    fileName: filePath ? path.basename(filePath) : (part?.fileName ?? model.fileName),
-    status,
-    progress,
-    downloadedBytes,
-    totalBytes,
-    error: download?.error,
-    cancellable: download?.cancellable,
-  }
-}
-
-async function refreshModelCatalog(): Promise<void> {
-  invalidateModelCatalogCache()
-  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
-  void ensureModelRegistry(modelsDir(), { waitForRecommended: true })
-}
-
-async function resolveModelStatus(model: ModelDefinition) {
-  const dir = modelsDir()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  const scan = await readModelsScan()
-  return modelStatusFromScan(model, scan, dir)
-}
-
-async function sendModelProgress(modelId: string) {
-  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
-  const model = findModel(modelId)
-  if (!model || !mainWindow) return
-  mainWindow.webContents.send("model-download-progress", await resolveModelStatus(model))
-}
-
-function getSqlite(dbPath: string) {
-  return getSqliteRuntime().openDatabase(dbPath)
-}
-
-async function runtimeMetrics() {
-  const totalMemoryGb = os.totalmem() / 1024 / 1024 / 1024
-  const availableMemoryGb = os.freemem() / 1024 / 1024 / 1024
-  const usedRatio = totalMemoryGb === 0 ? 0 : 1 - availableMemoryGb / totalMemoryGb
-  const pressure: import("./types").MemoryPressure =
-    usedRatio > 0.82 ? "high" : usedRatio > 0.65 ? "medium" : "low"
-
-  let gpuInfo: Awaited<ReturnType<typeof getLlamaGpuRuntimeInfo>> | null = null
-  try {
-    gpuInfo = await getLlamaGpuRuntimeInfo()
-  } catch {
-    gpuInfo = null
-  }
-
-  const base = {
-    cpuCount: os.cpus().length,
-    cpuUsagePercent: Math.round(os.loadavg()[0] * 100) / 100,
-    totalMemoryGb: Math.round(totalMemoryGb * 10) / 10,
-    availableMemoryGb: Math.round(availableMemoryGb * 10) / 10,
-    pressure,
-    gpuLabel: gpuInfo?.gpuLabel,
-    vramUsedPercent: gpuInfo?.vramUsedPercent,
-    vramSummary: gpuInfo?.vramSummary,
-    gpuInspectLines: gpuInfo?.inspectLines,
-  }
-
-  const scan = await readModelsScan()
-  const dir = modelsDir()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  const catalog = await getAllModels(dir)
-  return {
-    ...base,
-    ...buildModelRecommendations({
-      metrics: base,
-      catalog,
-      isInstalled: (model) => Boolean(modelScan.findInstalledModelFile(model, dir, scan)),
-    }),
-  }
-}
-
-async function getModelCatalog(kind?: ModelKind) {
-  const dir = modelsDir()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  const scan = await readModelsScan()
-  const models = kind ? getModelsByKind(kind) : await getAllModels(dir)
-  return models.map((model) => modelStatusFromScan(model, scan, dir))
 }
 
 function broadcastModelCatalogUpdated(): void {
@@ -193,188 +64,127 @@ function broadcastModelCatalogUpdated(): void {
   mainWindow.webContents.send("model-catalog-updated")
 }
 
-async function downloadModel(modelId: string) {
-  const dir = modelsDir()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  const model = findModel(modelId)
-  if (!model) throw new Error("Unknown model")
-  if (model.isLocalOnly) throw new Error("本机模型无需下载")
-
-  const resolvedPath = await tryResolveInstalledModel(model, dir)
-  const scan = await readModelsScan()
-  if (resolvedPath || modelScan.findInstalledModelFile(model, dir, scan)) {
-    return modelStatusFromScan(model, scan, dir)
-  }
-  if (activeDownloads.has(modelId)) {
-    return modelStatusFromScan(model, scan, dir)
-  }
-
-  await fs.mkdir(dir, { recursive: true })
-  const handle = downloadModelFile(model, dir, ({ downloadedBytes, totalBytes, progress }) => {
-    const state = activeDownloads.get(modelId)
-    if (!state) return
-    state.downloadedBytes = downloadedBytes
-    state.totalBytes = totalBytes || state.totalBytes
-    state.progress = progress
-    sendModelProgress(modelId)
-  })
-
-  activeDownloads.set(modelId, {
-    status: "downloading",
-    progress: 0,
+async function sendModelProgress(modelId: string) {
+  const entry = ollamaCatalog.findCatalogEntry(modelId)
+  if (!entry || !mainWindow) return
+  const pull = activeDownloads.get(modelId)
+  const item = ollamaCatalog.modelToCatalogItem(entry, {
+    installed: ollamaCatalog.isModelInstalled(entry.fileName),
+    status: pull
+      ? "downloading"
+      : ollamaCatalog.isModelInstalled(entry.fileName)
+        ? "ready"
+        : "available",
+    progress: pull?.progress ?? null,
     downloadedBytes: 0,
-    totalBytes: model.sizeBytes,
-    cancellable: true,
-    cancel: handle.cancel,
+    totalBytes: entry.sizeBytes,
+    cancellable: Boolean(pull),
   })
-  sendModelProgress(modelId)
+  mainWindow.webContents.send("model-download-progress", item)
+}
 
-  try {
-    await handle.promise
-    invalidateModelCatalogCache()
-    await ensureModelRegistry(dir, { waitForRecommended: false })
-    void ensureModelRegistry(dir, { waitForRecommended: true })
-    activeDownloads.delete(modelId)
-    sendModelProgress(modelId)
-    return resolveModelStatus(model)
-  } catch (error) {
-    const aborted =
-      error instanceof Error &&
-      (error.name === "AbortError" || error.message.includes("abort"))
-    activeDownloads.delete(modelId)
-    if (aborted) {
-      sendModelProgress(modelId)
-      return resolveModelStatus(model)
-    }
-    activeDownloads.set(modelId, {
-      status: "error",
-      progress: null,
-      downloadedBytes: 0,
-      totalBytes: model.sizeBytes,
-      error: error instanceof Error ? error.message : String(error),
+async function refreshModelCatalog(): Promise<void> {
+  await ollamaCatalog.refreshModelCatalog()
+  broadcastModelCatalogUpdated()
+}
+
+async function getModelCatalog(kind?: ModelKind) {
+  await ollamaCatalog.ensureModelRegistry()
+  const items = await getModelCatalogItems(kind)
+  return items.map((model) => {
+    const pull = [...activeDownloads.entries()].find(([, v]) => {
+      const e = ollamaCatalog.findCatalogEntry(model.id)
+      return e && v.ollamaName === e.fileName
     })
+    if (!pull) return model
+    const [, state] = pull
+    return {
+      ...model,
+      status: "downloading" as const,
+      progress: state.progress,
+      cancellable: true,
+    }
+  })
+}
+
+async function downloadModel(modelId: string) {
+  await ensureOllama()
+  const entry = ollamaCatalog.findCatalogEntry(modelId)
+  if (!entry) throw new Error("Unknown model")
+  if (activeDownloads.has(modelId)) {
+    return getModelCatalog(entry.kind).then((list) => list.find((m) => m.id === modelId))
+  }
+  activeDownloads.set(modelId, { progress: 0, ollamaName: entry.fileName })
+  sendModelProgress(modelId)
+  try {
+    await ollamaCatalog.pullModel(entry.fileName, (progress) => {
+      const state = activeDownloads.get(modelId)
+      if (state) state.progress = progress
+      sendModelProgress(modelId)
+    })
+    activeDownloads.delete(modelId)
+    await ollamaCatalog.refreshInstalledNames()
+    broadcastModelCatalogUpdated()
+    const items = await getModelCatalog(entry.kind)
+    return items.find((m) => m.id === modelId)
+  } catch (error) {
+    activeDownloads.delete(modelId)
     sendModelProgress(modelId)
     throw error
   }
 }
 
 async function cancelModelDownload(modelId: string) {
-  const active = activeDownloads.get(modelId)
-  if (active?.cancel) {
-    await active.cancel()
-  }
+  const entry = ollamaCatalog.findCatalogEntry(modelId)
+  if (entry) ollamaCatalog.cancelPull(entry.fileName)
   activeDownloads.delete(modelId)
-  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
-  const model = findModel(modelId)
-  if (!model) throw new Error("Unknown model")
-  return resolveModelStatus(model)
+  const items = await getModelCatalog(entry?.kind)
+  return items.find((m) => m.id === modelId)
 }
 
 async function deleteModel(modelId: string) {
-  const dir = modelsDir()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  const model = findModel(modelId)
-  if (!model) throw new Error("Unknown model")
-  for (const name of modelScan.modelFileCandidates(model)) {
-    await fs.rm(path.join(dir, name), { force: true })
-    await fs.rm(path.join(dir, `${name}.part`), { force: true })
-  }
+  const entry = ollamaCatalog.findCatalogEntry(modelId)
+  if (!entry) throw new Error("Unknown model")
+  await ensureOllama()
+  await ollamaCatalog.deleteOllamaModel(entry.fileName)
   activeDownloads.delete(modelId)
-  invalidateModelCatalogCache()
-  await ensureModelRegistry(dir, { waitForRecommended: false })
-  void ensureModelRegistry(dir, { waitForRecommended: true })
-  return resolveModelStatus(model)
+  broadcastModelCatalogUpdated()
+  const items = await getModelCatalog(entry.kind)
+  return items.find((m) => m.id === modelId)
 }
 
 async function loadEmbeddingModel(modelId: string, preferLowPower = false) {
-  await chatLlmRuntime.unloadChatModel().catch(() => {})
-  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
-  const model = findModel(modelId)
-  if (!model || model.kind !== "embedding") throw new Error("Unknown embedding model")
-  const scan = await readModelsScan()
-  const filePath = modelScan.findInstalledModelFile(model, modelsDir(), scan)
-  if (!filePath) throw new Error("请先下载 Embedding 模型")
-  return embeddingRuntime.loadEmbeddingModel(filePath, model.id, { preferLowPower })
+  await ollamaChat.unloadChatModel().catch(() => {})
+  const entry = ollamaCatalog.findCatalogEntry(modelId)
+  if (!entry || entry.kind !== "embedding") throw new Error("Unknown embedding model")
+  return ollamaEmbed.loadEmbeddingModel(entry.fileName, modelId, { preferLowPower })
 }
 
 async function loadChatModel(payload: ChatLoadPayload): Promise<ChatLoadResult> {
-  await embeddingRuntime.unloadEmbeddingModel().catch(() => {})
-  return chatLlmRuntime.loadChatModel(payload.modelPath, payload)
+  await ollamaEmbed.unloadEmbeddingModel().catch(() => {})
+  const name = payload.modelPath
+  return ollamaChat.loadChatModel(name, payload)
 }
 
-async function unloadChatModel(): Promise<void> {
-  return chatLlmRuntime.unloadChatModel()
-}
-
-function resetChatHistory(): void {
-  chatLlmRuntime.resetChatHistory()
-}
-
-async function chatPrompt(input: string, options?: ChatPromptOptions): Promise<string> {
-  return chatLlmRuntime.chatPrompt(input, options)
-}
-
-function getChatModelStatus() {
-  return chatLlmRuntime.getChatModelStatus()
-}
-
-function embedTexts(texts: string | string[]) {
-  return embeddingRuntime.embedTexts(texts)
-}
-
-function getEmbeddingStatus() {
-  return embeddingRuntime.getEmbeddingStatus()
-}
-
-async function unloadEmbeddingModel(): Promise<void> {
-  await embeddingRuntime.unloadEmbeddingModel()
-}
-
-async function getChatModelFileInfo(fileName: string) {
-  await ensureModelRegistry(modelsDir(), { waitForRecommended: false })
-  const chatModels = getModelsByKind("chat")
-  const catalogMatch = chatModels.find(
-    (m) => m.fileName === fileName || (m.aliases || []).includes(fileName)
-  )
-
-  const scan = await readModelsScan()
-  const dir = modelsDir()
-
-  if (catalogMatch && modelScan.findPartForModel(catalogMatch, scan)) {
+async function getChatModelFileInfo(modelName: string) {
+  await ensureOllama().catch(() => {})
+  const entry = ollamaCatalog.findCatalogEntryByName(modelName)
+  const name = entry?.fileName ?? modelName
+  if (!ollamaCatalog.isModelInstalled(name)) {
+    await ollamaCatalog.refreshInstalledNames()
+  }
+  if (!ollamaCatalog.isModelInstalled(name)) {
     return {
       ok: false,
-      reason: "模型仍在下载中（.part），请等待完成或删除后重新下载。",
+      reason: `模型 ${name} 未在 Ollama 中安装，请先在模型页下载。`,
     }
   }
-
-  let filePath: string | null = null
-  if (catalogMatch) {
-    filePath = modelScan.findInstalledModelFile(catalogMatch, dir, scan)
-  }
-  if (!filePath) {
-    const bytes = scan.gguf.get(fileName)
-    if (bytes != null) {
-      filePath = path.join(dir, fileName)
-    }
-  }
-  if (!filePath) {
-    return { ok: false, reason: "模型文件不存在，请先下载或检查 models 目录。" }
-  }
-
-  const stat = await fs.stat(filePath)
-  const expectedBytes = catalogMatch?.sizeBytes ?? null
-  const sizeBytes = stat.size
-  const complete =
-    expectedBytes == null || sizeBytes >= Math.floor(expectedBytes * 0.9)
-
   return {
-    ok: complete,
-    filePath,
-    sizeBytes,
-    expectedBytes,
-    reason: complete
-      ? null
-      : `模型文件不完整（约 ${Math.round(sizeBytes / 1e6)} MB / 预期 ${Math.round(expectedBytes! / 1e6)} MB），请重新下载。`,
+    ok: true,
+    filePath: name,
+    sizeBytes: entry?.sizeBytes,
+    expectedBytes: entry?.sizeBytes ?? null,
+    reason: null,
   }
 }
 
@@ -393,29 +203,31 @@ const ipcCtx = {
   getPaths,
   appDataDir,
   modelsDir,
+  syncOllamaStorageEnv,
   closeAllSqliteHandles,
-  runtimeMetrics,
-  ensureModelRegistry,
-  getKnownModelFileNames,
-  getModelsByKind,
+  runtimeMetrics: getOllamaRuntimeMetrics,
+  ensureModelRegistry: () => ollamaCatalog.ensureModelRegistry(),
+  getKnownModelFileNames: () =>
+    ollamaCatalog.getAllModelDefinitions().map((m) => m.fileName),
+  getModelsByKind: ollamaCatalog.getModelsByKind,
   getModelCatalog,
   refreshModelCatalog,
-  invalidateModelScanCache: modelScan.invalidateModelScanCache,
+  invalidateModelScanCache: () => {},
   downloadModel,
   cancelModelDownload,
   deleteModel,
   loadEmbeddingModel,
-  unloadEmbeddingModel,
+  unloadEmbeddingModel: ollamaEmbed.unloadEmbeddingModel,
   loadChatModel,
-  unloadChatModel,
-  resetChatHistory,
-  chatPrompt,
-  chatPromptStream: chatLlmRuntime.chatPromptStream,
-  getChatModelStatus,
+  unloadChatModel: ollamaChat.unloadChatModel,
+  resetChatHistory: ollamaChat.resetChatHistory,
+  chatPrompt: ollamaChat.chatPrompt,
+  chatPromptStream: ollamaChat.chatPromptStream,
+  getChatModelStatus: ollamaChat.getChatModelStatus,
   getChatModelFileInfo,
-  embedTexts,
-  getEmbeddingStatus,
-  getSqlite,
+  embedTexts: ollamaEmbed.embedTexts,
+  getEmbeddingStatus: ollamaEmbed.getEmbeddingStatus,
+  getSqlite: (dbPath: string) => getSqliteRuntime().openDatabase(dbPath),
   get sqliteRuntime() {
     return getSqliteRuntime()
   },
@@ -431,12 +243,12 @@ setAgentToolRuntimeContext({
   runExecute: (dbPath, sql, params) => {
     getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },
-  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
+  embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
 })
 
 registerIpcHandlers(ipcCtx)
 
-console.log("[main] IPC handlers registered (app:get-storage-paths, …)")
+console.log("[main] IPC handlers registered (Ollama)")
 
 async function waitForDevServer(url: string, timeoutMs = 90_000) {
   const started = Date.now()
@@ -478,7 +290,6 @@ async function createWindow() {
 
 function startDevServer() {
   if (!isDev) return
-
   devServer = spawn("bun", ["run", "dev", "--host", "127.0.0.1"], {
     cwd: path.join(__dirname, ".."),
     shell: process.platform === "win32",
@@ -488,12 +299,12 @@ function startDevServer() {
 
 app.whenReady().then(async () => {
   try {
-    setModelCatalogUpdateHandler(() => broadcastModelCatalogUpdated())
     const paths = getPaths()
     await storagePaths.ensureStorageDirs(paths)
-    void ensureModelRegistry(modelsDir(), { waitForRecommended: true }).catch((error) => {
-      console.warn("[main] model catalog warmup failed:", error)
-    })
+    syncOllamaStorageEnv()
+    console.info("[main] 正在准备 Ollama…")
+    await ensureOllama()
+    await ollamaCatalog.ensureModelRegistry()
     const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
     console.log(
       `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
@@ -523,7 +334,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   if (sqliteRuntimeModule) sqliteRuntimeModule.closeAll()
-  embeddingRuntime.unloadEmbeddingModel().catch(() => {})
-  chatLlmRuntime.unloadChatModel().catch(() => {})
+  ollamaEmbed.unloadEmbeddingModel().catch(() => {})
+  ollamaChat.unloadChatModel().catch(() => {})
   if (devServer) devServer.kill()
 })

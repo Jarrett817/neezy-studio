@@ -15,5 +15,21 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts"]
+  "include": ["electron/**/*.ts"],
+  "exclude": [
+    "electron/chat-llm-runtime.ts",
+    "electron/embedding-runtime.ts",
+    "electron/node-llama-runtime.ts",
+    "electron/model-catalog.ts",
+    "electron/model-download.ts",
+    "electron/model-scan.ts",
+    "electron/model-filename.ts",
+    "electron/model-uri.ts",
+    "electron/gpu-inspect.ts",
+    "electron/llm-insights-policy.ts",
+    "electron/llm-load-policy.ts",
+    "electron/nlc-insights-options.ts",
+    "electron/nlc-dist-loader.ts",
+    "electron/agent-tools-runtime.ts"
+  ]
 }

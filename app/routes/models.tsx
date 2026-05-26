@@ -127,7 +127,7 @@ export default function ModelsRoute() {
                   本机已下载
                 </h2>
                 <p className="px-1 text-xs text-muted-foreground">
-                  models 目录中的 GGUF；推荐表更新后仍会保留在此。
+                  已在 Ollama 中安装的模型。
                 </p>
                 <ModelTarotDeck
                   {...deckCommon}
@@ -141,7 +141,7 @@ export default function ModelsRoute() {
                 推荐模型
               </h2>
               <p className="px-1 text-xs text-muted-foreground">
-                与 node-llama-cpp CLI 同源清单，按本机 GPU/VRAM 与兼容性排序。
+                通过 Ollama 拉取；列表由应用内置推荐。
               </p>
               {isRecommendedCatalogLoading ? (
                 <div className="flex min-h-[min(44vh,420px)] flex-1 items-center justify-center gap-2 rounded-2xl border border-border/40 bg-card/25 text-sm text-muted-foreground">

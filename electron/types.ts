@@ -50,11 +50,11 @@ export type RuntimeMetricsBase = {
   totalMemoryGb: number
   availableMemoryGb: number
   pressure: MemoryPressure
-  /** node-llama-cpp llama.getVramState，与 CLI chat 标题一致 */
+  /** Ollama / 系统 GPU 摘要 */
   gpuLabel?: string
   vramUsedPercent?: number
   vramSummary?: string
-  /** 与 `node-llama-cpp inspect gpu` 一致的探测摘要行 */
+  /** Ollama 运行时探测摘要 */
   gpuInspectLines?: string[]
 }
 
@@ -85,8 +85,10 @@ export type ChatPromptOptions = {
   temperature?: number
   topK?: number
   maxTokens?: number
-  /** 使用 node-llama-cpp 原生 function calling（默认 true） */
+  /** 使用 Ollama tools（须显式 true 且模型支持） */
   useFunctions?: boolean
+  /** 开启 Ollama 原生 think（显著增加耗时，默认关） */
+  enableThinking?: boolean
 }
 
 export type ChatStreamSegment = "thought" | "answer"
@@ -161,12 +163,10 @@ export interface IpcContext {
   getPaths: () => StoragePaths
   appDataDir: () => string
   modelsDir: () => string
+  syncOllamaStorageEnv: () => void
   closeAllSqliteHandles: () => void
   runtimeMetrics: () => Promise<Record<string, unknown>>
-  ensureModelRegistry: (
-    modelsDir: string,
-    options?: { waitForRecommended?: boolean }
-  ) => Promise<void>
+  ensureModelRegistry: (modelsDir?: string) => Promise<void>
   getKnownModelFileNames: () => string[]
   getModelsByKind: (kind: ModelKind) => ModelDefinition[]
   getModelCatalog: (kind?: ModelKind) => Promise<Record<string, unknown>[]>

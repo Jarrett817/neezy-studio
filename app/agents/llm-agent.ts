@@ -1,4 +1,4 @@
-// Local LLM Agent — node-llama-cpp function calling（主进程）
+// Local LLM Agent — Ollama tools（主进程）
 
 import {
   streamChat,
@@ -67,7 +67,7 @@ export async function runAgent(
   for await (const chunk of streamChat(chatMessages, {
     temperature,
     maxTokens,
-    useFunctions: true,
+    useFunctions: false,
     onStream: (update) => {
       lastContent = update.content
       lastThinking = update.thinking
@@ -77,8 +77,10 @@ export async function runAgent(
       options.onChunk?.(update.content)
     },
   })) {
-    lastContent = chunk.content
-    lastThinking = chunk.thinking
+    if (chunk.done) {
+      lastContent = chunk.content
+      lastThinking = chunk.thinking
+    }
   }
 
   return {

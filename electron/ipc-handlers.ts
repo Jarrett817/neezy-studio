@@ -1,8 +1,8 @@
 import {
-  chatPromptStream,
   messagesToChatHistory,
   primeChatHistory,
-} from "./chat-llm-runtime"
+  runChatPromptStream,
+} from "./ollama/chat-runtime"
 import type { IpcContext } from "./types"
 
 function vecErrorCode(error: unknown): string | undefined {
@@ -27,12 +27,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     ctx.closeAllSqliteHandles()
     storagePaths.invalidateStoragePathsCache()
     ctx.invalidateModelScanCache?.()
-    return storagePaths.saveStoragePaths(app, input)
+    const paths = storagePaths.saveStoragePaths(app, input)
+    ctx.syncOllamaStorageEnv()
+    return paths
   })
   ipcMain.handle("app:reset-storage-paths", async () => {
     ctx.closeAllSqliteHandles()
     ctx.invalidateModelScanCache?.()
-    return storagePaths.resetStoragePaths(app)
+    const paths = storagePaths.resetStoragePaths(app)
+    ctx.syncOllamaStorageEnv()
+    return paths
   })
   ipcMain.handle("app:pick-directory", async (_event, options: { title?: string; defaultPath?: string } = {}) => {
     const result = await dialog.showOpenDialog(ctx.mainWindow ?? (undefined as never), {
@@ -79,17 +83,14 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   )
   ipcMain.handle("app:rebuild-model-catalog", () => ctx.refreshModelCatalog())
   ipcMain.handle("app:list-llm-models", async () => {
-    await ctx.fs.mkdir(ctx.modelsDir(), { recursive: true })
-    await ctx.ensureModelRegistry(ctx.modelsDir(), { waitForRecommended: false })
-    const entries = await ctx.fs.readdir(ctx.modelsDir(), { withFileTypes: true })
-    const catalogFiles = new Set(ctx.getKnownModelFileNames())
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"))
-      .map((entry) => ({
-        id: entry.name,
-        name: entry.name.replace(/\.gguf$/i, ""),
-        path: ctx.path.join(ctx.modelsDir(), entry.name),
-        managed: catalogFiles.has(entry.name),
+    const catalog = await ctx.getModelCatalog("chat")
+    return catalog
+      .filter((m) => m.installed)
+      .map((m) => ({
+        id: m.fileName,
+        name: m.title,
+        path: m.fileName,
+        managed: true,
       }))
   })
   ipcMain.handle("app:download-model", async (_event, modelId: string) => ctx.downloadModel(modelId))
@@ -134,20 +135,19 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         primeChatHistory(messagesToChatHistory(primeMessages))
       }
 
-      for await (const { segment, delta } of chatPromptStream(input, {
-        temperature,
-        topK,
-        maxTokens,
-        useFunctions,
-      })) {
-        if (!delta) continue
-        event.sender.send("app:chat-stream", {
-          requestId,
-          type: "chunk",
-          segment,
-          delta,
-        })
-      }
+      await runChatPromptStream(
+        input,
+        { temperature, topK, maxTokens, useFunctions },
+        ({ segment, delta }) => {
+          if (!delta) return
+          event.sender.send("app:chat-stream", {
+            requestId,
+            type: "chunk",
+            segment,
+            delta,
+          })
+        }
+      )
       event.sender.send("app:chat-stream", { requestId, type: "done", content: "" })
     } catch (error) {
       event.sender.send("app:chat-stream", {

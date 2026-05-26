@@ -23,7 +23,8 @@ import { PageTransition } from "~/components/animation-effects"
 import { MarkdownContent } from "~/components/markdown-content"
 import { listSkills } from "~/services/workspace"
 import { runAgent, type AgentMessage } from "~/agents/llm-agent"
-import { getCurrentModel, resetChat } from "~/services/llm"
+import { getCurrentModel, isModelLoaded, loadModel, resetChat } from "~/services/llm"
+import { getRuntimeSettings } from "~/services/settings"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
 import { addConversationSlice } from "~/services/storage/memory-vectors"
 import { rememberConversationTurn } from "~/services/memory-profile"
@@ -156,7 +157,18 @@ export default function ChatRoute() {
       }))
     const modelFile = getCurrentModel()
     try {
-      const portraitContext = await getPortraitContextForPrompt()
+      const settings = await getRuntimeSettings()
+      const modelToLoad = modelFile ?? settings.llmModel
+      let portraitContext = ""
+      await Promise.all([
+        modelToLoad && !isModelLoaded()
+          ? loadModel(modelToLoad)
+          : Promise.resolve(),
+        getPortraitContextForPrompt().then((ctx) => {
+          portraitContext = ctx
+        }),
+      ])
+
       const userForAgent = appendModelReplyHints(
         portraitContext ? `${userContent}\n${portraitContext}` : userContent,
         modelFile
@@ -428,11 +440,13 @@ function MessageBubble({
 }) {
   const isUser = message.role === "user"
   const isError = message.role === "error"
+  const hasAnswer = Boolean(message.content?.trim())
+  const hasThinkingText = Boolean(message.thinking?.trim())
   const showThinking =
     message.role === "assistant" &&
-    (Boolean(message.isStreaming) ||
-      Boolean(message.thinking?.trim()) ||
-      Boolean(message.toolCalls?.length))
+    (hasThinkingText ||
+      Boolean(message.toolCalls?.length) ||
+      (Boolean(message.isStreaming) && !hasAnswer))
 
   return (
     <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -466,15 +480,21 @@ function MessageBubble({
             {showThinking && (
               <ModelThinkingBlock
                 modelName={modelName}
-                thinking={message.thinking}
+                thinking={message.thinking ?? ""}
                 isStreaming={Boolean(message.isStreaming)}
+                hasAnswerContent={hasAnswer}
                 toolCalls={message.toolCalls}
               />
             )}
 
-            {message.content ? (
+            {hasAnswer ? (
               <div className="rounded-2xl rounded-tl-md bg-card/80 px-4 py-3.5 text-sm leading-relaxed shadow-sm backdrop-blur-sm">
                 <MarkdownContent content={message.content} />
+              </div>
+            ) : message.isStreaming && !showThinking ? (
+              <div className="flex items-center gap-2 rounded-2xl rounded-tl-md bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+                <Loader2 className="size-4 shrink-0 animate-spin" />
+                <span>正在生成…</span>
               </div>
             ) : null}
           </div>

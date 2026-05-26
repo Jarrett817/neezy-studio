@@ -1,9 +1,6 @@
 import type { ModelDefinition, ModelKind, ModelTier } from "../types"
 import { EMBEDDING_DIM } from "../types"
 
-const CLOUD_TAGS_URL = "https://ollama.com/api/tags"
-const FETCH_TIMEOUT_MS = 25_000
-const MAX_RECOMMENDED_BYTES = 35 * 1024 ** 3
 
 const TIER_LABELS: Record<ModelTier, string> = {
   light: "轻量",
@@ -26,10 +23,11 @@ const CURATED_MODELS: { name: string; kind: ModelKind }[] = [
   { name: "qwen3-embedding", kind: "embedding" },
 ]
 
-type CloudTagModel = {
-  name: string
-  size?: number
-  details?: { parameter_size?: string }
+const MAX_RECOMMENDED_BYTES = 35 * 1024 ** 3
+
+function withinRecommendedSize(sizeBytes: number, kind: ModelKind): boolean {
+  if (kind === "embedding") return true
+  return sizeBytes > 0 && sizeBytes <= MAX_RECOMMENDED_BYTES
 }
 
 function slugifyId(name: string): string {
@@ -142,27 +140,6 @@ export function definitionFromOllamaName(
   }
 }
 
-async function fetchCloudFeatured(): Promise<CloudTagModel[]> {
-  const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
-  try {
-    const res = await fetch(CLOUD_TAGS_URL, {
-      signal: ac.signal,
-      headers: { "User-Agent": "NeezyStudio/1.0" },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = (await res.json()) as { models?: CloudTagModel[] }
-    return data.models ?? []
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-function withinRecommendedSize(sizeBytes: number, kind: ModelKind): boolean {
-  if (kind === "embedding") return true
-  return sizeBytes > 0 && sizeBytes <= MAX_RECOMMENDED_BYTES
-}
-
 export async function buildRecommendedCatalog(): Promise<ModelDefinition[]> {
   const byName = new Map<string, ModelDefinition>()
 
@@ -173,22 +150,6 @@ export async function buildRecommendedCatalog(): Promise<ModelDefinition[]> {
 
   for (const { name, kind } of CURATED_MODELS) {
     add(definitionFromOllamaName(name, { kind }))
-  }
-
-  try {
-    const featured = await fetchCloudFeatured()
-    for (const m of featured) {
-      const kind = inferModelKind(m.name)
-      add(
-        definitionFromOllamaName(m.name, {
-          kind,
-          sizeBytes: m.size,
-          parameterSize: m.details?.parameter_size,
-        })
-      )
-    }
-  } catch (error) {
-    console.warn("[ollama/library] ollama.com featured tags failed:", error)
   }
 
   return [...byName.values()].sort((a, b) => a.sizeBytes - b.sizeBytes)

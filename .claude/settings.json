@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun run *)",
+      "Bash(mkdir -p \"d:/Projects/neezy-studio/docs/superpowers/specs\")",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Read(//c/Users/Jarrett/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/subagent-driven-development/**)",
+      "Bash(bun add *)"
+    ],
+    "additionalDirectories": [
+      "d:\\Projects\\neezy-studio\\docs\\superpowers"
+    ]
+  }
+}

@@ -18,6 +18,8 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.75.5",
+    "@earendil-works/pi-ai": "^0.75.5",
     "@fontsource-variable/geist": "^5.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@react-router/node": "7.15.1",

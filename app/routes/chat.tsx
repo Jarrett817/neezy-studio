@@ -38,6 +38,7 @@ import {
   mergeStreamThinking,
   parseModelThinking,
 } from "~/lib/agent-steps"
+import { createAgentSession, promptAgent, destroyAgentSession, subscribeAgentEvents } from "~/services/pi-agent-client"
 import { cn } from "~/lib/utils"
 
 const SYSTEM_PROMPT =
@@ -53,6 +54,10 @@ export default function ChatRoute() {
     content: string
   } | null>(null)
   const [isReadingFile, setIsReadingFile] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [streamedContent, setStreamedContent] = useState("")
+  const streamedContentRef = useRef("")
+  const [toolCallName, setToolCallName] = useState<string | null>(null)
   const activeAssistantId = useRef<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -106,6 +111,62 @@ export default function ChatRoute() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  // 创建 Agent 会话
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const sid = await createAgentSession()
+      if (cancelled) {
+        await destroyAgentSession(sid)
+        return
+      }
+      setSessionId(sid)
+    })()
+    return () => {
+      cancelled = true
+      if (sessionId) {
+        destroyAgentSession(sessionId).catch(console.error)
+      }
+    }
+  }, [])
+
+  // 订阅 Agent 事件
+  useEffect(() => {
+    if (!sessionId) return
+    return subscribeAgentEvents((payload) => {
+      if (payload.sessionId !== sessionId) return
+      const event = payload.event as any
+      if (event.type === "message_update") {
+        const delta = event.assistantMessageEvent?.delta
+        if (delta) {
+          streamedContentRef.current += delta
+          setStreamedContent(streamedContentRef.current)
+        }
+      }
+      if (event.type === "tool_execution_start") {
+        setToolCallName(event.toolName)
+      }
+      if (event.type === "tool_execution_end") {
+        setToolCallName(null)
+      }
+      if (event.type === "message_end") {
+        const content = streamedContentRef.current
+        if (content.trim()) {
+          addMessage({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: content,
+            thinking: "",
+            isStreaming: false,
+            toolCalls: [],
+          })
+        }
+        streamedContentRef.current = ""
+        setStreamedContent("")
+      }
+    })
+  }, [sessionId, addMessage])
+
   const patchAssistant = useCallback(
     (id: string, patch: Partial<ChatMessage>) => {
       updateMessage(id, patch)
@@ -118,6 +179,31 @@ export default function ChatRoute() {
     const hasText = text.length > 0
     const hasFile = attachedFile !== null
     if ((!hasText && !hasFile) || isGenerating) return
+    if (sessionId) {
+      // pi-agent 模式
+      const userId = crypto.randomUUID()
+      addMessage({
+        id: userId,
+        role: "user",
+        content: hasText ? text : `[文件] ${attachedFile?.name}`,
+        thinking: "",
+      })
+      setInput("")
+      setIsGenerating(true)
+      setAttachedFile(null)
+      try {
+        await promptAgent(sessionId, hasText ? text : `[文件] ${attachedFile?.name}`)
+      } catch (error) {
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "error",
+          content: error instanceof Error ? error.message : "生成失败",
+          thinking: "",
+        })
+      }
+      setIsGenerating(false)
+      return
+    }
 
     const userId = crypto.randomUUID()
     const assistantId = crypto.randomUUID()

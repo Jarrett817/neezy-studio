@@ -6,6 +6,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { setAgentToolRuntimeContext } from "./ollama/agent-tools"
+import { initToolContext } from "./pi-tool-registry"
 import * as ollamaCatalog from "./ollama/catalog"
 import * as ollamaChat from "./ollama/chat-runtime"
 import * as ollamaEmbed from "./ollama/embed-runtime"
@@ -240,6 +241,16 @@ setAgentToolRuntimeContext({
       string,
       unknown
     >[],
+  runExecute: (dbPath, sql, params) => {
+    getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
+  },
+  embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
+})
+
+initToolContext({
+  getPaths,
+  runSelect: (dbPath, sql, params) =>
+    getSqliteRuntime().selectStatement(dbPath, sql, params ?? []) as Record<string, unknown>[],
   runExecute: (dbPath, sql, params) => {
     getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },

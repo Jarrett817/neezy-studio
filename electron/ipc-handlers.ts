@@ -3,6 +3,8 @@ import {
   primeChatHistory,
   runChatPromptStream,
 } from "./ollama/chat-runtime"
+import { createAgentSession, promptAgent, destroyAgentSession, agentSessionExists } from "./pi-agent"
+import { BrowserWindow } from "electron"
 import type { IpcContext } from "./types"
 
 function vecErrorCode(error: unknown): string | undefined {
@@ -316,5 +318,25 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       }
       throw error
     }
+  })
+
+  // agent:create - 创建新 Agent 会话
+  ipcMain.handle("agent:create", async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) throw new Error("no window")
+    return createAgentSession(window)
+  })
+
+  // agent:prompt - 发送消息给 Agent
+  ipcMain.handle("agent:prompt", async (_event, { sessionId, message }: { sessionId: string; message: string }) => {
+    if (!agentSessionExists(sessionId)) throw new Error("session not found")
+    await promptAgent(sessionId, message)
+    return { ok: true }
+  })
+
+  // agent:destroy - 销毁 Agent 会话
+  ipcMain.handle("agent:destroy", async (_event, { sessionId }: { sessionId: string }) => {
+    await destroyAgentSession(sessionId)
+    return { ok: true }
   })
 }

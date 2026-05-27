@@ -15,7 +15,12 @@
       "Bash(./node_modules/.bin/electron --version)",
       "Bash(timeout 10 ./node_modules/.bin/electron ./dist-electron/main.js --dev)",
       "Bash(cd \"d:/Projects/neezy-studio\" && mv src/renderer/app/app/* src/renderer/app/ && rmdir src/renderer/app/app)",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(npx tsc *)",
+      "Bash(bun tsc *)",
+      "Bash(node -e \"require\\('typescript'\\).createProgram\\(['src/main/pi-agent.ts'], {target: 1, lib: ['ES2022'], module: 1, moduleResolution: 1, esModuleInterop: true, skipLibCheck: true, resolveJsonModule: true, noEmit: true, types: ['node']}\\).getSemanticDiagnostics\\(\\)\")",
+      "Bash(bun x *)",
+      "Bash(node --input-type=module -e ' *)"
     ],
     "additionalDirectories": [
       "d:\\Projects\\neezy-studio\\docs\\superpowers",

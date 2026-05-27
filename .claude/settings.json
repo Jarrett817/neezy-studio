@@ -20,7 +20,11 @@
       "Bash(bun tsc *)",
       "Bash(node -e \"require\\('typescript'\\).createProgram\\(['src/main/pi-agent.ts'], {target: 1, lib: ['ES2022'], module: 1, moduleResolution: 1, esModuleInterop: true, skipLibCheck: true, resolveJsonModule: true, noEmit: true, types: ['node']}\\).getSemanticDiagnostics\\(\\)\")",
       "Bash(bun x *)",
-      "Bash(node --input-type=module -e ' *)"
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(node_modules/.bin/tsc -p tsconfig.electron.json --noEmit)",
+      "Bash(node -e \"require\\('./src/main/pi-tool-registry.ts'\\)\")",
+      "Bash(./node_modules/.bin/tsc --noEmit --project tsconfig.json)",
+      "Bash(git ls-tree *)"
     ],
     "additionalDirectories": [
       "d:\\Projects\\neezy-studio\\docs\\superpowers",

@@ -1,9 +1,16 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core"
-import type { AgentToolRuntimeContext } from "./agent-tools-runtime"
 import fs from "node:fs/promises"
 import path from "node:path"
 
-export type { AgentToolRuntimeContext }
+export interface AgentToolRuntimeContext {
+  getPaths: () => {
+    databaseFile: string
+    memoriesDir: string
+  }
+  runSelect: (dbPath: string, sql: string, params?: unknown[]) => unknown[]
+  runExecute: (dbPath: string, sql: string, params?: unknown[]) => void
+  embedTexts: (text: string) => Promise<number[]>
+}
 
 let toolCtx: AgentToolRuntimeContext | null = null
 

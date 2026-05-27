@@ -247,16 +247,6 @@ setAgentToolRuntimeContext({
   embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
 })
 
-initToolContext({
-  getPaths,
-  runSelect: (dbPath, sql, params) =>
-    getSqliteRuntime().selectStatement(dbPath, sql, params ?? []) as Record<string, unknown>[],
-  runExecute: (dbPath, sql, params) => {
-    getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
-  },
-  embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
-})
-
 registerIpcHandlers(ipcCtx)
 
 console.log("[main] IPC handlers registered (Ollama)")

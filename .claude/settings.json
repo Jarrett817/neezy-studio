@@ -6,10 +6,20 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Read(//c/Users/Jarrett/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/subagent-driven-development/**)",
-      "Bash(bun add *)"
+      "Bash(bun add *)",
+      "Bash(pkill -f \"nodemon\")",
+      "Bash(pkill -f \"electron\")",
+      "Bash(pkill -f \"tsc\")",
+      "Bash(rm -rf dist-electron)",
+      "Bash(node -e ' *)",
+      "Bash(./node_modules/.bin/electron --version)",
+      "Bash(timeout 10 ./node_modules/.bin/electron ./dist-electron/main.js --dev)",
+      "Bash(cd \"d:/Projects/neezy-studio\" && mv src/renderer/app/app/* src/renderer/app/ && rmdir src/renderer/app/app)",
+      "Bash(git reset *)"
     ],
     "additionalDirectories": [
-      "d:\\Projects\\neezy-studio\\docs\\superpowers"
+      "d:\\Projects\\neezy-studio\\docs\\superpowers",
+      "d:\\Projects\\neezy-studio\\src\\renderer\\app\\app"
     ]
   }
 }

@@ -5,6 +5,11 @@ import path from "path"
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        "~": path.resolve(__dirname, "src/renderer/app"),
+      },
+    },
     build: {
       outDir: "dist-electron",
       rollupOptions: {
@@ -25,5 +30,11 @@ export default defineConfig({
       },
     },
   },
-  renderer: {},
+  renderer: {
+    resolve: {
+      alias: {
+        "~": path.resolve(__dirname, "src/renderer/app"),
+      },
+    },
+  },
 })

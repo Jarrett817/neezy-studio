@@ -46,7 +46,7 @@ export function ModelRecommendationBanner({
   metrics: RuntimeMetrics
 }) {
   return (
-    <p className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-2.5 text-sm text-muted-foreground">
+    <p className="rounded-xl border border-border/60 bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
       <span className="font-medium text-foreground">推荐</span>
       {" · "}
       {metrics.recommendedReason}
@@ -83,7 +83,7 @@ export function ModelOraclePanel({
 }) {
   if (!item) {
     return (
-      <div className="flex h-full min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/40 p-6 text-center">
+      <div className="flex h-full min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card p-6 shadow-sm text-center">
         <Sparkles className="mb-2 size-8 text-primary/40" />
         <p className="text-sm text-muted-foreground">暂无该类型的模型</p>
       </div>
@@ -94,7 +94,7 @@ export function ModelOraclePanel({
   const progress = item.progress ?? 0
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card/60 p-5 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.35)] backdrop-blur-md">
+    <div className="flex h-full flex-col rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-2">
         <Button
           type="button"
@@ -124,7 +124,7 @@ export function ModelOraclePanel({
       <div className="flex flex-1 flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-display text-xl font-semibold tracking-tight">
+            <h2 className="text-xl font-semibold tracking-tight">
               {item.title}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">

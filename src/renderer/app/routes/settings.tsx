@@ -47,10 +47,21 @@ export default function SettingsRoute() {
   }, [runtimeSettings])
 
   const saveRuntimeMutation = useMutation({
-    mutationFn: saveRuntimeSettings,
+    mutationFn: async (draft: RuntimeSettings) => {
+      const latest = await getRuntimeSettings()
+      return saveRuntimeSettings({
+        ...latest,
+        preferLowPower: draft.preferLowPower,
+        maxCpuPercent: draft.maxCpuPercent,
+      })
+    },
     onSuccess: (nextSettings) => {
       queryClient.setQueryData(["runtime-settings"], nextSettings)
       setRuntimeDraft(nextSettings)
+      toast.success("已保存运行时设置")
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "保存失败")
     },
   })
 
@@ -65,13 +76,15 @@ export default function SettingsRoute() {
         setRuntimeDraft={setRuntimeDraft}
         onSave={saveRuntimeMutation}
       />
-      <section className="rounded-2xl border border-border/50 bg-card/50 p-5 backdrop-blur-sm">
-        <h2 className="font-display text-lg font-semibold">本地模型</h2>
+      <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <h2 className="text-lg font-semibold">本地模型</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          模型下载与选择已移至独立页面，含塔罗式 3D 选牌体验。
+          {runtimeSettings?.llmProvider.kind === "ollama"
+            ? "下载、启动对话与 Embedding 模型。"
+            : "记忆检索用的 Embedding 与可选 Ollama 模型，均在应用内管理。"}
         </p>
-        <Button asChild className="mt-4 rounded-xl" variant="default">
-          <Link to="/models">打开模型</Link>
+        <Button asChild className="mt-4 h-11 rounded-2xl" variant="outline">
+          <Link to="/models">打开本地模型</Link>
         </Button>
       </section>
     </div>
@@ -136,7 +149,7 @@ function StoragePathsSection() {
       <section>
         <div className="mb-4 flex items-center gap-2">
           <HardDrive className="size-5 text-primary" />
-          <h2 className="font-display text-2xl font-semibold tracking-tight">
+          <h2 className="text-2xl font-semibold tracking-tight">
             存储位置
           </h2>
         </div>
@@ -149,12 +162,12 @@ function StoragePathsSection() {
     <section>
       <div className="mb-4 flex items-center gap-2">
         <HardDrive className="size-5 text-primary" />
-        <h2 className="font-display text-2xl font-semibold tracking-tight">
+        <h2 className="text-2xl font-semibold tracking-tight">
           存储位置
         </h2>
       </div>
 
-      <div className="space-y-4 rounded-2xl bg-card/60 p-4">
+      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
         <PathField
           id="dataRoot"
           label="存储目录"
@@ -292,13 +305,13 @@ function RuntimeSection({
     <section>
       <div className="mb-4 flex items-center gap-2">
         <Settings2 className="size-5 text-primary" />
-        <h2 className="font-display text-2xl font-semibold tracking-tight">
+        <h2 className="text-2xl font-semibold tracking-tight">
           运行时
         </h2>
       </div>
 
       {metrics && (
-        <div className="mb-4 flex flex-wrap gap-4 rounded-2xl bg-card/60 p-4">
+        <div className="mb-4 flex flex-wrap gap-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
           <div className="flex items-center gap-2">
             <span className="text-sm">CPU: {metrics.cpuCount} 核</span>
           </div>
@@ -342,7 +355,19 @@ function RuntimeSection({
       )}
 
       {runtimeDraft && (
-        <form className="space-y-4 rounded-2xl bg-card/60 p-4">
+        <form className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 rounded-xl border border-border/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">AI 连接</p>
+              <p className="text-xs text-muted-foreground">
+                Coding Plan、API Key 与 Ollama 地址请在专用页面配置。
+              </p>
+            </div>
+            <Button asChild variant="outline" className="shrink-0 rounded-xl">
+              <Link to="/connect">前往 AI 连接</Link>
+            </Button>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="maxCpuPercent">最大 CPU 使用率</Label>

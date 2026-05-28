@@ -1,0 +1,42 @@
+{
+  "id": "tech-doc",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "docType",
+      "label": "文档类型",
+      "type": "enum",
+      "options": ["API 文档", "PRD", "README", "架构说明"],
+      "default": "PRD",
+      "chip": true
+    },
+    {
+      "key": "subject",
+      "label": "主题 / 模块名",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "requirements",
+      "label": "需求与范围",
+      "type": "textarea",
+      "required": true
+    },
+    {
+      "key": "audience",
+      "label": "读者",
+      "type": "enum",
+      "options": ["开发", "产品", "测试", "全员"],
+      "default": "开发",
+      "chip": true
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：撰写一份「{{docType}}」，主题：{{subject}}。\n读者：{{audience}}。\n\n需求与范围：\n{{requirements}}\n\n账号/团队背景（人设）：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请输出 JSON 数组（仅 1 项），每项字段：title（文档标题）、body（完整 Markdown 正文，含目录与各章节）、tags（字符串数组，如文档类型关键词）。不要输出其它文字。"
+}

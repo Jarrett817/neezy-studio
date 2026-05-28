@@ -12,3 +12,4 @@
 .playwright-mcp
 /src-tauri/resources/**
 /src-tauri/target/**
+/out

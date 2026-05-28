@@ -112,6 +112,20 @@ export type ChatSyncMessage = {
   content: string
 }
 
+export type OllamaStatus = {
+  connected: boolean
+  host: string
+  version: string | null
+  runningModels: { name: string; size: number; sizeVram?: number }[]
+}
+
+export type OllamaModelTestResult = {
+  ok: boolean
+  latencyMs: number
+  preview?: string
+  error?: string
+}
+
 export type StoragePaths = {
   dataRoot: string
   modelsDir: string
@@ -119,6 +133,8 @@ export type StoragePaths = {
   memoriesDir: string
   personasDir: string
   skillsDir: string
+  playbooksDir: string
+  inputProfilesDir: string
   configFile: string
   defaultDataRoot: string
   defaultModelsDir: string
@@ -132,6 +148,8 @@ type ElectronApi = {
     handler: (event: unknown, data: T) => void
   ) => () => void
   getBuildInfo: () => Promise<BuildInfo>
+  configureOllamaHost: (host: string) => Promise<void>
+  syncRuntimeSettings: (settings: Record<string, unknown>) => Promise<void>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
   rebuildModelCatalog: () => Promise<void>
@@ -146,6 +164,16 @@ type ElectronApi = {
   resetChatHistory: () => Promise<void>
   primeChatHistory: (messages: ChatSyncMessage[]) => Promise<void>
   getChatModelStatus: () => Promise<{ loaded: boolean; modelPath: string | null }>
+  testLlmConnection: () => Promise<{
+    ok: boolean
+    latencyMs: number
+    error?: string
+  }>
+  getOllamaStatus: () => Promise<OllamaStatus>
+  testOllamaModel: (
+    modelName: string,
+    kind?: ModelKind
+  ) => Promise<OllamaModelTestResult>
   chatPrompt: (
     input: string,
     options?: ChatPromptOptions
@@ -272,6 +300,53 @@ export function getElectronApi(): ElectronApi {
 
 export async function getBuildInfo(): Promise<BuildInfo> {
   return buildInfoSchema.parse(await getElectronApi().getBuildInfo())
+}
+
+export async function configureOllamaHost(host: string): Promise<void> {
+  const api = getElectronApi()
+  if (api.configureOllamaHost) {
+    await api.configureOllamaHost(host)
+    return
+  }
+  await api.invoke("app:configure-ollama-host", host)
+}
+
+export async function syncRuntimeSettingsToMain(
+  settings: Record<string, unknown>
+): Promise<void> {
+  const api = getElectronApi()
+  if (api.syncRuntimeSettings) {
+    await api.syncRuntimeSettings(settings)
+    return
+  }
+  await api.invoke("app:sync-runtime-settings", settings)
+}
+
+export async function testLlmConnection(): Promise<{
+  ok: boolean
+  latencyMs: number
+  error?: string
+}> {
+  const api = getElectronApi()
+  if (api.testLlmConnection) {
+    return api.testLlmConnection()
+  }
+  return getElectronApi().invoke("app:test-llm-connection")
+}
+
+export async function getOllamaStatus(): Promise<OllamaStatus> {
+  const api = getElectronApi()
+  if (api.getOllamaStatus) return api.getOllamaStatus()
+  return api.invoke("app:get-ollama-status")
+}
+
+export async function testOllamaModel(
+  modelName: string,
+  kind?: ModelKind
+): Promise<OllamaModelTestResult> {
+  const api = getElectronApi()
+  if (api.testOllamaModel) return api.testOllamaModel(modelName, kind)
+  return api.invoke("app:test-ollama-model", { modelName, kind })
 }
 
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {

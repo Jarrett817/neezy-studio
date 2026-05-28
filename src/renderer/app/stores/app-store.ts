@@ -1,5 +1,4 @@
 import { create } from "zustand"
-import { persist } from "zustand/middleware"
 
 import type { AgentStep } from "~/lib/agent-steps"
 
@@ -15,37 +14,28 @@ export type ChatMessage = {
 }
 
 type AppStoreState = {
-  // 对话历史（跨页面保活）
   conversationHistory: ChatMessage[]
   addMessage: (msg: Omit<ChatMessage, "timestamp">) => void
   updateMessage: (id: string, updates: Partial<ChatMessage>) => void
+  setConversationHistory: (messages: ChatMessage[]) => void
   clearConversation: () => void
 }
 
-export const useAppStore = create<AppStoreState>()(
-  persist(
-    (set) => ({
-      conversationHistory: [],
-      addMessage: (msg) =>
-        set((state) => ({
-          conversationHistory: [
-            ...state.conversationHistory,
-            { ...msg, timestamp: Date.now() },
-          ],
-        })),
-      updateMessage: (id, updates) =>
-        set((state) => ({
-          conversationHistory: state.conversationHistory.map((m) =>
-            m.id === id ? { ...m, ...updates } : m
-          ),
-        })),
-      clearConversation: () => set({ conversationHistory: [] }),
-    }),
-    {
-      name: "neezy-app-store",
-      partialize: (state) => ({
-        conversationHistory: state.conversationHistory,
-      }),
-    }
-  )
-)
+export const useAppStore = create<AppStoreState>()((set) => ({
+  conversationHistory: [],
+  addMessage: (msg) =>
+    set((state) => ({
+      conversationHistory: [
+        ...state.conversationHistory,
+        { ...msg, timestamp: Date.now() },
+      ],
+    })),
+  updateMessage: (id, updates) =>
+    set((state) => ({
+      conversationHistory: state.conversationHistory.map((m) =>
+        m.id === id ? { ...m, ...updates } : m
+      ),
+    })),
+  setConversationHistory: (messages) => set({ conversationHistory: messages }),
+  clearConversation: () => set({ conversationHistory: [] }),
+}))

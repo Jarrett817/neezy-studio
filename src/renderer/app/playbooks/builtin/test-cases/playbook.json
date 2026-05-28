@@ -1,0 +1,23 @@
+{
+  "id": "test-cases",
+  "version": 1,
+  "name": "测试用例生成",
+  "description": "根据功能描述生成功能 / 接口 / E2E 测试用例清单",
+  "icon": "flask-conical",
+  "builtin": true,
+  "inputProfileId": "test-cases",
+  "memoryScope": {
+    "categories": ["记忆", "knowledge", "qa"],
+    "topK": 5,
+    "allowExpandSearch": true
+  },
+  "skillIds": ["test-cases"],
+  "defaultSkillId": "test-cases",
+  "steps": ["retrieve", "skill", "llm", "parse:output"],
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array" }
+    }
+  }
+}

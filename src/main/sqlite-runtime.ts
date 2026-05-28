@@ -1,6 +1,6 @@
 import fsSync from "node:fs"
 import path from "node:path"
-import sqliteVec from "sqlite-vec"
+import * as sqliteVec from "sqlite-vec"
 
 import * as vectorFallback from "./vector-fallback"
 

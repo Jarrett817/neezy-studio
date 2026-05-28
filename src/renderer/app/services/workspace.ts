@@ -172,7 +172,23 @@ export async function searchMemories(
 // ==================== Skills (stubbed) ====================
 
 export async function listSkills(): Promise<AgentSkill[]> {
-  return []
+  const { listSkills: listStoredSkills } = await import("~/services/storage/skills")
+  const rows = await listStoredSkills()
+  return rows.map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    description: skill.description.trim(),
+    slug: skill.id,
+    sourceKind: "local",
+    instructions: skill.instructions.trim(),
+    prompt: skill.prompt.trim(),
+    enabled: skill.enabled,
+    fileCount: 1,
+    hasScripts: false,
+    hasReferences: false,
+    hasAssets: false,
+    updatedAt: String(skill.updated_at),
+  }))
 }
 
 export async function saveSkill(skill: AgentSkill): Promise<AgentSkill> {

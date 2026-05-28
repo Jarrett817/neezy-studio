@@ -1,20 +1,30 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron"
-import { spawn, type ChildProcess } from "node:child_process"
+import "./core-ipc"
+
+import type { BrowserWindow } from "electron"
+import { app, BrowserWindow as BrowserWindowCtor, dialog, ipcMain } from "electron"
 import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { setAgentToolRuntimeContext } from "./ollama/agent-tools"
 import { initToolContext } from "./pi-tool-registry"
 import * as ollamaCatalog from "./ollama/catalog"
+import * as chatRouter from "./chat-router"
 import * as ollamaChat from "./ollama/chat-runtime"
 import * as ollamaEmbed from "./ollama/embed-runtime"
 import { configureOllamaStorage } from "./ollama/env"
 import { ensureOllama } from "./ollama/lifecycle"
 import { getOllamaRuntimeMetrics, getModelCatalogItems } from "./ollama/metrics"
 import * as storagePaths from "./storage-paths"
+import { registerCoreIpcHandlers } from "./core-ipc"
 import { registerIpcHandlers } from "./ipc-handlers"
+import {
+  getSyncedRuntimeSettings,
+  usesOpenAiCompatibleChat,
+} from "./runtime-settings"
+import * as sqliteRuntime from "./sqlite-runtime"
 import type {
   ChatLoadPayload,
   ChatLoadResult,
@@ -23,10 +33,12 @@ import type {
   StoragePaths,
 } from "./types"
 
-const isDev = process.argv.includes("--dev")
-let devServer: ChildProcess | null = null
+const mainDir =
+  typeof import.meta.dirname === "string"
+    ? import.meta.dirname
+    : path.dirname(fileURLToPath(import.meta.url))
+const rendererUrl = process.env.ELECTRON_RENDERER_URL
 let mainWindow: BrowserWindow | null = null
-let sqliteRuntimeModule: typeof import("./sqlite-runtime") | null = null
 
 const activeDownloads = new Map<
   string,
@@ -34,10 +46,7 @@ const activeDownloads = new Map<
 >()
 
 function getSqliteRuntime() {
-  if (!sqliteRuntimeModule) {
-    sqliteRuntimeModule = require("./sqlite-runtime") as typeof import("./sqlite-runtime")
-  }
-  return sqliteRuntimeModule
+  return sqliteRuntime
 }
 
 function getPaths(): StoragePaths {
@@ -162,12 +171,31 @@ async function loadEmbeddingModel(modelId: string, preferLowPower = false) {
 }
 
 async function loadChatModel(payload: ChatLoadPayload): Promise<ChatLoadResult> {
-  await ollamaEmbed.unloadEmbeddingModel().catch(() => {})
-  const name = payload.modelPath
-  return ollamaChat.loadChatModel(name, payload)
+  if (!usesOpenAiCompatibleChat()) {
+    await ollamaEmbed.unloadEmbeddingModel().catch(() => {})
+  }
+  return chatRouter.loadChatModel(payload.modelPath, payload)
 }
 
 async function getChatModelFileInfo(modelName: string) {
+  if (usesOpenAiCompatibleChat()) {
+    const settings = getSyncedRuntimeSettings()
+    const name = modelName.trim() || settings.llmProvider.model.trim()
+    if (!settings.llmProvider.apiKey.trim()) {
+      return {
+        ok: false as const,
+        reason: "请先在设置 → 对话模型来源 中配置 API Key",
+      }
+    }
+    if (!name) {
+      return { ok: false as const, reason: "未配置模型名称" }
+    }
+    return {
+      ok: true as const,
+      filePath: name,
+      reason: null,
+    }
+  }
   await ensureOllama().catch(() => {})
   const entry = ollamaCatalog.findCatalogEntryByName(modelName)
   const name = entry?.fileName ?? modelName
@@ -220,11 +248,11 @@ const ipcCtx = {
   loadEmbeddingModel,
   unloadEmbeddingModel: ollamaEmbed.unloadEmbeddingModel,
   loadChatModel,
-  unloadChatModel: ollamaChat.unloadChatModel,
-  resetChatHistory: ollamaChat.resetChatHistory,
-  chatPrompt: ollamaChat.chatPrompt,
-  chatPromptStream: ollamaChat.chatPromptStream,
-  getChatModelStatus: ollamaChat.getChatModelStatus,
+  unloadChatModel: chatRouter.unloadChatModel,
+  resetChatHistory: chatRouter.resetChatHistory,
+  chatPrompt: chatRouter.chatPrompt,
+  chatPromptStream: chatRouter.runChatPromptStream,
+  getChatModelStatus: chatRouter.getChatModelStatus,
   getChatModelFileInfo,
   embedTexts: ollamaEmbed.embedTexts,
   getEmbeddingStatus: ollamaEmbed.getEmbeddingStatus,
@@ -257,55 +285,49 @@ initToolContext({
   embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
 })
 
+registerCoreIpcHandlers()
 registerIpcHandlers(ipcCtx)
 
-console.log("[main] IPC handlers registered (Ollama)")
-
-async function waitForDevServer(url: string, timeoutMs = 90_000) {
-  const started = Date.now()
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url, { method: "HEAD" })
-      if (response.ok || response.status === 404) return
-    } catch {
-      // Vite 尚未就绪
-    }
-    await new Promise((resolve) => setTimeout(resolve, 400))
-  }
-  throw new Error(`开发服务器未在 ${timeoutMs / 1000}s 内启动：${url}`)
-}
+console.log("[main] IPC handlers registered")
 
 async function createWindow() {
-  mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindowCtor({
     width: 1200,
     height: 800,
     minWidth: 960,
     minHeight: 640,
     title: "Neezy Studio",
     center: true,
+    show: false,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(mainDir, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
 
-  if (isDev) {
-    await waitForDevServer("http://127.0.0.1:5173")
-    await mainWindow.loadURL("http://127.0.0.1:5173")
-    mainWindow.webContents.openDevTools({ mode: "detach" })
-  } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "build", "client", "index.html"))
-  }
-}
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, code, description, validatedURL) => {
+      console.error(
+        `[main] renderer load failed: ${validatedURL} (${code}) ${description}`
+      )
+    }
+  )
 
-function startDevServer() {
-  if (!isDev) return
-  devServer = spawn("bun", ["run", "dev", "--host", "127.0.0.1"], {
-    cwd: path.join(__dirname, ".."),
-    shell: process.platform === "win32",
-    stdio: "inherit",
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show()
   })
+
+  // 与官方 react-ts 一致：开发 loadURL，生产 loadFile（renderer 侧 holdUntilCrawlEnd 避免首启 ERR_ABORTED）
+  if (rendererUrl) {
+    await mainWindow.loadURL(rendererUrl)
+    if (!app.isPackaged) {
+      mainWindow.webContents.openDevTools({ mode: "detach" })
+    }
+  } else {
+    await mainWindow.loadFile(path.join(mainDir, "../renderer/index.html"))
+  }
 }
 
 app.whenReady().then(async () => {
@@ -313,16 +335,22 @@ app.whenReady().then(async () => {
     const paths = getPaths()
     await storagePaths.ensureStorageDirs(paths)
     syncOllamaStorageEnv()
-    console.info("[main] 正在准备 Ollama…")
-    await ensureOllama()
     await ollamaCatalog.ensureModelRegistry()
     const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
     console.log(
       `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
       vecStatus.error ?? ""
     )
-    startDevServer()
+
     await createWindow()
+
+    console.info("[main] 正在准备 Ollama…")
+    void ensureOllama().catch((error) => {
+      console.warn(
+        "[main] Ollama 未就绪:",
+        error instanceof Error ? error.message : error
+      )
+    })
   } catch (error) {
     console.error("[main] startup failed:", error)
     dialog.showErrorBox(
@@ -333,7 +361,7 @@ app.whenReady().then(async () => {
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (BrowserWindowCtor.getAllWindows().length === 0) {
       createWindow().catch((error) => console.error("[main] createWindow failed:", error))
     }
   })
@@ -344,8 +372,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
-  if (sqliteRuntimeModule) sqliteRuntimeModule.closeAll()
+  sqliteRuntime.closeAll()
   ollamaEmbed.unloadEmbeddingModel().catch(() => {})
   ollamaChat.unloadChatModel().catch(() => {})
-  if (devServer) devServer.kill()
 })

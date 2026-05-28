@@ -18,7 +18,12 @@ type SqliteBridge = {
   ) => Promise<T[]>
 }
 
+type DrizzleJournal = {
+  entries: { tag: string }[]
+}
+
 let db: SqliteBridge | null = null
+let migratePromise: Promise<void> | null = null
 
 async function getDb() {
   if (!db) {
@@ -33,6 +38,7 @@ async function getDb() {
 
 export function resetMigrateDbCache() {
   db = null
+  migratePromise = null
 }
 
 async function initMigrationsTable(sqlite: Awaited<ReturnType<typeof getDb>>) {
@@ -46,14 +52,27 @@ async function initMigrationsTable(sqlite: Awaited<ReturnType<typeof getDb>>) {
 }
 
 async function getAppliedMigrations(sqlite: Awaited<ReturnType<typeof getDb>>) {
-  try {
-    const result = await sqlite.select<{ name: string }>(
-      `SELECT name FROM ${MIGRATIONS_TABLE}`
-    )
-    return result.map((r) => r.name)
-  } catch {
-    return []
+  const result = await sqlite.select<{ name: string }>(
+    `SELECT name FROM ${MIGRATIONS_TABLE}`
+  )
+  return result.map((r) => r.name)
+}
+
+function ensureCreateIfNotExists(sql: string): string {
+  const trimmed = sql.trim()
+  if (/^CREATE\s+INDEX\s+/i.test(trimmed) && !/IF\s+NOT\s+EXISTS/i.test(trimmed)) {
+    return trimmed.replace(/^CREATE\s+INDEX\s+/i, "CREATE INDEX IF NOT EXISTS ")
   }
+  if (
+    /^CREATE\s+UNIQUE\s+INDEX\s+/i.test(trimmed) &&
+    !/IF\s+NOT\s+EXISTS/i.test(trimmed)
+  ) {
+    return trimmed.replace(
+      /^CREATE\s+UNIQUE\s+INDEX\s+/i,
+      "CREATE UNIQUE INDEX IF NOT EXISTS "
+    )
+  }
+  return trimmed
 }
 
 async function executeSql(
@@ -64,41 +83,48 @@ async function executeSql(
     .split(/-->\s*statement-breakpoint/)
     .filter((s) => s.trim())
   for (const stmt of statements) {
-    const subStatements = stmt.split(";").filter((s) => s.trim())
-    for (const subStmt of subStatements) {
-      if (subStmt.trim()) {
-        await sqlite.execute(subStmt)
-      }
+    for (const subStmt of stmt.split(";").filter((s) => s.trim())) {
+      await sqlite.execute(ensureCreateIfNotExists(subStmt))
     }
   }
 }
 
-const MIGRATION_FILES = ["0000_lying_reavers.sql", "0001_fantastic_redwing.sql"]
-
-async function resolveMigrationsDir(): Promise<string> {
-  return getMigrationsDir()
+async function listMigrationFiles(migrationsDir: string): Promise<string[]> {
+  const journalPath = await join(migrationsDir, "meta", "_journal.json")
+  if (!(await exists(journalPath))) return []
+  const raw = await readTextFile(journalPath)
+  const journal = JSON.parse(raw) as DrizzleJournal
+  return journal.entries.map((entry) => `${entry.tag}.sql`)
 }
 
-export async function runMigrations() {
+async function runMigrationsInternal() {
   const sqlite = await getDb()
   await initMigrationsTable(sqlite)
-  const applied = await getAppliedMigrations(sqlite)
-  const migrationsDir = await resolveMigrationsDir()
 
-  for (const fileName of MIGRATION_FILES) {
-    if (applied.includes(fileName)) continue
+  const applied = new Set(await getAppliedMigrations(sqlite))
+  const migrationsDir = await getMigrationsDir()
 
-    try {
-      const filePath = await join(migrationsDir, fileName)
-      if (!(await exists(filePath))) continue
+  for (const fileName of await listMigrationFiles(migrationsDir)) {
+    if (applied.has(fileName)) continue
 
-      await executeSql(sqlite, await readTextFile(filePath))
-      await sqlite.execute(
-        `INSERT INTO ${MIGRATIONS_TABLE} (name, applied_at) VALUES (?, ?)`,
-        [fileName, Date.now()]
-      )
-    } catch (error) {
-      console.error(`[migrate] Failed to apply ${fileName}:`, error)
-    }
+    const filePath = await join(migrationsDir, fileName)
+    if (!(await exists(filePath))) continue
+
+    await executeSql(sqlite, await readTextFile(filePath))
+    await sqlite.execute(
+      `INSERT INTO ${MIGRATIONS_TABLE} (name, applied_at) VALUES (?, ?)`,
+      [fileName, Date.now()]
+    )
+    applied.add(fileName)
   }
+}
+
+/** 应用启动时自动执行（空库会按 drizzle journal 顺序建表） */
+export async function runMigrations() {
+  if (migratePromise) return migratePromise
+  migratePromise = runMigrationsInternal().catch((error) => {
+    migratePromise = null
+    throw error
+  })
+  return migratePromise
 }

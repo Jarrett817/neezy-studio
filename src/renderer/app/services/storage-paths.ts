@@ -12,6 +12,8 @@ export type StoragePaths = {
   memoriesDir: string
   personasDir: string
   skillsDir: string
+  playbooksDir: string
+  inputProfilesDir: string
   configFile: string
   defaultDataRoot: string
   defaultModelsDir: string

@@ -59,6 +59,11 @@ export async function startChatModel(
   const settings = await getRuntimeSettings()
   await saveRuntimeSettings({
     ...settings,
+    llmProvider: {
+      ...settings.llmProvider,
+      kind: "ollama",
+      model: item.fileName,
+    },
     llmModel: item.fileName,
     chatTier: item.tier,
   })

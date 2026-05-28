@@ -79,7 +79,7 @@ function ModelCard({
   return (
     <Card
       className={cn(
-        "rounded-2xl bg-card/70 transition-shadow",
+        "rounded-2xl border border-border/60 bg-card shadow-sm transition-shadow",
         isActive &&
           "shadow-[0_0_22px_rgba(251,191,36,0.45),0_0_36px_rgba(245,158,11,0.2)] ring-2 ring-amber-400/85",
         isRecommended && !isActive && "ring-1 ring-primary/40"
@@ -184,7 +184,7 @@ function ModelTierSection({
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         {icon}
-        <h3 className="font-display text-lg font-semibold">{title}</h3>
+        <h3 className="text-lg font-semibold">{title}</h3>
       </div>
       {TIER_SECTIONS.map((section) => {
         const tierItems = byTier.get(section.tier) ?? []
@@ -249,7 +249,7 @@ export function LlmModelBrowser() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-semibold">本地模型（列表）</h2>
+        <h2 className="text-xl font-semibold">本地模型（列表）</h2>
         <Button
           type="button"
           variant="outline"

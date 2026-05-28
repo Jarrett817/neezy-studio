@@ -2,9 +2,9 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Search } from "lucide-react"
 
-import { MemoryTimeScroll } from "~/components/memory/memory-time-scroll"
-import { FadeIn } from "~/components/animation-effects"
+import { MemoryList } from "~/components/memory/memory-list"
 import { Input } from "~/components/ui/input"
+import { cn } from "~/lib/utils"
 import {
   listMemories,
   deleteMemory,
@@ -43,60 +43,45 @@ export default function KnowledgeBaseRoute() {
   })
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 pt-2 pb-8">
-      <FadeIn>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="font-display text-lg font-semibold tracking-tight">
-              记忆
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {items.length} 条 · 时光卷轴由远及近
-            </p>
-          </div>
-        </div>
-      </FadeIn>
+    <div className="flex min-h-0 flex-1 flex-col gap-4 pb-8">
+      <div>
+        <h1 className="text-lg font-semibold tracking-tight">素材库</h1>
+        <p className="text-xs text-muted-foreground">{items.length} 条记忆 · 按更新时间排序</p>
+      </div>
 
-      <FadeIn delay={0.04}>
-        <div className="flex flex-wrap gap-2">
-          {categories.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setActiveCategory(item)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                item === activeCategory
-                  ? "bg-primary text-primary-foreground shadow-md"
-                  : "bg-card/60 text-muted-foreground hover:bg-card hover:shadow-sm"
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-      </FadeIn>
+      <div className="flex flex-wrap gap-2">
+        {categories.map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => setActiveCategory(item)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+              item === activeCategory
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "border border-border/60 bg-card text-muted-foreground hover:bg-muted/50"
+            )}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
 
-      <FadeIn delay={0.06}>
-        <div className="relative">
-          <div className="pointer-events-none absolute top-1/2 left-3 z-10 flex -translate-y-1/2">
-            <Search className="size-4 text-muted-foreground" />
-          </div>
-          <Input
-            className="border-border/40 bg-card/60 pl-10"
-            placeholder="搜索卷轴中的记忆…"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-        </div>
-      </FadeIn>
-
-      <FadeIn delay={0.08} className="min-h-0 flex-1">
-        <MemoryTimeScroll
-          className="w-full"
-          items={filtered}
-          onDelete={(item) => deleteMutation.mutate(item)}
+      <div className="relative">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="rounded-xl border-border/60 bg-card pl-10 shadow-sm"
+          placeholder="搜索标题或内容…"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
         />
-      </FadeIn>
+      </div>
+
+      <MemoryList
+        className="min-h-0 flex-1"
+        items={filtered}
+        onDelete={(item) => deleteMutation.mutate(item)}
+      />
     </div>
   )
 }

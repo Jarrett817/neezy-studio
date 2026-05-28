@@ -2,10 +2,20 @@ import {
   messagesToChatHistory,
   primeChatHistory,
   runChatPromptStream,
-} from "./ollama/chat-runtime"
-import { createAgentSession, promptAgent, destroyAgentSession, agentSessionExists } from "./pi-agent"
+} from "./chat-router"
 import { BrowserWindow } from "electron"
-import type { IpcContext } from "./types"
+import path from "node:path"
+import {
+  abortAgentSession,
+  agentSessionExists,
+  configureAgentSession,
+  createAgentSession,
+  destroyAgentSession,
+  promptAgent,
+} from "./pi-agent"
+import { testPiConnection } from "./pi-llm"
+import { getOllamaStatus, testOllamaModel } from "./ollama/ops"
+import type { IpcContext, ModelKind } from "./types"
 
 function vecErrorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
@@ -16,6 +26,21 @@ function vecErrorCode(error: unknown): string | undefined {
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
 export function registerIpcHandlers(ctx: IpcContext): void {
   const { ipcMain, app, dialog, storagePaths } = ctx
+
+  ipcMain.handle("app:test-llm-connection", () => testPiConnection())
+  ipcMain.handle("app:get-ollama-status", () => getOllamaStatus())
+  ipcMain.handle("app:test-ollama-model", (_event, payload: unknown) => {
+    const body =
+      typeof payload === "string"
+        ? { modelName: payload, kind: "chat" as const }
+        : payload && typeof payload === "object"
+          ? (payload as { modelName?: string; kind?: ModelKind })
+          : { modelName: "" }
+    return testOllamaModel(
+      body.modelName ?? "",
+      body.kind === "embedding" ? "embedding" : "chat"
+    )
+  })
 
   ipcMain.handle("app:get-build-info", () => ({
     appName: app.getName(),
@@ -51,7 +76,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   })
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
   ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))
-  ipcMain.handle("app:get-migrations-dir", () => ctx.path.join(__dirname, "..", "drizzle"))
+  ipcMain.handle("app:get-migrations-dir", () =>
+    ctx.path.join(ctx.app.getAppPath(), "drizzle")
+  )
 
   ipcMain.handle("fs:exists", async (_event, targetPath: string) =>
     ctx.fsSync.existsSync(targetPath)
@@ -133,13 +160,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       }
     try {
       event.sender.send("app:chat-stream", { requestId, type: "start" })
-      if (primeMessages?.length) {
-        primeChatHistory(messagesToChatHistory(primeMessages))
-      }
+      const prime = primeMessages?.length
+        ? messagesToChatHistory(primeMessages)
+        : undefined
 
       await runChatPromptStream(
         input,
-        { temperature, topK, maxTokens, useFunctions },
+        { temperature, topK, maxTokens, useFunctions, primeMessages: prime },
         ({ segment, delta }) => {
           if (!delta) return
           event.sender.send("app:chat-stream", {
@@ -337,6 +364,29 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // agent:destroy - 销毁 Agent 会话
   ipcMain.handle("agent:destroy", async (_event, { sessionId }: { sessionId: string }) => {
     await destroyAgentSession(sessionId)
+    return { ok: true }
+  })
+
+  ipcMain.handle(
+    "agent:configure",
+    (
+      _event,
+      payload: {
+        sessionId: string
+        systemPrompt: string
+        messages?: { role: "user" | "assistant"; content: string }[]
+      }
+    ) => {
+      configureAgentSession(payload.sessionId, {
+        systemPrompt: payload.systemPrompt,
+        messages: payload.messages,
+      })
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle("agent:abort", (_event, { sessionId }: { sessionId: string }) => {
+    abortAgentSession(sessionId)
     return { ok: true }
   })
 }

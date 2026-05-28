@@ -65,13 +65,19 @@ export function useActiveModels() {
     refetchOnWindowFocus: true,
   })
 
+  const isApi = settings?.llmProvider.kind === "openai-compatible"
   const chatFileName = chatFile ?? settings?.llmModel ?? null
   const embFileName = settings?.embeddingModel ?? null
 
-  const chat: ActiveModelChip = {
-    label: displayName(chatFileName, chatCatalog) ?? "未选择",
-    status: chatStatus(loading, Boolean(chatFileName)),
-  }
+  const chat: ActiveModelChip = isApi
+    ? {
+        label: settings.llmProvider.model.trim() || "未配置",
+        status: settings.llmProvider.apiKey.trim() ? "ready" : "idle",
+      }
+    : {
+        label: displayName(chatFileName, chatCatalog) ?? "未选择",
+        status: chatStatus(loading, Boolean(chatFileName)),
+      }
 
   const embedding: ActiveModelChip = {
     label: displayName(embFileName, embeddingCatalog) ?? "未配置",

@@ -1,4 +1,4 @@
-import { Download, Loader2, Sparkles, Trash2 } from "lucide-react"
+import { Download, FlaskConical, Loader2, Sparkles, Trash2 } from "lucide-react"
 
 import { modelTone, tierBadgeVariant } from "~/components/model-oracle-panel"
 import { Badge } from "~/components/ui/badge"
@@ -38,6 +38,8 @@ export function RecommendedModelCards({
   onCancelDownload,
   onToggleRun,
   onDelete,
+  onTest,
+  testingFileName,
 }: {
   kind: ModelKind
   items: ModelCatalogItem[]
@@ -51,6 +53,8 @@ export function RecommendedModelCards({
   onCancelDownload?: (id: string) => void
   onToggleRun: (id: string) => void
   onDelete: (id: string) => void
+  onTest?: (id: string) => void
+  testingFileName?: string | null
 }) {
   return (
     <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -60,6 +64,7 @@ export function RecommendedModelCards({
         const isActive = item.fileName === activeFileName
         const isLoading = item.fileName === loadingFileName
         const isDownloading = item.status === "downloading"
+        const isTesting = item.fileName === testingFileName
         const canCancel = isDownloading && item.cancellable && onCancelDownload
         const progress = item.progress ?? 0
 
@@ -68,14 +73,14 @@ export function RecommendedModelCards({
             <Card
               size="sm"
               className={cn(
-                "cursor-pointer transition-shadow hover:ring-foreground/15",
-                selected && "ring-2 ring-primary/50",
-                isActive && "ring-2 ring-amber-400/70"
+                "cursor-pointer rounded-2xl border-border/60 bg-card shadow-sm transition-shadow hover:shadow-md",
+                selected && "ring-2 ring-primary/40",
+                isActive && "border-l-[3px] border-l-primary ring-2 ring-primary/30"
               )}
               onClick={() => onSelect(item.id)}
             >
               <CardHeader>
-                <CardTitle className="line-clamp-2 text-base leading-snug">
+                <CardTitle className="line-clamp-2 text-base font-semibold leading-snug">
                   {item.title}
                 </CardTitle>
                 <CardDescription className="line-clamp-2">
@@ -131,9 +136,8 @@ export function RecommendedModelCards({
                   <>
                     <Button
                       type="button"
-                      size="sm"
-                      className="flex-1"
-                      disabled={isLoading}
+                      className="h-11 min-w-0 flex-1 rounded-2xl text-sm"
+                      disabled={isLoading || isTesting}
                       onClick={() => onToggleRun(item.id)}
                     >
                       {isLoading ? (
@@ -145,24 +149,40 @@ export function RecommendedModelCards({
                         runLabel(kind, isActive, isLoading)
                       )}
                     </Button>
+                    {onTest ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-11 shrink-0 rounded-2xl"
+                        disabled={isLoading || isTesting}
+                        onClick={() => onTest(item.id)}
+                        aria-label="测试模型"
+                      >
+                        {isTesting ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <FlaskConical className="size-4" />
+                        )}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-8 shrink-0"
+                      className="size-11 shrink-0 rounded-2xl"
                       onClick={() => onDelete(item.id)}
-                      disabled={isActive || isLoading}
+                      disabled={isActive || isLoading || isTesting}
                       aria-label="移除模型"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </>
                 ) : (
                   <>
                     <Button
                       type="button"
-                      size="sm"
-                      className="flex-1 gap-1"
+                      className="h-11 flex-1 gap-1 rounded-2xl text-sm"
                       disabled={isDownloading && !canCancel}
                       onClick={() =>
                         canCancel

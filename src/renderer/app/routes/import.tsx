@@ -72,7 +72,7 @@ export default function ImportRoute() {
   return (
     <div className="space-y-6 pt-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-tight">
           数据录入
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -81,7 +81,7 @@ export default function ImportRoute() {
       </div>
 
       {/* 录入表单 */}
-      <div className="glass-warm space-y-4 rounded-2xl border border-border/10 p-5">
+      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <div className="flex items-center gap-3">
           <FolderInput className="size-5 text-primary" />
           <p className="text-sm font-semibold">粘贴文章链接</p>
@@ -134,7 +134,7 @@ export default function ImportRoute() {
             bg: "bg-sky-50 dark:bg-sky-950/40",
           },
         ].map(({ icon: Icon, label, color, bg }) => (
-          <div key={label} className="rounded-2xl bg-card/60 p-4">
+          <div key={label} className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
             <div className={`rounded-xl ${bg} w-fit p-2.5`}>
               <Icon className={`size-4 ${color}`} />
             </div>
@@ -193,7 +193,7 @@ function JobRow({
   const stage = stageLabelMap[job.stage]
 
   return (
-    <div className="group rounded-2xl bg-card/60 p-4">
+    <div className="group rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-medium break-all">{job.sourceUrl}</p>
         <Badge

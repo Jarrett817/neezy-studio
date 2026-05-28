@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { motion } from "framer-motion"
 import {
   Bot,
+  MoreHorizontal,
   Paperclip,
   Square,
   Trash2,
@@ -14,35 +14,45 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ActiveModelsStrip } from "~/components/chat/active-models-strip"
+import { ChatModelStatus } from "~/components/chat/chat-model-status"
+import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
 import { ModelThinkingBlock } from "~/components/chat/model-thinking-block"
-import { useActiveModels } from "~/hooks/use-active-models"
 import { Button } from "~/components/ui/button"
 import { Textarea } from "~/components/ui/textarea"
-import { PageTransition } from "~/components/animation-effects"
 import { MarkdownContent } from "~/components/markdown-content"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "~/components/ui/sheet"
+import { Label } from "~/components/ui/label"
+import { Input } from "~/components/ui/input"
 import { listSkills } from "~/services/workspace"
-import { runAgent, type AgentMessage } from "~/agents/llm-agent"
-import { getCurrentModel, isModelLoaded, loadModel, resetChat } from "~/services/llm"
+import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
+import { getCurrentModel } from "~/services/llm"
 import { getRuntimeSettings } from "~/services/settings"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
+import { upsertChatMessage, deleteChatMessagesForSession } from "~/services/storage/chat-messages"
+import {
+  ensureActiveChatSession,
+  loadChatSessionMessages,
+  setActiveSessionId as persistActiveSessionId,
+} from "~/services/storage/chat-history"
+import { updateSession } from "~/services/storage/sessions"
 import { addConversationSlice } from "~/services/storage/memory-vectors"
 import { rememberConversationTurn } from "~/services/memory-profile"
 import {
   getPortraitContextForPrompt,
   updatePortraitFromConversation,
 } from "~/services/user-portrait"
-import {
-  appendModelReplyHints,
-  getThinkingSystemAddon,
-  mergeStreamThinking,
-  parseModelThinking,
-} from "~/lib/agent-steps"
-import { createAgentSession, promptAgent, destroyAgentSession, subscribeAgentEvents } from "~/services/pi-agent-client"
+import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
 const SYSTEM_PROMPT =
-  `你是本地大模型助手，在 Neezy Studio 中为用户服务。回答用中文，语气清晰自然，避免堆砌技术术语。可使用工具：memory_search、memory_add、memory_event、datetime、calculator。需要工具时用 JSON 代码块 {"function":{"name":"...","arguments":{...}}}。`.trim()
+  `你是 Neezy Studio 中的对话助手。回答用中文，语气清晰自然。已注册工具：memory_search、memory_add、memory_event、datetime、calculator；需要时请直接调用工具。`.trim()
 
 export default function ChatRoute() {
   const queryClient = useQueryClient()
@@ -54,17 +64,21 @@ export default function ChatRoute() {
     content: string
   } | null>(null)
   const [isReadingFile, setIsReadingFile] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [streamedContent, setStreamedContent] = useState("")
-  const streamedContentRef = useRef("")
-  const [toolCallName, setToolCallName] = useState<string | null>(null)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [temperature, setTemperature] = useState(0.7)
+  const [maxTokens, setMaxTokens] = useState(2048)
   const activeAssistantId = useRef<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [sessionsReady, setSessionsReady] = useState(false)
+  const sessionIdRef = useRef<string | null>(null)
+
   const messages = useAppStore((state) => state.conversationHistory)
   const addMessage = useAppStore((state) => state.addMessage)
   const updateMessage = useAppStore((state) => state.updateMessage)
+  const setConversationHistory = useAppStore((state) => state.setConversationHistory)
   const clearConversation = useAppStore((state) => state.clearConversation)
   const getMessage = useCallback(
     (id: string) =>
@@ -72,14 +86,107 @@ export default function ChatRoute() {
     []
   )
 
+  const persistMessage = useCallback((message: ChatMessage) => {
+    const sid = sessionIdRef.current
+    if (!sid) return
+    void upsertChatMessage(sid, message).catch((err) =>
+      console.warn("[chat] persist message failed:", err)
+    )
+  }, [])
+
+  const addMessagePersist = useCallback(
+    (msg: Omit<ChatMessage, "timestamp">) => {
+      addMessage(msg)
+      const full: ChatMessage = { ...msg, timestamp: Date.now() }
+      persistMessage(full)
+      return full
+    },
+    [addMessage, persistMessage]
+  )
+
+  const updateMessagePersist = useCallback(
+    (id: string, updates: Partial<ChatMessage>) => {
+      updateMessage(id, updates)
+      const current = useAppStore.getState().conversationHistory.find((m) => m.id === id)
+      if (current) persistMessage({ ...current, ...updates })
+    },
+    [updateMessage, persistMessage]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const session = await ensureActiveChatSession()
+        if (cancelled) return
+        sessionIdRef.current = session.id
+        setActiveSessionId(session.id)
+        const loaded = await loadChatSessionMessages(session.id)
+        if (cancelled) return
+        setConversationHistory(loaded)
+      } catch (err) {
+        console.warn("[chat] load sessions failed:", err)
+      } finally {
+        if (!cancelled) setSessionsReady(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [setConversationHistory])
+
   const { data: skills = [] } = useQuery({
     queryKey: ["skills"],
     queryFn: listSkills,
   })
 
   const enabledSkills = skills.filter((s) => s.enabled)
-  const { chat: activeChatModel } = useActiveModels()
-  const chatModelName = activeChatModel.label
+  const { data: runtimeSettings } = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: getRuntimeSettings,
+    staleTime: 10_000,
+  })
+
+  const agentSystemPrompt =
+    activeSkill != null
+      ? `${SYSTEM_PROMPT}\n\n当前技能: ${activeSkill}`
+      : SYSTEM_PROMPT
+
+  const { runPrompt, abort: abortPiAgent, resetAgent } = usePiAgentChat({
+    systemPrompt: agentSystemPrompt,
+    messages,
+    enabled: sessionsReady,
+  })
+
+  const handleSelectSession = useCallback(
+    async (sessionId: string) => {
+      if (sessionId === sessionIdRef.current) return
+      sessionIdRef.current = sessionId
+      setActiveSessionId(sessionId)
+      await persistActiveSessionId(sessionId)
+      const loaded = await loadChatSessionMessages(sessionId)
+      setConversationHistory(loaded)
+      await resetAgent().catch(() => {})
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    },
+    [setConversationHistory, queryClient, resetAgent]
+  )
+
+  const handleNewSession = useCallback(
+    async (sessionId: string) => {
+      sessionIdRef.current = sessionId
+      setActiveSessionId(sessionId)
+      clearConversation()
+      await resetAgent().catch(() => {})
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    },
+    [clearConversation, queryClient, resetAgent]
+  )
+
+  const chatModelName =
+    runtimeSettings?.llmProvider.kind === "openai-compatible"
+      ? runtimeSettings.llmProvider.model.trim() || "API"
+      : getCurrentModel() || runtimeSettings?.llmModel || "本地模型"
 
   const readFileContent = async (file: File): Promise<string> => {
     const MAX_CHUNK_SIZE = 32000
@@ -111,67 +218,11 @@ export default function ChatRoute() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // 创建 Agent 会话
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const sid = await createAgentSession()
-      if (cancelled) {
-        await destroyAgentSession(sid)
-        return
-      }
-      setSessionId(sid)
-    })()
-    return () => {
-      cancelled = true
-      if (sessionId) {
-        destroyAgentSession(sessionId).catch(console.error)
-      }
-    }
-  }, [])
-
-  // 订阅 Agent 事件
-  useEffect(() => {
-    if (!sessionId) return
-    return subscribeAgentEvents((payload) => {
-      if (payload.sessionId !== sessionId) return
-      const event = payload.event as any
-      if (event.type === "message_update") {
-        const delta = event.assistantMessageEvent?.delta
-        if (delta) {
-          streamedContentRef.current += delta
-          setStreamedContent(streamedContentRef.current)
-        }
-      }
-      if (event.type === "tool_execution_start") {
-        setToolCallName(event.toolName)
-      }
-      if (event.type === "tool_execution_end") {
-        setToolCallName(null)
-      }
-      if (event.type === "message_end") {
-        const content = streamedContentRef.current
-        if (content.trim()) {
-          addMessage({
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: content,
-            thinking: "",
-            isStreaming: false,
-            toolCalls: [],
-          })
-        }
-        streamedContentRef.current = ""
-        setStreamedContent("")
-      }
-    })
-  }, [sessionId, addMessage])
-
   const patchAssistant = useCallback(
     (id: string, patch: Partial<ChatMessage>) => {
-      updateMessage(id, patch)
+      updateMessagePersist(id, patch)
     },
-    [updateMessage]
+    [updateMessagePersist]
   )
 
   const send = useCallback(async () => {
@@ -179,31 +230,6 @@ export default function ChatRoute() {
     const hasText = text.length > 0
     const hasFile = attachedFile !== null
     if ((!hasText && !hasFile) || isGenerating) return
-    if (sessionId) {
-      // pi-agent 模式
-      const userId = crypto.randomUUID()
-      addMessage({
-        id: userId,
-        role: "user",
-        content: hasText ? text : `[文件] ${attachedFile?.name}`,
-        thinking: "",
-      })
-      setInput("")
-      setIsGenerating(true)
-      setAttachedFile(null)
-      try {
-        await promptAgent(sessionId, hasText ? text : `[文件] ${attachedFile?.name}`)
-      } catch (error) {
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "error",
-          content: error instanceof Error ? error.message : "生成失败",
-          thinking: "",
-        })
-      }
-      setIsGenerating(false)
-      return
-    }
 
     const userId = crypto.randomUUID()
     const assistantId = crypto.randomUUID()
@@ -220,13 +246,13 @@ export default function ChatRoute() {
     setIsGenerating(true)
     setAttachedFile(null)
 
-    addMessage({
+    addMessagePersist({
       id: userId,
       role: "user",
       content: hasText ? userContent : `[文件] ${attachedFile?.name}`,
       thinking: "",
     })
-    addMessage({
+    addMessagePersist({
       id: assistantId,
       role: "assistant",
       content: "",
@@ -235,48 +261,23 @@ export default function ChatRoute() {
       toolCalls: [],
     })
 
-    const agentMessages: AgentMessage[] = messages
-      .filter((m) => m.role !== "error" && m.id !== assistantId)
-      .map((m) => ({
-        role: m.role as "user" | "assistant" | "system",
-        content: m.content,
-      }))
     const modelFile = getCurrentModel()
     try {
-      const settings = await getRuntimeSettings()
-      const modelToLoad = modelFile ?? settings.llmModel
       let portraitContext = ""
-      await Promise.all([
-        modelToLoad && !isModelLoaded()
-          ? loadModel(modelToLoad)
-          : Promise.resolve(),
-        getPortraitContextForPrompt().then((ctx) => {
-          portraitContext = ctx
-        }),
-      ])
+      await getPortraitContextForPrompt().then((ctx) => {
+        portraitContext = ctx
+      })
 
       const userForAgent = appendModelReplyHints(
         portraitContext ? `${userContent}\n${portraitContext}` : userContent,
         modelFile
       )
-      agentMessages.push({ role: "user", content: userForAgent })
 
-      const basePrompt = activeSkill
-        ? `${SYSTEM_PROMPT}\n\n当前技能: ${activeSkill}`
-        : SYSTEM_PROMPT
-      const thinkAddon = getThinkingSystemAddon(modelFile)
-
-      const result = await runAgent(agentMessages, {
-        systemPrompt: `${basePrompt}${thinkAddon}`,
-        maxSteps: 5,
-        temperature: 0.7,
-        maxTokens: 2048,
+      const result = await runPrompt({
+        userMessage: userForAgent,
+        assistantId,
         onStream: ({ thinking, content }) => {
-          const display = mergeStreamThinking(thinking, content)
-          patchAssistant(assistantId, {
-            thinking: display.thinking,
-            content: display.visible,
-          })
+          patchAssistant(assistantId, { thinking, content })
         },
         onToolCall: (name, args, toolResult) => {
           const current = getMessage(assistantId)
@@ -291,10 +292,19 @@ export default function ChatRoute() {
 
       const parsed = parseModelThinking(result.content)
       const finalThinking =
-        getMessage(assistantId)?.thinking?.trim() || parsed.thinking
+        getMessage(assistantId)?.thinking?.trim() ||
+        result.thinking ||
+        parsed.thinking
+      const finalContent = parsed.visible || result.content
+
+      if (!finalContent.trim()) {
+        patchAssistant(assistantId, { isStreaming: false })
+        toast.error("模型未返回内容，请检查连接或模型是否已启动")
+        return
+      }
 
       patchAssistant(assistantId, {
-        content: parsed.visible || result.content,
+        content: finalContent,
         thinking: finalThinking,
         isStreaming: false,
       })
@@ -302,7 +312,7 @@ export default function ChatRoute() {
       if (text || attachedFile) {
         updatePortraitFromConversation({
           userContent,
-          assistantContent: parsed.visible || result.content,
+          assistantContent: finalContent,
         })
           .then(() =>
             queryClient.invalidateQueries({ queryKey: ["user-portrait"] })
@@ -310,128 +320,201 @@ export default function ChatRoute() {
           .catch((err) => console.warn("[portrait] update failed:", err))
         rememberConversationTurn({
           userContent,
-          assistantContent: parsed.visible || result.content,
+          assistantContent: finalContent,
         }).catch((err) => console.warn("[memory] remember failed:", err))
         addConversationSlice(assistantId, userContent).catch((err) => {
           console.warn("Failed to save conversation slice:", err)
         })
       }
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "生成失败"
       patchAssistant(assistantId, { isStreaming: false })
-      addMessage({
+      addMessagePersist({
         id: crypto.randomUUID(),
         role: "error",
-        content: error instanceof Error ? error.message : "生成失败",
+        content: message,
         thinking: "",
       })
+      toast.error(message)
+    } finally {
+      setIsGenerating(false)
+      activeAssistantId.current = null
     }
-
-    setIsGenerating(false)
-    activeAssistantId.current = null
   }, [
     input,
     isGenerating,
     messages,
-    activeSkill,
     attachedFile,
-    addMessage,
+    addMessagePersist,
     patchAssistant,
     getMessage,
     queryClient,
+    runPrompt,
   ])
 
   const stop = useCallback(() => {
     const id = activeAssistantId.current
     if (id) {
-      const current = getMessage(id)
       patchAssistant(id, { isStreaming: false })
     }
+    abortPiAgent()
     setIsGenerating(false)
     activeAssistantId.current = null
-  }, [getMessage, patchAssistant])
+  }, [patchAssistant, abortPiAgent])
+
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
+
+  if (!sessionsReady) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 size-4 animate-spin" />
+        加载对话历史…
+      </div>
+    )
+  }
 
   return (
-    <PageTransition>
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/10 pb-3">
-          <ActiveModelsStrip
-            className="min-w-0 flex-1"
-            chatSelectable
-            chatPickerDisabled={isGenerating}
-          />
-          {messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 shrink-0 rounded-full text-muted-foreground"
-              onClick={() => {
-                clearConversation()
-                resetChat().catch(() => {})
-              }}
-              aria-label="清空对话"
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          )}
-        </div>
-
-        {enabledSkills.length > 0 && (
-          <div className="mb-2 flex shrink-0 gap-1.5 overflow-x-auto border-b border-border/5 py-2">
-            {enabledSkills.map((skill) => (
-              <button
-                key={skill.id}
-                type="button"
-                onClick={() =>
-                  setActiveSkill((prev) =>
-                    prev === skill.name ? null : skill.name
-                  )
-                }
-                className={cn(
-                  "shrink-0 rounded-full px-3 py-1 text-xs transition-all",
-                  activeSkill === skill.name
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                )}
+    <div className="flex h-full min-h-0">
+      <ChatSessionSidebar
+        activeSessionId={activeSessionId}
+        onSelectSession={(id) => void handleSelectSession(id)}
+        onSessionCreated={(id) => void handleNewSession(id)}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/10 px-1 pb-3 pt-1">
+          <ChatModelStatus className="min-w-0 flex-1" />
+          <div className="flex shrink-0 items-center gap-1">
+            <Sheet open={optionsOpen} onOpenChange={setOptionsOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 rounded-full"
+                  aria-label="对话选项"
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:max-w-md">
+                <SheetHeader>
+                  <SheetTitle>对话选项</SheetTitle>
+                  <SheetDescription>模型参数、Skill 与工具 trace</SheetDescription>
+                </SheetHeader>
+                <div className="mt-6 space-y-6 px-1">
+                  <div className="grid gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="chat-temperature">Temperature</Label>
+                      <Input
+                        id="chat-temperature"
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={temperature}
+                        onChange={(e) => setTemperature(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="chat-max-tokens">Max tokens</Label>
+                      <Input
+                        id="chat-max-tokens"
+                        type="number"
+                        min={256}
+                        max={8192}
+                        step={256}
+                        value={maxTokens}
+                        onChange={(e) => setMaxTokens(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                  {enabledSkills.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Skill</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {enabledSkills.map((skill) => (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            onClick={() =>
+                              setActiveSkill((prev) =>
+                                prev === skill.name ? null : skill.name
+                              )
+                            }
+                            className={cn(
+                              "rounded-full px-3 py-1 text-xs transition-colors",
+                              activeSkill === skill.name
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {skill.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">工具 trace</p>
+                    {lastAssistant?.toolCalls?.length ? (
+                      <ul className="space-y-2 text-xs">
+                        {lastAssistant.toolCalls.map((tc, i) => (
+                          <li
+                            key={`${tc.name}-${i}`}
+                            className="rounded-xl border border-border/60 bg-muted/30 p-2 font-mono"
+                          >
+                            {tc.name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">暂无工具调用记录</p>
+                    )}
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+            {messages.length > 0 ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-full text-muted-foreground"
+                onClick={() => {
+                  const sid = sessionIdRef.current
+                  clearConversation()
+                  resetAgent().catch(() => {})
+                  if (sid) {
+                    void deleteChatMessagesForSession(sid)
+                    void updateSession(sid, {
+                      message_count: 0,
+                      last_message_preview: null,
+                      title: "新对话",
+                    })
+                    void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+                  }
+                }}
+                aria-label="清空对话"
               >
-                {skill.name}
-              </button>
-            ))}
+                <Trash2 className="size-4" />
+              </Button>
+            ) : null}
           </div>
-        )}
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {messages.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex h-full flex-col items-center justify-center py-20 text-center"
-            >
-              <motion.div
-                animate={{ y: [0, -6, 0], scale: [1, 1.03, 1] }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/20 to-amber-100/60 shadow-lg dark:to-amber-950/40"
-              >
+            <div className="flex h-full flex-col items-center justify-center py-20 text-center">
+              <div className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-primary/10 shadow-sm">
                 <Sparkles className="size-9 text-primary" />
-              </motion.div>
-              <p className="font-display text-xl font-semibold tracking-tight">
-                说说你想做什么
-              </p>
-            </motion.div>
+              </div>
+              <p className="text-xl font-semibold tracking-tight">说说你想做什么</p>
+            </div>
           ) : (
             <div className="space-y-5 pb-4">
               {messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                >
+                <div key={message.id}>
                   <MessageBubble message={message} modelName={chatModelName} />
-                </motion.div>
+                </div>
               ))}
             </div>
           )}
@@ -457,7 +540,7 @@ export default function ChatRoute() {
           )}
 
           <Textarea
-            className="min-h-[4.5rem] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm leading-relaxed shadow-none focus-visible:border-transparent focus-visible:ring-0"
+            className="min-h-[52px] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm leading-relaxed shadow-none focus-visible:border-transparent focus-visible:ring-0"
             placeholder="输入消息…"
             rows={3}
             value={input}
@@ -502,7 +585,7 @@ export default function ChatRoute() {
             ) : (
               <Button
                 size="sm"
-                className="btn-warm gap-2 rounded-full px-5"
+                className="gap-2 rounded-full px-5"
                 disabled={!input.trim() && !attachedFile}
                 onClick={send}
               >
@@ -513,7 +596,7 @@ export default function ChatRoute() {
           </div>
         </div>
       </div>
-    </PageTransition>
+    </div>
   )
 }
 
@@ -574,11 +657,11 @@ function MessageBubble({
             )}
 
             {hasAnswer ? (
-              <div className="rounded-2xl rounded-tl-md bg-card/80 px-4 py-3.5 text-sm leading-relaxed shadow-sm backdrop-blur-sm">
+              <div className="rounded-2xl rounded-tl-md border border-border/60 bg-card px-4 py-3.5 text-sm leading-relaxed shadow-sm">
                 <MarkdownContent content={message.content} />
               </div>
             ) : message.isStreaming && !showThinking ? (
-              <div className="flex items-center gap-2 rounded-2xl rounded-tl-md bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <Loader2 className="size-4 shrink-0 animate-spin" />
                 <span>正在生成…</span>
               </div>

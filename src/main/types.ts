@@ -115,6 +115,8 @@ export type StoragePaths = {
   memoriesDir: string
   personasDir: string
   skillsDir: string
+  playbooksDir: string
+  inputProfilesDir: string
   configFile: string
   defaultDataRoot: string
   defaultModelsDir: string
@@ -186,8 +188,11 @@ export interface IpcContext {
   chatPrompt: (input: string, options?: ChatPromptOptions) => Promise<string>
   chatPromptStream: (
     input: string,
-    options?: ChatPromptOptions
-  ) => AsyncGenerator<ChatStreamDelta, void, unknown>
+    options: ChatPromptOptions & {
+      primeMessages?: { role: "system" | "user" | "assistant"; content: string }[]
+    },
+    onDelta: (delta: ChatStreamDelta) => void
+  ) => Promise<string>
   getChatModelStatus: () => {
     loaded: boolean
     modelPath: string | null

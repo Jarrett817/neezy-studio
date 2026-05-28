@@ -1,0 +1,23 @@
+{
+  "id": "xhs-content",
+  "version": 1,
+  "name": "小红书内容包",
+  "description": "根据选题或卖点生成可发布的小红书文案与标签",
+  "icon": "pen-line",
+  "builtin": true,
+  "inputProfileId": "xhs-minimal",
+  "memoryScope": {
+    "categories": ["记忆", "xhs", "knowledge"],
+    "topK": 5,
+    "allowExpandSearch": true
+  },
+  "skillIds": ["xhs-copy"],
+  "defaultSkillId": "xhs-copy",
+  "steps": ["retrieve", "skill", "llm", "parse:output"],
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array" }
+    }
+  }
+}

@@ -1,5 +1,18 @@
 /** 本应用为 Ollama 配置的模型落盘目录（对应设置里的 modelsDir） */
 let configuredModelsDir: string | null = null
+let configuredOllamaHost: string | null = null
+
+export function configureOllamaHost(host: string): void {
+  const trimmed = host.trim().replace(/\/$/, "")
+  configuredOllamaHost = trimmed || null
+  if (configuredOllamaHost) {
+    process.env.OLLAMA_HOST = configuredOllamaHost
+  }
+}
+
+export function getConfiguredOllamaHost(): string | null {
+  return configuredOllamaHost
+}
 
 export function configureOllamaStorage(modelsDir: string): void {
   configuredModelsDir = modelsDir

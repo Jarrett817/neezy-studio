@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getBuildInfo: () => ipcRenderer.invoke("app:get-build-info"),
+  configureOllamaHost: (host: string) =>
+    ipcRenderer.invoke("app:configure-ollama-host", host),
+  syncRuntimeSettings: (settings: unknown) =>
+    ipcRenderer.invoke("app:sync-runtime-settings", settings),
   getRuntimeMetrics: () => ipcRenderer.invoke("app:get-runtime-metrics"),
   getModelCatalog: (kind?: string) => ipcRenderer.invoke("app:get-model-catalog", kind),
   rebuildModelCatalog: () => ipcRenderer.invoke("app:rebuild-model-catalog"),
@@ -15,6 +19,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   primeChatHistory: (messages: unknown) =>
     ipcRenderer.invoke("app:prime-chat-history", messages),
   getChatModelStatus: () => ipcRenderer.invoke("app:get-chat-model-status"),
+  testLlmConnection: () => ipcRenderer.invoke("app:test-llm-connection"),
+  getOllamaStatus: () => ipcRenderer.invoke("app:get-ollama-status"),
+  testOllamaModel: (modelName: string, kind?: string) =>
+    ipcRenderer.invoke("app:test-ollama-model", { modelName, kind }),
   chatPrompt: (input: string, options?: unknown) =>
     ipcRenderer.invoke("app:chat-prompt", input, options),
   chatPromptStream: (payload: unknown) =>

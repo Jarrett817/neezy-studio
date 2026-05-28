@@ -1,0 +1,42 @@
+{
+  "id": "ui-prototype",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "product",
+      "label": "产品 / 功能名称",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "pages",
+      "label": "页面与核心流程",
+      "type": "textarea",
+      "required": true
+    },
+    {
+      "key": "platform",
+      "label": "平台",
+      "type": "enum",
+      "options": ["Web", "移动端", "桌面端"],
+      "default": "Web",
+      "chip": true
+    },
+    {
+      "key": "style",
+      "label": "视觉风格",
+      "type": "enum",
+      "options": ["极简中性", "Notion 文档风", "数据密集型"],
+      "default": "极简中性",
+      "chip": true
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：为「{{product}}」输出 UI 设计稿文字原型（{{platform}}，风格：{{style}}）。\n\n页面与流程：\n{{pages}}\n\n用户/品牌背景：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请输出 JSON 数组，每个主要页面一项：title（页面名）、body（Markdown：布局结构、区块说明、关键组件、示例文案、交互与状态；可用 ASCII 线框辅助）、tags（页面类型标签）。不要输出其它文字，不要生成图片。"
+}

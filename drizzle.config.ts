@@ -8,7 +8,7 @@ const DB_PATH =
   path.join(process.cwd(), "drizzle", "neezy-memory.db")
 
 export default defineConfig({
-  schema: "./app/services/db/schema.ts",
+  schema: "./src/renderer/app/services/db/schema.ts",
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {

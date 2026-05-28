@@ -1,0 +1,44 @@
+{
+  "id": "test-cases",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "feature",
+      "label": "功能 / 需求描述",
+      "type": "textarea",
+      "required": true
+    },
+    {
+      "key": "testType",
+      "label": "测试类型",
+      "type": "enum",
+      "options": ["功能测试", "接口测试", "E2E"],
+      "default": "功能测试",
+      "chip": true
+    },
+    {
+      "key": "count",
+      "label": "用例条数",
+      "type": "number",
+      "default": 8,
+      "chips": [5, 8, 12],
+      "chip": true
+    },
+    {
+      "key": "priority",
+      "label": "默认优先级",
+      "type": "enum",
+      "options": ["P0", "P1", "P2"],
+      "default": "P1",
+      "chip": true
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：为以下功能编写 {{count}} 条{{testType}}用例，默认优先级 {{priority}}。\n\n功能描述：\n{{feature}}\n\n背景（人设）：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请输出 JSON 数组，每项含：title（用例标题）、body（Markdown：前置条件、步骤、预期结果）、tags（含优先级与类型标签）。不要输出其它文字。"
+}

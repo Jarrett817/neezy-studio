@@ -1,7 +1,9 @@
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 
-import { getOllamaClient } from "./client"
+import { Ollama } from "ollama"
+
+import { getOllamaHost } from "./client"
 import { buildOllamaProcessEnv, getConfiguredOllamaModelsDir } from "./env"
 
 const execFileAsync = promisify(execFile)
@@ -15,16 +17,31 @@ export function isOllamaReady(): boolean {
   return ollamaReady
 }
 
-export async function pingOllama(timeoutMs = 3000): Promise<boolean> {
-  try {
-    const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), timeoutMs)
-    await getOllamaClient().version()
-    clearTimeout(timer)
-    return true
-  } catch {
-    return false
+const DEFAULT_OLLAMA_HOSTS = [
+  "http://127.0.0.1:11434",
+  "http://localhost:11434",
+] as const
+
+export async function pingOllama(timeoutMs = 8000): Promise<boolean> {
+  const hosts = [getOllamaHost(), ...DEFAULT_OLLAMA_HOSTS].filter(
+    (h, i, arr) => arr.indexOf(h) === i
+  )
+
+  for (const host of hosts) {
+    try {
+      const probe = new Ollama({ host })
+      await Promise.race([
+        probe.version(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), timeoutMs)
+        ),
+      ])
+      return true
+    } catch {
+      // try next host
+    }
   }
+  return false
 }
 
 export async function findOllamaBinary(): Promise<string | null> {

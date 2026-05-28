@@ -104,7 +104,7 @@ export default function SkillsRoute() {
       <div className="grid gap-3 md:grid-cols-2">
         <button
           type="button"
-          className="group rounded-2xl bg-card/60 p-5 text-left transition-all hover:bg-card/80"
+          className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm text-left transition-all hover:bg-muted/50"
           onClick={() => archiveInputRef.current?.click()}
         >
           <div className="flex items-center gap-4">
@@ -121,7 +121,7 @@ export default function SkillsRoute() {
         </button>
         <button
           type="button"
-          className="group rounded-2xl bg-card/60 p-5 text-left transition-all hover:bg-card/80"
+          className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm text-left transition-all hover:bg-muted/50"
           onClick={() => folderInputRef.current?.click()}
         >
           <div className="flex items-center gap-4">
@@ -183,7 +183,7 @@ function SkillCard({
   onDelete: () => void
 }) {
   return (
-    <div className="group rounded-2xl bg-card/60 p-4">
+    <div className="group rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">

@@ -1,0 +1,23 @@
+{
+  "id": "tech-doc",
+  "version": 1,
+  "name": "技术文档生成",
+  "description": "根据需求生成 API 文档、PRD、README 或架构说明（Markdown）",
+  "icon": "file-text",
+  "builtin": true,
+  "inputProfileId": "tech-doc",
+  "memoryScope": {
+    "categories": ["记忆", "knowledge", "tech"],
+    "topK": 5,
+    "allowExpandSearch": true
+  },
+  "skillIds": ["tech-doc"],
+  "defaultSkillId": "tech-doc",
+  "steps": ["retrieve", "skill", "llm", "parse:output"],
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array" }
+    }
+  }
+}

@@ -12,11 +12,28 @@ export async function createAgentSession(): Promise<string> {
   return getElectronApi().invoke<string>("agent:create", null)
 }
 
+export async function configureAgentSession(
+  sessionId: string,
+  config: {
+    systemPrompt: string
+    messages?: { role: "user" | "assistant"; content: string }[]
+  }
+): Promise<{ ok: boolean }> {
+  return getElectronApi().invoke("agent:configure", {
+    sessionId,
+    ...config,
+  })
+}
+
 export async function promptAgent(
   sessionId: string,
   message: string
 ): Promise<{ ok: boolean }> {
   return getElectronApi().invoke("agent:prompt", { sessionId, message })
+}
+
+export async function abortAgentSession(sessionId: string): Promise<{ ok: boolean }> {
+  return getElectronApi().invoke("agent:abort", { sessionId })
 }
 
 export async function destroyAgentSession(

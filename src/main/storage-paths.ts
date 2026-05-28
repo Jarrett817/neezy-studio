@@ -63,6 +63,8 @@ function buildResolved(
     memoriesDir: path.join(dataRoot, "memories"),
     personasDir: path.join(dataRoot, "personas"),
     skillsDir: path.join(dataRoot, "skills"),
+    playbooksDir: path.join(dataRoot, "playbooks"),
+    inputProfilesDir: path.join(dataRoot, "input-profiles"),
     configFile: getConfigFilePath(app),
     defaultDataRoot: systemDefaults.dataRoot,
     defaultModelsDir: systemDefaults.modelsDir,
@@ -90,6 +92,8 @@ export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
   await fs.mkdir(paths.memoriesDir, { recursive: true })
   await fs.mkdir(paths.personasDir, { recursive: true })
   await fs.mkdir(paths.skillsDir, { recursive: true })
+  await fs.mkdir(paths.playbooksDir, { recursive: true })
+  await fs.mkdir(paths.inputProfilesDir, { recursive: true })
 }
 
 export async function saveStoragePaths(

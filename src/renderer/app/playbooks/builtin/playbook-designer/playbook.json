@@ -1,0 +1,14 @@
+{
+  "id": "playbook-designer",
+  "version": 1,
+  "name": "对话创建场景",
+  "description": "用自然语言描述任务，生成可保存的场景配置草案",
+  "icon": "wand-2",
+  "builtin": true,
+  "inputProfileId": "playbook-designer",
+  "memoryScope": { "topK": 3 },
+  "skillIds": ["playbook-designer"],
+  "defaultSkillId": "playbook-designer",
+  "steps": ["skill", "llm"],
+  "persist": { "target": "none" }
+}

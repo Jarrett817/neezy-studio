@@ -1,183 +1,445 @@
+import { Link } from "react-router"
+
 import { Layers, Loader2, Sparkles, Zap } from "lucide-react"
 
-import { FadeIn } from "~/components/animation-effects"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+
+
+
+import { ModelCatalogSection } from "~/components/models/model-catalog-section"
+
+import { OllamaActiveModelBar } from "~/components/models/ollama-active-model-bar"
+
+import { OllamaStatusPanel } from "~/components/models/ollama-status-panel"
+
 import { ModelRecommendationBanner } from "~/components/model-oracle-panel"
-import { ModelTarotDeck } from "~/components/models/model-tarot-deck"
-import { RecommendedModelCards } from "~/components/models/recommended-model-cards"
+
 import { Button } from "~/components/ui/button"
+
 import { cn } from "~/lib/utils"
+
 import { useLlmModels } from "~/hooks/use-llm-models"
 
-const KIND_TABS = [
-  { kind: "chat" as const, label: "对话模型", icon: Sparkles },
-  { kind: "embedding" as const, label: "Embedding", icon: Layers },
-]
+import { getRuntimeSettings } from "~/services/settings"
 
-const deckProps = {
-  className: "h-full min-h-[min(44vh,420px)] flex-1" as const,
-}
+
+
+const KIND_TABS = [
+
+  { kind: "chat" as const, label: "对话模型", icon: Sparkles },
+
+  { kind: "embedding" as const, label: "Embedding", icon: Layers },
+
+] as const
+
+
 
 export default function ModelsRoute() {
+
+  const queryClient = useQueryClient()
+
+  const { data: runtimeSettings } = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: getRuntimeSettings,
+    staleTime: 0,
+  })
+
+  const useRemoteChat =
+
+    runtimeSettings?.llmProvider.kind === "openai-compatible"
+
+
+
   const {
+
     kind,
+
     setKind,
-    items,
+
     localChatItems,
+
+    localEmbeddingItems,
+
     recommendedChatItems,
+
+    recommendedEmbeddingItems,
+
     isRecommendedCatalogLoading,
+
     metrics,
+
     selectedId,
+
     toggleSelectedId,
-    dismissDeckSelection,
+
     recommendedId,
+
     activeFileName,
+
     loadingFileName,
+
+    currentChat,
+
+    currentEmbedding,
+
     isRefreshing,
+
+    catalogIsError,
+
+    catalogError,
+
     refresh,
+
     handleDownload,
+
     handleCancelDownload,
+
     handleDelete,
+
+    handleTest,
+
+    testingFileName,
+
     toggleModelRun,
+
+    handleStartChat,
+
+    handleStartEmbedding,
+
   } = useLlmModels()
 
-  const deckCommon = {
-    kind,
+
+
+  const cardHandlers = {
+
     selectedId,
+
     metrics,
+
     recommendedId,
+
     activeFileName,
+
     loadingFileName,
+
     onSelect: toggleSelectedId,
-    onDismissSelection: dismissDeckSelection,
+
     onDownload: handleDownload,
+
     onCancelDownload: handleCancelDownload,
+
     onToggleRun: toggleModelRun,
+
     onDelete: handleDelete,
+
+    onTest: handleTest,
+
+    testingFileName,
+
   }
 
-  return (
-    <div className="flex min-h-0 min-h-[calc(100dvh-8.5rem)] w-full flex-1 flex-col gap-3">
-      <FadeIn className="shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex flex-1 gap-2 rounded-2xl border border-border/40 bg-card/40 p-1.5 backdrop-blur-sm">
-            {KIND_TABS.map(({ kind: tabKind, label, icon: Icon }) => (
-              <button
-                key={tabKind}
-                type="button"
-                onClick={() => setKind(tabKind)}
-                className={cn(
-                  "flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-all",
-                  kind === tabKind
-                    ? "bg-primary/15 text-primary shadow-sm"
-                    : "text-muted-foreground hover:bg-muted/50"
-                )}
-              >
-                <Icon className="size-4" />
-                {label}
-              </button>
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="size-11 shrink-0 rounded-xl"
-            onClick={() => refresh()}
-            disabled={isRefreshing}
-            aria-label="刷新模型列表"
-          >
-            {isRefreshing ? (
-              <Loader2 className="size-5 animate-spin" />
-            ) : (
-              <Zap className="size-5" />
-            )}
-          </Button>
-        </div>
-      </FadeIn>
 
-      {metrics && (
-        <FadeIn delay={0.04} className="shrink-0 space-y-2">
-          {metrics.gpuLabel && metrics.vramSummary && (
-            <div className="rounded-xl border border-border/40 bg-muted/30 px-4 py-2 text-sm text-muted-foreground">
-              <p>
-                <span className="font-medium text-foreground">GPU</span>
-                {`: ${metrics.gpuLabel} · `}
-                <span className="font-medium text-foreground">VRAM</span>
-                {` ${metrics.vramSummary}`}
-              </p>
-              {metrics.gpuInspectLines && metrics.gpuInspectLines.length > 0 && (
-                <ul className="mt-1.5 space-y-0.5 text-xs">
-                  {metrics.gpuInspectLines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
+
+  const refreshAll = () => {
+
+    void refresh()
+
+    void queryClient.invalidateQueries({ queryKey: ["ollama-status"] })
+
+  }
+
+
+
+  return (
+
+    <div className="mx-auto w-full max-w-4xl space-y-8 pb-8 pt-2">
+
+      <header className="space-y-2">
+
+        <h1 className="text-2xl font-semibold tracking-tight">本地模型</h1>
+
+        <p className="max-w-2xl text-sm text-muted-foreground">
+
+          下载、删除、测试 Ollama 模型；选择当前对话与 Embedding 模型。基于 ollama.js（list /
+
+          pull / delete / chat / embed）。
+
+        </p>
+
+        {useRemoteChat ? (
+
+          <p className="text-sm text-muted-foreground">
+
+            对话当前走{" "}
+
+            <strong className="font-medium text-foreground">API</strong>（
+
+            {runtimeSettings?.llmProvider.model || "未配置"}），可在{" "}
+
+            <Link to="/connect" className="font-medium text-primary hover:underline">
+
+              AI 连接
+
+            </Link>{" "}
+
+            切换为本地 Ollama。下方仍可管理本机模型与 Embedding。
+
+          </p>
+
+        ) : (
+
+          <p className="text-sm text-muted-foreground">
+
+            对话走<strong className="font-medium text-foreground">本地 Ollama</strong>
+
+            ，请在上方选择对话模型并启动，或在下方的卡片中操作。
+
+          </p>
+
+        )}
+
+      </header>
+
+
+
+      <OllamaStatusPanel
+
+        onRefreshCatalog={refreshAll}
+
+        isRefreshingCatalog={isRefreshing}
+
+      />
+
+
+
+      <OllamaActiveModelBar
+
+        useRemoteChat={useRemoteChat}
+
+        localChatItems={localChatItems}
+
+        localEmbeddingItems={localEmbeddingItems}
+
+        currentChat={currentChat}
+
+        currentEmbedding={currentEmbedding}
+
+        onSelectChat={(item) => void handleStartChat(item)}
+
+        onSelectEmbedding={(item) => void handleStartEmbedding(item)}
+
+      />
+
+
+
+      <div className="flex flex-wrap items-center gap-3">
+
+        <div className="flex flex-1 gap-1 rounded-2xl border border-border/60 bg-card p-1 shadow-sm">
+
+          {KIND_TABS.map(({ kind: tabKind, label, icon: Icon }) => (
+
+            <button
+
+              key={tabKind}
+
+              type="button"
+
+              onClick={() => setKind(tabKind)}
+
+              className={cn(
+
+                "flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-colors",
+
+                kind === tabKind
+
+                  ? "bg-primary text-primary-foreground shadow-sm"
+
+                  : "text-muted-foreground hover:bg-muted/50"
+
               )}
-            </div>
+
+            >
+
+              <Icon className="size-4" />
+
+              {label}
+
+            </button>
+
+          ))}
+
+        </div>
+
+        <Button
+
+          type="button"
+
+          variant="outline"
+
+          size="icon"
+
+          className="size-11 shrink-0 rounded-xl border-border/60"
+
+          onClick={refreshAll}
+
+          disabled={isRefreshing}
+
+          aria-label="刷新模型列表"
+
+        >
+
+          {isRefreshing ? (
+
+            <Loader2 className="size-5 animate-spin" />
+
+          ) : (
+
+            <Zap className="size-5" />
+
           )}
+
+        </Button>
+
+      </div>
+
+
+
+      {catalogIsError ? (
+
+        <p className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+
+          {catalogError instanceof Error
+
+            ? catalogError.message
+
+            : "无法加载模型列表，请确认 Ollama 已安装并运行后点击刷新。"}
+
+        </p>
+
+      ) : null}
+
+
+
+      {metrics ? (
+
+        <div className="space-y-2">
+
+          {metrics.gpuInspectLines?.length ? (
+
+            <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
+
+              {metrics.gpuInspectLines.map((line) => (
+
+                <p key={line}>{line}</p>
+
+              ))}
+
+            </div>
+
+          ) : null}
+
           <ModelRecommendationBanner metrics={metrics} />
-        </FadeIn>
+
+        </div>
+
+      ) : isRefreshing ? (
+
+        <p className="text-sm text-muted-foreground">正在读取本机配置与推荐模型…</p>
+
+      ) : null}
+
+
+
+      {kind === "chat" ? (
+
+        <div className="space-y-8">
+
+          <ModelCatalogSection
+
+            title="本机已下载"
+
+            description="选中后点「启动」载入对话；烧瓶图标可快速测试连通性。"
+
+            kind="chat"
+
+            items={localChatItems}
+
+            emptyText="尚未下载对话模型，请从下方推荐列表下载。"
+
+            isLoading={isRefreshing && localChatItems.length === 0}
+
+            {...cardHandlers}
+
+          />
+
+          <ModelCatalogSection
+
+            title="推荐下载"
+
+            description="按内存与 Ollama 库精选；带「推荐」角标为系统首选。"
+
+            kind="chat"
+
+            items={recommendedChatItems}
+
+            isLoading={isRecommendedCatalogLoading}
+
+            emptyText="推荐列表暂不可用，请确认 Ollama 已运行后点击刷新。"
+
+            {...cardHandlers}
+
+          />
+
+        </div>
+
+      ) : (
+
+        <div className="space-y-8">
+
+          <ModelCatalogSection
+
+            title="本机已下载"
+
+            description="选用后用于记忆向量检索；烧瓶图标测试 embed。"
+
+            kind="embedding"
+
+            items={localEmbeddingItems}
+
+            emptyText="尚未下载 Embedding 模型。"
+
+            isLoading={isRefreshing && localEmbeddingItems.length === 0}
+
+            {...cardHandlers}
+
+          />
+
+          <ModelCatalogSection
+
+            title="推荐下载"
+
+            description="用于记忆向量检索，建议优先选用推荐项。"
+
+            kind="embedding"
+
+            items={recommendedEmbeddingItems}
+
+            isLoading={isRecommendedCatalogLoading}
+
+            emptyText="推荐列表暂不可用，请刷新。"
+
+            {...cardHandlers}
+
+          />
+
+        </div>
+
       )}
 
-      <FadeIn delay={0.08} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {kind === "chat" ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-5">
-            {localChatItems.length > 0 && (
-              <section className="flex min-h-0 shrink-0 flex-col gap-2">
-                <h2 className="px-1 text-sm font-medium text-foreground">
-                  本机已下载
-                </h2>
-                <p className="px-1 text-xs text-muted-foreground">
-                  已在 Ollama 中安装的模型。
-                </p>
-                <ModelTarotDeck
-                  {...deckCommon}
-                  {...deckProps}
-                  items={localChatItems}
-                />
-              </section>
-            )}
-            <section className="flex min-h-0 flex-1 flex-col gap-2">
-              <h2 className="px-1 text-sm font-medium text-foreground">
-                推荐模型
-              </h2>
-              <p className="px-1 text-xs text-muted-foreground">
-                通过 Ollama 拉取；列表由应用内置推荐。
-              </p>
-              {isRecommendedCatalogLoading ? (
-                <div className="flex min-h-[min(44vh,420px)] flex-1 items-center justify-center gap-2 rounded-2xl border border-border/40 bg-card/25 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  正在分析推荐模型…
-                </div>
-              ) : recommendedChatItems.length === 0 ? (
-                <div className="flex min-h-[min(44vh,420px)] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/50 px-6 text-center text-sm text-muted-foreground">
-                  推荐列表暂不可用。请检查网络后点击右上角刷新。
-                </div>
-              ) : (
-                <RecommendedModelCards
-                  kind={kind}
-                  items={recommendedChatItems}
-                  selectedId={selectedId}
-                  metrics={metrics}
-                  recommendedId={recommendedId}
-                  activeFileName={activeFileName}
-                  loadingFileName={loadingFileName}
-                  onSelect={toggleSelectedId}
-                  onDownload={handleDownload}
-                  onCancelDownload={handleCancelDownload}
-                  onToggleRun={toggleModelRun}
-                  onDelete={handleDelete}
-                />
-              )}
-            </section>
-          </div>
-        ) : (
-          <ModelTarotDeck
-            {...deckCommon}
-            className="h-full min-h-0 flex-1"
-            items={items}
-          />
-        )}
-      </FadeIn>
     </div>
+
   )
+
 }
+
+

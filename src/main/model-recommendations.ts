@@ -99,6 +99,7 @@ export function buildModelRecommendations({
   return {
     chatTier,
     embeddingTier,
+    notes,
     recommendedChatId: recommendedChat?.id ?? null,
     recommendedEmbeddingId: recommendedEmbedding?.id ?? null,
     recommendedReason: notes.join(" ") + compatNote,

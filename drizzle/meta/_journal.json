@@ -15,6 +15,20 @@
       "when": 1778165805895,
       "tag": "0001_fantastic_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779972597844,
+      "tag": "0002_kind_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779972631430,
+      "tag": "0003_fancy_warstar",
+      "breakpoints": true
     }
   ]
 }

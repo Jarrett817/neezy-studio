@@ -12,6 +12,7 @@ import {
   listLlmModels as listLocalLlmModels,
   loadChatModel as loadChatModelInMain,
   loadEmbeddingModel as loadEmbeddingModelInMain,
+  primeChatHistoryFromMain,
   onChatStreamFromMain,
   unloadChatModel as unloadChatModelInMain,
   unloadEmbeddingModel as unloadEmbeddingModelInMain,
@@ -158,13 +159,22 @@ export async function loadModel(
   onProgress?.(progress)
 
   try {
-    const fileInfo = await getChatModelFileInfo(modelId)
-    if (!fileInfo.ok || !fileInfo.filePath) {
-      throw new Error(fileInfo.reason ?? "模型文件不可用")
-    }
     const settings = await getRuntimeSettings()
+    const isRemote = settings.llmProvider.kind === "openai-compatible"
+    const fileInfo = isRemote
+      ? { ok: true as const, filePath: modelId }
+      : await getChatModelFileInfo(modelId)
+    if (!fileInfo.ok || !fileInfo.filePath) {
+      throw new Error(
+        !isRemote && "reason" in fileInfo
+          ? fileInfo.reason ?? "模型文件不可用"
+          : "模型不可用"
+      )
+    }
     try {
-      await unloadEmbeddingModelInMain().catch(() => {})
+      if (!isRemote) {
+        await unloadEmbeddingModelInMain().catch(() => {})
+      }
       const loadInfo = await loadChatModelInMain({
         modelPath: fileInfo.filePath,
         preferLowPower: settings.preferLowPower,
@@ -207,12 +217,45 @@ export function shouldKeepHot(): boolean {
 async function ensureChatModelLoaded(): Promise<void> {
   if (currentModel) return
   const settings = await getRuntimeSettings()
+  if (settings.llmProvider.kind === "openai-compatible") {
+    const model = settings.llmProvider.model.trim()
+    if (!settings.llmProvider.apiKey.trim()) {
+      throw new Error("请先在「AI 连接」中配置 API Key 与模型名")
+    }
+    if (!model) {
+      throw new Error("请先在「AI 连接」中配置对话模型名称")
+    }
+    await loadModel(model)
+    return
+  }
   if (!settings.llmModel) {
     throw new Error(
-      "未选择 Ollama 对话模型，请先在模型页下载并启动模型。"
+      "未选择本地 Ollama 对话模型，请在「AI 连接」切换为 Ollama 并在模型页下载。"
     )
   }
   await loadModel(settings.llmModel)
+}
+
+async function chatViaGatewayMessages(
+  messages: ChatMessage[],
+  options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
+  await resetChatHistoryFromMain()
+  const history = messages.slice(0, -1).slice(-CHAT_PRIME_MESSAGE_LIMIT)
+  if (history.length > 0) {
+    await primeChatHistoryFromMain(
+      history.map((m) => ({ role: m.role, content: m.content }))
+    )
+  }
+  const last = messages[messages.length - 1]
+  const input = last?.role === "user" ? last.content : formatPrompt(messages)
+  const content = await chatPromptFromMain(input, {
+    temperature: options?.temperature,
+    topK: 10,
+    maxTokens: options?.maxTokens,
+  })
+  syncedMessageCount = messages.length
+  return content
 }
 
 export async function chat(
@@ -225,10 +268,15 @@ export async function chat(
 ): Promise<string> {
   await ensureChatModelLoaded()
   touchLastUsed()
-  const content = await chatPromptFromMain(formatPrompt(messages), {
-    temperature: options?.temperature,
-    topK: 10,
-  })
+  const settings = await getRuntimeSettings()
+  const content =
+    settings.llmProvider.kind === "openai-compatible"
+      ? await chatViaGatewayMessages(messages, options)
+      : await chatPromptFromMain(formatPrompt(messages), {
+          temperature: options?.temperature,
+          topK: 10,
+          maxTokens: options?.maxTokens,
+        })
   options?.onChunk?.(content)
   return content
 }

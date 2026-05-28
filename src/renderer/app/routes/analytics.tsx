@@ -49,7 +49,7 @@ export default function AnalyticsRoute() {
   return (
     <div className="space-y-6 pt-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-tight">
           数据复盘
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -82,7 +82,7 @@ export default function AnalyticsRoute() {
           return (
             <div
               key={item.label}
-              className="rounded-2xl bg-card/60 p-5 transition-colors hover:bg-card/80"
+              className="rounded-2xl border border-border/60 bg-card shadow-sm p-5 transition-colors hover:bg-muted/40"
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -101,7 +101,7 @@ export default function AnalyticsRoute() {
       </div>
 
       {chartData.length > 0 && (
-        <Card className="bg-card/60">
+        <Card className="border-border/60 bg-card shadow-sm">
           <CardContent className="p-6">
             <h2 className="mb-4 text-sm font-semibold">知识库分布</h2>
             <EchartsBarChart data={chartData} valueLabel="条目" height={192} />
@@ -109,7 +109,7 @@ export default function AnalyticsRoute() {
         </Card>
       )}
 
-      <div className="rounded-2xl bg-card/60 p-6">
+      <div className="rounded-2xl border border-border/60 bg-card shadow-sm p-6">
         <h2 className="mb-4 text-sm font-semibold">最近添加</h2>
         {recentKnowledge.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">

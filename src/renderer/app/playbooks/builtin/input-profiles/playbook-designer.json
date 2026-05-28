@@ -1,0 +1,14 @@
+{
+  "id": "playbook-designer",
+  "version": 1,
+  "capture": ["form"],
+  "fields": [
+    {
+      "key": "intent",
+      "label": "用一句话描述你想做的场景",
+      "type": "textarea",
+      "required": true
+    }
+  ],
+  "promptTemplate": "用户想创建一个新的工作场景，描述如下：\n{{intent}}\n\n请根据描述生成场景配置草案。"
+}

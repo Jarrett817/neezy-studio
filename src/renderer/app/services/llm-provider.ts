@@ -45,10 +45,10 @@ CODING_PLAN_PRESETS.custom = {
 
 export const DEFAULT_LLM_PROVIDER: LlmProviderConfig = {
   kind: "openai-compatible",
-  preset: "zhipu-coding",
-  baseUrl: CODING_PLAN_PRESETS["zhipu-coding"].baseUrl,
+  preset: "custom",
+  baseUrl: "",
   apiKey: "",
-  model: "GLM-4.7",
+  model: "",
 }
 
 export function resolveProviderBaseUrl(config: LlmProviderConfig): string {

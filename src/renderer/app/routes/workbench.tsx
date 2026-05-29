@@ -12,17 +12,21 @@ import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
 import { loadLastPlaybookSlots } from "~/services/playbook/extract-slots"
 import { ensurePlaybookDirs, listPlaybooks } from "~/services/playbook"
-import { listChatSessions } from "~/services/storage/chat-history"
+import { listChatSessionsWithMessages } from "~/services/storage/chat-history"
 import { listMemories } from "~/services/memories"
 import { isModelLoaded } from "~/services/llm"
-import { getRuntimeSettings } from "~/services/settings"
+import { isEntryConfigured } from "~/config/chat-models"
+import {
+  getRuntimeSettings,
+  resolveChatModelEntry,
+} from "~/services/settings"
 
 function isAiConnected(settings: Awaited<ReturnType<typeof getRuntimeSettings>>): boolean {
-  if (settings.llmProvider.kind === "openai-compatible") {
-    return Boolean(
-      settings.llmProvider.apiKey.trim() && settings.llmProvider.model.trim()
-    )
+  const entry = resolveChatModelEntry(settings)
+  if (entry?.transport === "openai-compatible") {
+    return isEntryConfigured(entry, settings.llmProvider)
   }
+  if (entry?.transport === "ollama") return Boolean(entry.model.trim())
   return isModelLoaded()
 }
 
@@ -41,8 +45,8 @@ export default function WorkbenchRoute() {
   })
 
   const { data: chatSessions = [] } = useQuery({
-    queryKey: ["chat-sessions"],
-    queryFn: listChatSessions,
+    queryKey: ["chat-sessions", "with-messages"],
+    queryFn: listChatSessionsWithMessages,
   })
 
   const { data: memories = [] } = useQuery({
@@ -115,7 +119,7 @@ export default function WorkbenchRoute() {
                 <Link
                   to={
                     continueTarget.type === "chat"
-                      ? "/chat"
+                      ? `/chat?session=${encodeURIComponent(continueTarget.id)}`
                       : `/create/${continueTarget.id}`
                   }
                 >
@@ -177,7 +181,7 @@ export default function WorkbenchRoute() {
             {recentChats.map((session) => (
               <li key={session.id}>
                 <Link
-                  to="/chat"
+                  to={`/chat?session=${encodeURIComponent(session.id)}`}
                   className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-sm shadow-sm transition-colors hover:bg-muted/40"
                 >
                   <span className="flex min-w-0 items-center gap-2 font-medium">

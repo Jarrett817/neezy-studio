@@ -8,6 +8,7 @@ export interface CodingPlanVendor {
   id: string
   label: string
   baseUrl: string
+  /** 仅 UI 示例，不保证与厂商当前可用模型一致 */
   modelHints: string[]
   usageUrl?: string
   docsUrl?: string
@@ -82,7 +83,7 @@ export const CODING_PLAN_VENDOR_CATALOG: CodingPlanVendor[] = [
     id: "minimax-coding",
     label: "MiniMax Coding Plan",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    modelHints: ["MiniMax-M2.5"],
+    modelHints: ["MiniMax-M2.7"],
   },
 ]
 

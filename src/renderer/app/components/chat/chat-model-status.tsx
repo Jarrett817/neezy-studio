@@ -2,9 +2,15 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowRight, Loader2 } from "lucide-react"
 import { Link } from "react-router"
 
+import { entryDisplayName } from "~/config/chat-models"
 import { useActiveModels } from "~/hooks/use-active-models"
 import { cn } from "~/lib/utils"
-import { getRuntimeSettings } from "~/services/settings"
+import { MODEL_TIER_META } from "~/config/model-tiers"
+import {
+  getRuntimeSettings,
+  resolveChatModelEntry,
+  resolveTierForChat,
+} from "~/services/settings"
 
 export function ChatModelStatus({ className }: { className?: string }) {
   const { data: settings } = useQuery({
@@ -13,10 +19,12 @@ export function ChatModelStatus({ className }: { className?: string }) {
     staleTime: 10_000,
   })
   const { chat } = useActiveModels()
-  const isApi = settings?.llmProvider.kind === "openai-compatible"
+  const entry = settings ? resolveChatModelEntry(settings) : null
+  const tier = settings ? resolveTierForChat(settings) : null
+  const tierLabel = tier ? MODEL_TIER_META[tier].label : null
+  const isApi = entry?.transport === "openai-compatible"
 
-  if (isApi) {
-    const model = settings?.llmProvider.model.trim() || "未配置"
+  if (isApi && entry) {
     return (
       <div
         className={cn(
@@ -25,13 +33,14 @@ export function ChatModelStatus({ className }: { className?: string }) {
         )}
       >
         <span className="truncate">
-          对话经 API · <span className="font-medium text-foreground">{model}</span>
+          对话 · {tierLabel ? `${tierLabel} · ` : null}
+          <span className="font-medium text-foreground">{entryDisplayName(entry)}</span>
         </span>
         <Link
           to="/connect"
           className="inline-flex shrink-0 items-center gap-0.5 font-medium text-foreground hover:underline"
         >
-          AI 连接
+          模型与连接
           <ArrowRight className="size-3" />
         </Link>
       </div>
@@ -64,13 +73,13 @@ export function ChatModelStatus({ className }: { className?: string }) {
             aria-hidden
           />
         )}
-        对话模型：{chat.label}
+        对话模型：{entry ? entryDisplayName(entry) : chat.label}
       </span>
       <Link
-        to="/models"
+        to="/connect"
         className="inline-flex shrink-0 items-center gap-0.5 font-medium text-foreground hover:underline"
       >
-        {needsSetup ? "去配置模型" : "Ollama 模型"}
+        {needsSetup ? "去配置模型" : "模型与连接"}
         <ArrowRight className="size-3" />
       </Link>
     </div>

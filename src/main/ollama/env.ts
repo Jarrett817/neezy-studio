@@ -1,5 +1,3 @@
-/** 本应用为 Ollama 配置的模型落盘目录（对应设置里的 modelsDir） */
-let configuredModelsDir: string | null = null
 let configuredOllamaHost: string | null = null
 
 export function configureOllamaHost(host: string): void {
@@ -14,19 +12,7 @@ export function getConfiguredOllamaHost(): string | null {
   return configuredOllamaHost
 }
 
-export function configureOllamaStorage(modelsDir: string): void {
-  configuredModelsDir = modelsDir
-}
-
-export function getConfiguredOllamaModelsDir(): string | null {
-  return configuredModelsDir
-}
-
-/** 启动 ollama serve 时注入的环境变量 */
+/** 启动 ollama serve 时环境变量（不设置 OLLAMA_MODELS，由 Ollama 自身/系统默认目录管理） */
 export function buildOllamaProcessEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  if (configuredModelsDir) {
-    env.OLLAMA_MODELS = configuredModelsDir
-  }
-  return env
+  return { ...process.env }
 }

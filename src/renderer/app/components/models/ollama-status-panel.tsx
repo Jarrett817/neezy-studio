@@ -3,6 +3,8 @@ import { Loader2, RefreshCw, Server } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
 import { getOllamaStatus } from "~/services/electron-client"
+import { findOllamaChatEntry } from "~/config/chat-models"
+import { getRuntimeSettings } from "~/services/settings"
 import { cn } from "~/lib/utils"
 
 export function OllamaStatusPanel({
@@ -25,7 +27,15 @@ export function OllamaStatusPanel({
     retry: 1,
   })
 
+  const { data: runtimeSettings } = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: getRuntimeSettings,
+    staleTime: 5_000,
+  })
+
   const connected = status?.connected === true
+  const selectedOllama =
+    findOllamaChatEntry(runtimeSettings?.chatModels ?? [])?.model.trim() ?? ""
   const errorMessage =
     error instanceof Error ? error.message : isError ? "无法检测 Ollama 状态" : null
 
@@ -53,8 +63,15 @@ export function OllamaStatusPanel({
               <p className="text-xs text-muted-foreground">
                 内存中：{status.runningModels.map((m) => m.name).join("、")}
               </p>
+            ) : connected && selectedOllama ? (
+              <p className="text-xs text-muted-foreground">
+                已选用对话模型：<span className="font-medium text-foreground">{selectedOllama}</span>
+                （Ollama 按需加载，未常驻内存时此处可能为空）
+              </p>
             ) : connected ? (
-              <p className="text-xs text-muted-foreground">暂无运行中的模型</p>
+              <p className="text-xs text-muted-foreground">
+                未选用本地对话模型，请在下方选择并启动
+              </p>
             ) : errorMessage ? (
               <p className="text-xs text-destructive">
                 {errorMessage.includes("No handler registered")

@@ -146,7 +146,7 @@ export async function searchMemorySlices(
   await ensureInit()
   let queryEmbedding: number[] | null = null
   try {
-    queryEmbedding = await getEmbeddings(query)
+    queryEmbedding = await getEmbeddings(query, { purpose: "query" })
   } catch (e) {
     console.warn("Failed to generate query embedding:", e)
     return []

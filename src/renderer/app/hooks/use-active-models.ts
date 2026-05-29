@@ -2,7 +2,11 @@ import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { getModelCatalog, type ModelCatalogItem } from "~/services/electron-client"
-import { getRuntimeSettings } from "~/services/settings"
+import { entryDisplayName, findOllamaChatEntry } from "~/config/chat-models"
+import {
+  getRuntimeSettings,
+  resolveChatModelEntry,
+} from "~/services/settings"
 import {
   getCurrentModel,
   getLoadingState,
@@ -58,31 +62,32 @@ export function useActiveModels() {
     refetchOnWindowFocus: true,
   })
 
-  const { data: embeddingCatalog = [] } = useQuery({
-    queryKey: ["model-catalog", "embedding"],
-    queryFn: () => getModelCatalog("embedding"),
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-  })
+  const entry = settings ? resolveChatModelEntry(settings) : null
+  const isApi = entry?.transport === "openai-compatible"
+  const ollamaModel = settings
+    ? findOllamaChatEntry(settings.chatModels)?.model
+    : undefined
+  const chatFileName = chatFile ?? ollamaModel ?? null
 
-  const isApi = settings?.llmProvider.kind === "openai-compatible"
-  const chatFileName = chatFile ?? settings?.llmModel ?? null
-  const embFileName = settings?.embeddingModel ?? null
-
-  const chat: ActiveModelChip = isApi
-    ? {
-        label: settings.llmProvider.model.trim() || "未配置",
-        status: settings.llmProvider.apiKey.trim() ? "ready" : "idle",
-      }
+  const chat: ActiveModelChip = entry
+    ? isApi
+      ? {
+          label: entryDisplayName(entry),
+          status: (entry.apiKey ?? settings?.llmProvider.apiKey)?.trim()
+            ? "ready"
+            : "idle",
+        }
+      : {
+          label: entryDisplayName(entry),
+          status: entry.model.trim() ? "ready" : "idle",
+        }
     : {
         label: displayName(chatFileName, chatCatalog) ?? "未选择",
-        status: chatStatus(loading, Boolean(chatFileName)),
+        status:
+          chatFileName && (isModelLoaded() || !loading.isLoading)
+            ? "ready"
+            : chatStatus(loading, Boolean(chatFileName)),
       }
 
-  const embedding: ActiveModelChip = {
-    label: displayName(embFileName, embeddingCatalog) ?? "未配置",
-    status: embFileName ? "idle" : "idle",
-  }
-
-  return { chat, embedding }
+  return { chat }
 }

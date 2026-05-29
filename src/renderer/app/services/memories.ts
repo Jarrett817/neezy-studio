@@ -8,7 +8,13 @@ import {
   upsertMemoryEmbedding,
 } from "~/services/vector-store"
 import { writeMemoryFile, deleteMemoryFile } from "./fs-memory"
-import { eq } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
+import {
+  isKnowledgeCategory,
+  isMemoryPanelCategory,
+  MEMORY_CATEGORY,
+  type MemoryCategory,
+} from "~/config/memory-categories"
 import { getEmbeddings } from "./llm"
 
 export type MemoryItem = {
@@ -89,8 +95,33 @@ export async function listMemories(): Promise<MemoryItem[]> {
   const result = await db
     .select()
     .from(schema.memoryItems)
-    .orderBy(schema.memoryItems.created_at)
+    .orderBy(desc(schema.memoryItems.updated_at))
   return result
+}
+
+export async function listMemoriesByCategory(
+  category: MemoryCategory
+): Promise<MemoryItem[]> {
+  const all = await listMemories()
+  const match =
+    category === MEMORY_CATEGORY.KNOWLEDGE
+      ? isKnowledgeCategory
+      : isMemoryPanelCategory
+  return all.filter((item) => match(item.category))
+}
+
+export async function searchMemoriesScoped(
+  query: string,
+  options?: { limit?: number; category?: string }
+): Promise<MemoryItem[]> {
+  const limit = options?.limit ?? 10
+  const results = await searchMemories(query, limit * 3)
+  if (!options?.category) return results.slice(0, limit)
+  const match =
+    options.category === MEMORY_CATEGORY.KNOWLEDGE
+      ? isKnowledgeCategory
+      : isMemoryPanelCategory
+  return results.filter((item) => match(item.category)).slice(0, limit)
 }
 
 // 删除记忆
@@ -150,7 +181,7 @@ export async function searchMemories(
   // 生成查询向量
   let queryEmbedding: number[] | null = null
   try {
-    queryEmbedding = await getEmbeddings(query)
+    queryEmbedding = await getEmbeddings(query, { purpose: "query" })
   } catch (e) {
     console.warn("Failed to generate query embedding:", e)
     return fallbackSearch()

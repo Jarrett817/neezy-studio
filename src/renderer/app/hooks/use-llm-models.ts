@@ -13,17 +13,15 @@ import {
   onModelDownloadProgress,
   testOllamaModel,
   type ModelCatalogItem,
-  type ModelKind,
   type RuntimeMetrics,
 } from "~/services/electron-client"
 import {
-  isChatModelRunning,
+  isCatalogItemRunning,
   startChatModel,
-  startEmbeddingModel,
   stopChatModel,
-  stopEmbeddingModel,
 } from "~/services/model-runtime"
-import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
+import { findOllamaChatEntry } from "~/config/chat-models"
+import { getRuntimeSettings } from "~/services/settings"
 import {
   getCurrentModel,
   getLoadingState,
@@ -39,22 +37,20 @@ function catalogRecommended(items: ModelCatalogItem[]): ModelCatalogItem[] {
   return notInstalled.filter((i) => !i.isLocalOnly)
 }
 
-async function fetchModelCatalog(kind: ModelKind): Promise<ModelCatalogItem[]> {
-  let items = await getModelCatalog(kind)
+async function fetchChatCatalog(): Promise<ModelCatalogItem[]> {
+  let items = await getModelCatalog("chat")
   if (items.length > 0) return items
   await rebuildModelCatalog()
-  items = await getModelCatalog(kind)
+  items = await getModelCatalog("chat")
   return items
 }
 
 export function useLlmModels() {
   const queryClient = useQueryClient()
-  const [kind, setKind] = useState<ModelKind>("chat")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [currentChat, setCurrentChat] = useState<string | null>(
     getCurrentModel()
   )
-  const [currentEmbedding, setCurrentEmbedding] = useState<string | null>(null)
   const [loadingState, setLoadingState] = useState(getLoadingState())
   const [testingFileName, setTestingFileName] = useState<string | null>(null)
   const deckSelectionPinned = useRef(false)
@@ -67,28 +63,16 @@ export function useLlmModels() {
 
   const chatCatalogQuery = useQuery({
     queryKey: ["model-catalog", "chat"],
-    queryFn: () => fetchModelCatalog("chat"),
-    staleTime: CATALOG_STALE_MS,
-    refetchOnWindowFocus: true,
-  })
-  const embeddingCatalogQuery = useQuery({
-    queryKey: ["model-catalog", "embedding"],
-    queryFn: () => fetchModelCatalog("embedding"),
+    queryFn: fetchChatCatalog,
     staleTime: CATALOG_STALE_MS,
     refetchOnWindowFocus: true,
   })
 
   const chatItems = chatCatalogQuery.data ?? []
-  const embeddingItems = embeddingCatalogQuery.data ?? []
   const refetchChatCatalog = chatCatalogQuery.refetch
-  const refetchEmbeddingCatalog = embeddingCatalogQuery.refetch
-  const chatFetching = chatCatalogQuery.isFetching
-  const embeddingFetching = embeddingCatalogQuery.isFetching
-  const catalogError = chatCatalogQuery.error ?? embeddingCatalogQuery.error
-  const catalogIsError = chatCatalogQuery.isError || embeddingCatalogQuery.isError
-
-  const items = kind === "chat" ? chatItems : embeddingItems
-  const isRefreshing = chatFetching || embeddingFetching
+  const isRefreshing = chatCatalogQuery.isFetching
+  const catalogError = chatCatalogQuery.error
+  const catalogIsError = chatCatalogQuery.isError
 
   const localChatItems = useMemo(
     () => chatItems.filter((i) => i.installed),
@@ -98,21 +82,13 @@ export function useLlmModels() {
     () => catalogRecommended(chatItems),
     [chatItems]
   )
-  const localEmbeddingItems = useMemo(
-    () => embeddingItems.filter((i) => i.installed),
-    [embeddingItems]
-  )
-  const recommendedEmbeddingItems = useMemo(
-    () => catalogRecommended(embeddingItems),
-    [embeddingItems]
-  )
   const isRecommendedCatalogLoading =
-    (kind === "chat" ? recommendedChatItems : recommendedEmbeddingItems).length ===
-      0 && isRefreshing
+    recommendedChatItems.length === 0 && isRefreshing
 
-  const syncEmbeddingSelection = useCallback(async () => {
+  const syncFromSettings = useCallback(async () => {
     const settings = await getRuntimeSettings()
-    setCurrentEmbedding(settings.embeddingModel || null)
+    const ollama = findOllamaChatEntry(settings.chatModels)
+    if (ollama?.enabled && ollama.model) setCurrentChat(ollama.model)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -122,20 +98,15 @@ export function useLlmModels() {
         queryClient.invalidateQueries({ queryKey: ["model-catalog"] }),
         queryClient.invalidateQueries({ queryKey: ["model-recommendations"] }),
         refetchChatCatalog(),
-        refetchEmbeddingCatalog(),
-        syncEmbeddingSelection(),
+        syncFromSettings(),
       ])
-      setCurrentChat(getCurrentModel())
+      const settings = await getRuntimeSettings()
+      const ollama = findOllamaChatEntry(settings.chatModels)
+      setCurrentChat(getCurrentModel() ?? ollama?.model ?? null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "无法读取模型列表")
     }
-  }, [
-    queryClient,
-    refetchChatCatalog,
-    refetchEmbeddingCatalog,
-    syncEmbeddingSelection,
-    rebuildModelCatalog,
-  ])
+  }, [queryClient, refetchChatCatalog, syncFromSettings])
 
   const catalogBootstrapped = useRef(false)
   useEffect(() => {
@@ -145,13 +116,14 @@ export function useLlmModels() {
   }, [refresh])
 
   useEffect(() => {
-    syncEmbeddingSelection().catch(() => {})
+    syncFromSettings().catch(() => {})
     const unsubLoading = subscribeLoadingState((next) => {
       setLoadingState(next)
       if (!next.isLoading) setCurrentChat(getCurrentModel())
     })
     const unsubDownload = onModelDownloadProgress((next) => {
-      const key = ["model-catalog", next.kind] as const
+      if (next.kind !== "chat") return
+      const key = ["model-catalog", "chat"] as const
       queryClient.setQueryData<ModelCatalogItem[]>(key, (list) =>
         (list ?? []).map((item) => (item.id === next.id ? next : item))
       )
@@ -165,63 +137,32 @@ export function useLlmModels() {
       unsubDownload()
       unsubCatalog()
     }
-  }, [queryClient, syncEmbeddingSelection])
+  }, [queryClient, syncFromSettings])
 
   useEffect(() => {
-    deckSelectionPinned.current = false
-  }, [kind])
-
-  useEffect(() => {
-    if (items.length === 0) {
+    if (chatItems.length === 0) {
       setSelectedId(null)
       deckSelectionPinned.current = false
       return
     }
-    if (selectedId != null && items.some((i) => i.id === selectedId)) return
+    if (selectedId != null && chatItems.some((i) => i.id === selectedId)) return
     if (selectedId === null && deckSelectionPinned.current) return
-    const activeFile = kind === "chat" ? currentChat : currentEmbedding
-    const active = items.find((i) => i.fileName === activeFile)
-    const recommendedId =
-      kind === "chat"
-        ? metrics?.recommendedChatId
-        : metrics?.recommendedEmbeddingId
-    const recommended = items.find((i) => i.id === recommendedId)
-    setSelectedId(active?.id ?? recommended?.id ?? items[0].id)
-  }, [items, selectedId, kind, currentChat, currentEmbedding, metrics])
+    const active = chatItems.find((i) => i.fileName === currentChat)
+    const recommended = chatItems.find(
+      (i) => i.id === metrics?.recommendedChatId
+    )
+    setSelectedId(active?.id ?? recommended?.id ?? chatItems[0].id)
+  }, [chatItems, selectedId, currentChat, metrics])
 
   const toggleSelectedId = useCallback((id: string) => {
     deckSelectionPinned.current = true
     setSelectedId((prev) => (prev === id ? null : id))
   }, [])
 
-  const dismissDeckSelection = useCallback(() => {
-    deckSelectionPinned.current = true
-    setSelectedId(null)
-  }, [])
-
-  const selectedItem = items.find((i) => i.id === selectedId) ?? null
-  const recommendedId =
-    kind === "chat"
-      ? (metrics?.recommendedChatId ?? null)
-      : (metrics?.recommendedEmbeddingId ?? null)
-
-  const isModelRunning = useCallback(
-    (item: ModelCatalogItem) =>
-      kind === "chat"
-        ? isChatModelRunning(item.fileName)
-        : currentEmbedding === item.fileName,
-    [kind, currentEmbedding]
-  )
-
-  const activeFileName =
-    kind === "chat"
-      ? currentChat
-      : currentEmbedding
-
+  const recommendedId = metrics?.recommendedChatId ?? null
+  const activeFileName = currentChat
   const loadingFileName =
-    kind === "chat" && loadingState.isLoading
-      ? loadingState.loadingModelId
-      : null
+    loadingState.isLoading ? loadingState.loadingModelId : null
 
   const handleDownload = useCallback(
     async (modelId: string) => {
@@ -252,22 +193,8 @@ export function useLlmModels() {
   const handleStartChat = useCallback(
     async (item: ModelCatalogItem) => {
       try {
-        const settings = await getRuntimeSettings()
-        if (settings.llmProvider.kind !== "ollama") {
-          await saveRuntimeSettings({
-            ...settings,
-            llmProvider: {
-              ...settings.llmProvider,
-              kind: "ollama",
-              model: item.fileName,
-            },
-            llmModel: item.fileName,
-            chatTier: item.tier,
-          })
-          queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        }
         const loadInfo = await startChatModel(item)
-        setCurrentChat(item.fileName)
+        setCurrentChat(item.path ?? item.fileName)
         queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
         const splitHint =
           loadInfo?.layerSplit === "mixed" && loadInfo.gpuLayersOnGpu != null
@@ -297,34 +224,6 @@ export function useLlmModels() {
     [queryClient]
   )
 
-  const handleStartEmbedding = useCallback(
-    async (item: ModelCatalogItem) => {
-      try {
-        await startEmbeddingModel(item)
-        setCurrentEmbedding(item.fileName)
-        queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`已选用：${item.title}（检索时按需加载）`)
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "选用失败")
-      }
-    },
-    [queryClient]
-  )
-
-  const handleStopEmbedding = useCallback(
-    async (item: ModelCatalogItem) => {
-      try {
-        await stopEmbeddingModel(item.fileName)
-        setCurrentEmbedding(null)
-        queryClient.invalidateQueries({ queryKey: ["runtime-settings"] })
-        toast.success(`已取消选用：${item.title}`)
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "取消失败")
-      }
-    },
-    [queryClient]
-  )
-
   const handleDelete = useCallback(
     async (modelId: string) => {
       try {
@@ -339,16 +238,16 @@ export function useLlmModels() {
   )
 
   const handleTest = useCallback(
-    async (modelId: string, modelKind: ModelKind = kind) => {
-      const catalog = modelKind === "chat" ? chatItems : embeddingItems
-      const item = catalog.find((i) => i.id === modelId)
+    async (modelId: string) => {
+      const item = chatItems.find((i) => i.id === modelId)
       if (!item?.installed) {
         toast.error("请先下载模型再测试")
         return
       }
-      setTestingFileName(item.fileName)
+      const ref = item.path?.trim() || item.fileName
+      setTestingFileName(ref)
       try {
-        const result = await testOllamaModel(item.fileName, modelKind)
+        const result = await testOllamaModel(ref, "chat")
         if (result.ok) {
           const hint = result.preview ? `：${result.preview}` : ""
           toast.success(`测试通过（${result.latencyMs} ms）${hint}`)
@@ -361,81 +260,39 @@ export function useLlmModels() {
         setTestingFileName(null)
       }
     },
-    [kind, chatItems, embeddingItems]
+    [chatItems]
   )
 
   const toggleModelRun = useCallback(
-    async (modelId: string, modelKind: ModelKind = kind) => {
-      const catalog = modelKind === "chat" ? chatItems : embeddingItems
-      const item = catalog.find((i) => i.id === modelId)
+    async (modelId: string) => {
+      const item = chatItems.find((i) => i.id === modelId)
       if (!item?.installed) return
-      if (modelKind === kind) setSelectedId(modelId)
-      if (modelKind === "chat") {
-        if (isChatModelRunning(item.fileName)) {
-          await handleStopChat(item)
-        } else {
-          await handleStartChat(item)
-        }
-      } else if (currentEmbedding === item.fileName) {
-        await handleStopEmbedding(item)
+      setSelectedId(modelId)
+      if (isCatalogItemRunning(item)) {
+        await handleStopChat(item)
       } else {
-        await handleStartEmbedding(item)
+        await handleStartChat(item)
       }
     },
-    [
-      kind,
-      chatItems,
-      embeddingItems,
-      currentEmbedding,
-      handleStartChat,
-      handleStopChat,
-      handleStartEmbedding,
-      handleStopEmbedding,
-    ]
-  )
-
-  const useSelected = useCallback(async () => {
-    if (!selectedId) return
-    await toggleModelRun(selectedId)
-  }, [selectedId, toggleModelRun])
-
-  const selectAdjacent = useCallback(
-    (delta: -1 | 1) => {
-      if (items.length === 0) return
-      const idx = items.findIndex((i) => i.id === selectedId)
-      const next = (idx + delta + items.length) % items.length
-      setSelectedId(items[next].id)
-    },
-    [items, selectedId]
+    [chatItems, handleStartChat, handleStopChat]
   )
 
   return {
-    kind,
-    setKind,
-    items,
     chatItems,
     localChatItems,
     recommendedChatItems,
-    localEmbeddingItems,
-    recommendedEmbeddingItems,
     isRecommendedCatalogLoading,
-    embeddingItems,
     metrics: metrics as RuntimeMetrics | undefined,
     selectedId,
-    setSelectedId,
     toggleSelectedId,
-    dismissDeckSelection,
-    selectedItem,
     recommendedId,
     currentChat,
-    currentEmbedding,
     activeFileName,
     loadingFileName,
     loadingState,
     isRefreshing,
     catalogIsError,
     catalogError,
-    isModelRunning,
     refresh,
     handleDownload,
     handleCancelDownload,
@@ -443,11 +300,6 @@ export function useLlmModels() {
     handleTest,
     testingFileName,
     handleStartChat,
-    handleStopChat,
-    handleStartEmbedding,
-    handleStopEmbedding,
-    useSelected,
     toggleModelRun,
-    selectAdjacent,
   }
 }

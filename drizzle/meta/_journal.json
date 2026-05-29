@@ -5,29 +5,22 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1778165491555,
-      "tag": "0000_lying_reavers",
+      "when": 1780041369542,
+      "tag": "0000_workable_ken_ellis",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1778165805895,
-      "tag": "0001_fantastic_redwing",
+      "when": 1780044004773,
+      "tag": "0001_smiling_moonstone",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "6",
-      "when": 1779972597844,
-      "tag": "0002_kind_shockwave",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1779972631430,
-      "tag": "0003_fancy_warstar",
+      "when": 1780050000000,
+      "tag": "0002_libsql_vectors",
       "breakpoints": true
     }
   ]

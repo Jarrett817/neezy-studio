@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("app:configure-ollama-host", host),
   syncRuntimeSettings: (settings: unknown) =>
     ipcRenderer.invoke("app:sync-runtime-settings", settings),
+  getAppConfig: () => ipcRenderer.invoke("app:get-app-config"),
+  saveAppConfig: (config: unknown) => ipcRenderer.invoke("app:save-app-config", config),
   getRuntimeMetrics: () => ipcRenderer.invoke("app:get-runtime-metrics"),
   getModelCatalog: (kind?: string) => ipcRenderer.invoke("app:get-model-catalog", kind),
   rebuildModelCatalog: () => ipcRenderer.invoke("app:rebuild-model-catalog"),
@@ -20,6 +22,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("app:prime-chat-history", messages),
   getChatModelStatus: () => ipcRenderer.invoke("app:get-chat-model-status"),
   testLlmConnection: () => ipcRenderer.invoke("app:test-llm-connection"),
+  listOpenAiModels: (payload: { baseUrl: string; apiKey: string }) =>
+    ipcRenderer.invoke("app:list-openai-models", payload),
   getOllamaStatus: () => ipcRenderer.invoke("app:get-ollama-status"),
   testOllamaModel: (modelName: string, kind?: string) =>
     ipcRenderer.invoke("app:test-ollama-model", { modelName, kind }),
@@ -34,8 +38,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   getChatModelFileInfo: (fileName: string) =>
     ipcRenderer.invoke("app:get-chat-model-file-info", fileName),
-  getEmbeddings: (texts: string | string[]) =>
-    ipcRenderer.invoke("app:get-embeddings", texts),
+  getEmbeddings: (texts: string | string[], purpose?: "query" | "document") =>
+    ipcRenderer.invoke("app:get-embeddings", texts, purpose),
   getEmbeddingStatus: () => ipcRenderer.invoke("app:get-embedding-status"),
   listLlmModels: () => ipcRenderer.invoke("app:list-llm-models"),
   downloadModel: (modelId: string) => ipcRenderer.invoke("app:download-model", modelId),
@@ -63,6 +67,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   resetStoragePaths: () => ipcRenderer.invoke("app:reset-storage-paths"),
   pickDirectory: (options?: { title?: string; defaultPath?: string }) =>
     ipcRenderer.invoke("app:pick-directory", options),
+  pickDocuments: () => ipcRenderer.invoke("app:pick-documents"),
+  ingestDocument: (filePath: string) =>
+    ipcRenderer.invoke("knowledge:ingest-document", filePath),
   getMigrationsDir: () => ipcRenderer.invoke("app:get-migrations-dir"),
   join: (...parts: string[]) => ipcRenderer.invoke("path:join", ...parts),
   exists: (targetPath: string) => ipcRenderer.invoke("fs:exists", targetPath),

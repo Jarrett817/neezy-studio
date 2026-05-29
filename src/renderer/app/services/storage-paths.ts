@@ -20,6 +20,14 @@ export type StoragePaths = {
   isCustomized: boolean
 }
 
+export type StoragePathsSaveResult = StoragePaths & {
+  migration?: {
+    from: string
+    to: string
+    movedCount: number
+  }
+}
+
 export type StoragePathsInput = {
   dataRoot: string
 }
@@ -30,11 +38,11 @@ export async function getStoragePaths(): Promise<StoragePaths> {
 
 export async function saveStoragePaths(
   input: StoragePathsInput
-): Promise<StoragePaths> {
+): Promise<StoragePathsSaveResult> {
   return saveStoragePathsElectron(input)
 }
 
-export async function resetStoragePaths(): Promise<StoragePaths> {
+export async function resetStoragePaths(): Promise<StoragePathsSaveResult> {
   return resetStoragePathsElectron()
 }
 

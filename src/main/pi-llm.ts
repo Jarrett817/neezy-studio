@@ -9,10 +9,11 @@ import {
 } from "@earendil-works/pi-ai"
 
 import type { ChatPromptOptions, ChatStreamDelta } from "./types"
-import { resolvePiChatModel } from "./pi-model"
-import { getSyncedRuntimeSettings, usesOpenAiCompatibleChat } from "./runtime-settings"
+import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
+import { resolveActiveChatRoute, resolvedChatUsesApi } from "./model-routing"
 import { ensureOllamaReady } from "./ollama/lifecycle"
-import { findCatalogEntryByName, isModelInstalled } from "./ollama/catalog"
+import { resolveEntryApiKey } from "./chat-model-entry"
+import { getSyncedRuntimeSettings } from "./runtime-settings"
 
 export type PiChatMessage = {
   role: "system" | "user" | "assistant"
@@ -21,8 +22,26 @@ export type PiChatMessage = {
 
 let activeModelId: string | null = null
 
-function modelApiKey(model: ReturnType<typeof resolvePiChatModel>): string | undefined {
-  if ("apiKey" in model && typeof model.apiKey === "string") return model.apiKey
+function resolvePiReasoningOption(
+  userMessage?: string
+): "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  const model = resolvePiChatModel(userMessage)
+  const level = resolveAgentThinkingLevel(model)
+  return level === "off" ? undefined : level
+}
+
+/** pi-ai 的 openai-completions 路径要求非空 apiKey；Ollama 本地不校验，用占位即可 */
+export const OLLAMA_PI_API_KEY = "ollama"
+
+export function resolveRouteApiKey(userMessage?: string): string | undefined {
+  const route = resolveActiveChatRoute(userMessage)
+  const entry = route.entry
+  const provider = getSyncedRuntimeSettings().llmProvider
+  if (entry?.transport === "openai-compatible") {
+    return resolveEntryApiKey(entry, provider) || undefined
+  }
+  const model = resolvePiChatModel(userMessage)
+  if (model.provider === "ollama") return OLLAMA_PI_API_KEY
   return undefined
 }
 
@@ -91,24 +110,23 @@ function buildContext(
   }
 }
 
-async function ensureChatReady(): Promise<void> {
-  if (usesOpenAiCompatibleChat()) return
-  await ensureOllamaReady()
-  const settings = getSyncedRuntimeSettings()
-  const name = settings.llmModel.trim()
-  if (!name) throw new Error("未选择本地对话模型，请在「AI 连接」与本地模型页配置")
-  const entry = findCatalogEntryByName(name)
-  const fileName = entry?.fileName ?? name
-  if (!isModelInstalled(fileName)) {
-    throw new Error(`模型 ${fileName} 未安装，请先在本地模型页下载`)
+async function ensureChatReady(userMessage?: string): Promise<void> {
+  const route = resolveActiveChatRoute(userMessage)
+  if (!route.modelId) {
+    throw new Error("请先在「模型与连接」添加至少一个已启用的对话模型")
   }
-  activeModelId = fileName
+  if (resolvedChatUsesApi(userMessage)) {
+    activeModelId = route.modelId
+    return
+  }
+  await ensureOllamaReady()
+  activeModelId = route.modelId
 }
 
 export function getChatModelStatus() {
   const model = resolvePiChatModel()
   return {
-    loaded: Boolean(activeModelId) || usesOpenAiCompatibleChat(),
+    loaded: Boolean(activeModelId) || resolvedChatUsesApi(),
     modelPath: activeModelId ?? model.id,
     loadInfo: activeModelId
       ? {
@@ -126,17 +144,8 @@ export async function loadChatModel(
   modelName: string,
   options: { systemPrompt?: string } = {}
 ): Promise<NonNullable<ReturnType<typeof getChatModelStatus>["loadInfo"]>> {
-  await ensureChatReady()
-  if (!usesOpenAiCompatibleChat()) {
-    const entry = findCatalogEntryByName(modelName)
-    const fileName = entry?.fileName ?? modelName
-    if (!isModelInstalled(fileName)) {
-      throw new Error(`模型 ${fileName} 未安装，请先在本地模型页下载`)
-    }
-    activeModelId = fileName
-  } else {
-    activeModelId = modelName
-  }
+  await ensureChatReady(modelName)
+  activeModelId = modelName
   void options.systemPrompt
   return getChatModelStatus().loadInfo!
 }
@@ -164,8 +173,8 @@ export async function testPiConnection(): Promise<{
   latencyMs: number
   error?: string
 }> {
-  if (!usesOpenAiCompatibleChat()) {
-    return { ok: false, latencyMs: 0, error: "当前为 Ollama 模式，请切换到 API 后再测试" }
+  if (!resolvedChatUsesApi()) {
+    return { ok: false, latencyMs: 0, error: "当前路由为 Ollama，请在 API 默认区或模型列表中配置 API 模型后测试" }
   }
   const started = Date.now()
   try {
@@ -193,7 +202,8 @@ export async function piCompleteMessages(
   const result = await completeSimple(model, context, {
     temperature: options?.temperature ?? 0.7,
     maxTokens: options?.maxTokens ?? 4096,
-    apiKey: modelApiKey(model),
+    apiKey: resolveRouteApiKey(),
+    reasoning: resolvePiReasoningOption(),
   })
   const { content } = extractAssistantMessageText(result)
   if (!content && result.errorMessage) throw new Error(result.errorMessage)
@@ -238,7 +248,8 @@ async function runPiChatStreamInner(
   const stream = streamSimple(model, context, {
     temperature: options.temperature ?? 0.7,
     maxTokens: options.maxTokens ?? 4096,
-    apiKey: modelApiKey(model),
+    apiKey: resolveRouteApiKey(),
+    reasoning: resolvePiReasoningOption(),
   })
 
   for await (const event of stream) {

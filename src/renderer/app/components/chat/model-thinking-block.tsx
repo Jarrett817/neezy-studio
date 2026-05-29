@@ -4,20 +4,24 @@ import { ChevronRight, Loader2 } from "lucide-react"
 import { toolLabel } from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
+import type { ModelTransport } from "~/config/chat-models"
+
 export function ModelThinkingBlock({
   modelName,
   thinking,
   isStreaming,
   hasAnswerContent = false,
   toolCalls,
+  transport = "openai-compatible",
   className,
 }: {
   modelName: string
   thinking: string
   isStreaming: boolean
-  /** 正文已在流式输出（Ollama 多数模型不走 thinking 字段） */
+  /** 正文已在流式输出 */
   hasAnswerContent?: boolean
   toolCalls?: { name: string }[]
+  transport?: ModelTransport
   className?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -51,6 +55,9 @@ export function ModelThinkingBlock({
     )
   }
 
+  const waitHint =
+    transport === "ollama" ? "等待 Ollama 响应" : "等待模型响应"
+
   if (!hasThinking && isStreaming) {
     return (
       <div
@@ -62,7 +69,7 @@ export function ModelThinkingBlock({
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
         <span className="font-medium text-foreground">生成中</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {modelName} · 等待 Ollama 响应
+          {modelName} · {waitHint}
         </span>
       </div>
     )

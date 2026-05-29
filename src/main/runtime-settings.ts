@@ -1,3 +1,4 @@
+import type { ChatModelEntry } from "./chat-model-entry"
 import { resolveProviderBaseUrl } from "./llm-presets"
 
 export type LlmProviderKind = "ollama" | "openai-compatible"
@@ -10,34 +11,35 @@ export interface LlmProviderConfig {
   model: string
 }
 
+export type ModelTier = "light" | "balanced" | "performance"
+
+export type ChatTierMode = "fixed" | "auto"
+
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
-  llmModel: string
-  embeddingModel: string
   chatTier: string
-  embeddingTier: string
   ollamaHost: string
   llmProvider: LlmProviderConfig
+  chatModels?: ChatModelEntry[]
+  chatTierMode?: ChatTierMode
 }
 
 const DEFAULT_PROVIDER: LlmProviderConfig = {
   kind: "openai-compatible",
-  preset: "zhipu-coding",
-  baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+  preset: "custom",
+  baseUrl: "",
   apiKey: "",
-  model: "GLM-4.7",
+  model: "",
 }
 
 const DEFAULT: RuntimeSettings = {
   preferLowPower: true,
   maxCpuPercent: 95,
-  llmModel: "",
-  embeddingModel: "",
   chatTier: "",
-  embeddingTier: "",
   ollamaHost: "http://127.0.0.1:11434",
   llmProvider: DEFAULT_PROVIDER,
+  chatTierMode: "auto",
 }
 
 let cache: RuntimeSettings = { ...DEFAULT, llmProvider: { ...DEFAULT_PROVIDER } }
@@ -47,8 +49,13 @@ export function syncRuntimeSettings(input: RuntimeSettings): void {
   cache = {
     ...DEFAULT,
     ...input,
+    chatModels: input.chatModels,
+    chatTierMode:
+      input.chatTierMode === "fixed" || input.chatTierMode === "auto"
+        ? input.chatTierMode
+        : cache.chatTierMode ?? "auto",
     llmProvider: {
-      kind: provider.kind,
+      kind: "openai-compatible",
       preset: provider.preset || DEFAULT_PROVIDER.preset,
       baseUrl: (provider.baseUrl || DEFAULT_PROVIDER.baseUrl).replace(/\/$/, ""),
       apiKey: provider.apiKey ?? "",
@@ -59,10 +66,6 @@ export function syncRuntimeSettings(input: RuntimeSettings): void {
 
 export function getSyncedRuntimeSettings(): RuntimeSettings {
   return cache
-}
-
-export function usesOpenAiCompatibleChat(): boolean {
-  return cache.llmProvider.kind === "openai-compatible"
 }
 
 export function resolveOpenAiBaseUrl(): string {

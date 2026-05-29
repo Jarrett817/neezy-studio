@@ -19,22 +19,48 @@ type SqliteBridge = {
 let db: ReturnType<typeof drizzle> | null = null
 let sqliteDb: SqliteBridge | null = null
 let initPromise: Promise<void> | null = null
+let dbReadyPromise: Promise<void> | null = null
 
 export function resetDbCache() {
   db = null
   sqliteDb = null
   initPromise = null
+  dbReadyPromise = null
+}
+
+function createSqliteBridge(): SqliteBridge {
+  return {
+    execute: async (sql, params = []) => {
+      const { databaseFile: dbPath } = await getStoragePaths()
+      return sqliteExecute(dbPath, sql, params)
+    },
+    select: async (sql, params = []) => {
+      const { databaseFile: dbPath } = await getStoragePaths()
+      return sqliteSelect(dbPath, sql, params)
+    },
+  }
 }
 
 async function getSqliteDb(): Promise<SqliteBridge> {
-  if (!sqliteDb) {
-    const { databaseFile: dbPath } = await getStoragePaths()
-    sqliteDb = {
-      execute: (sql, params = []) => sqliteExecute(dbPath, sql, params),
-      select: (sql, params = []) => sqliteSelect(dbPath, sql, params),
-    }
-  }
+  if (!sqliteDb) sqliteDb = createSqliteBridge()
   return sqliteDb
+}
+
+/** 迁移 + 连通性（对话/会话读取依赖此项，不阻塞于向量表） */
+export async function ensureDbReady() {
+  if (typeof window === "undefined") return
+  if (dbReadyPromise) return dbReadyPromise
+
+  dbReadyPromise = (async () => {
+    await runMigrations()
+    const sqlite = await getSqliteDb()
+    await sqlite.execute("SELECT 1")
+  })().catch((error) => {
+    dbReadyPromise = null
+    throw error
+  })
+
+  await dbReadyPromise
 }
 
 export async function ensureInit() {
@@ -42,18 +68,19 @@ export async function ensureInit() {
   if (initPromise) return initPromise
 
   initPromise = (async () => {
-    await runMigrations()
-
-    const sqlite = await getSqliteDb()
-    await sqlite.execute("SELECT 1")
-
-    const vectorSchema = await ensureVectorTables()
-    if (vectorSchema.mode === "fallback") {
-      console.warn(
-        "[db] sqlite-vec 不可用，已启用 BLOB 向量降级表（检索仍可用，性能略低）"
-      )
+    await ensureDbReady()
+    try {
+      const vectorSchema = await ensureVectorTables()
+      if (vectorSchema.mode !== "libsql") {
+        console.warn("[db] 向量表未按 libsql 原生模式初始化:", vectorSchema.mode)
+      }
+    } catch (error) {
+      console.warn("[db] 向量表初始化失败（对话仍可保存）:", error)
     }
-  })()
+  })().catch((error) => {
+    initPromise = null
+    throw error
+  })
 
   await initPromise
 }

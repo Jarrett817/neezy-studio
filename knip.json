@@ -1,0 +1,36 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main/index.ts",
+    "src/preload/index.ts",
+    "src/renderer/src/main.tsx",
+    "scripts/*.{mjs,js,ts}",
+    "src/renderer/app/components/ui/sidebar.tsx"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{mjs,js,ts}"],
+  "paths": {
+    "~/*": ["src/renderer/app/*"],
+    "@renderer/*": ["src/renderer/src/*"]
+  },
+  "ignore": [
+    "**/*.d.ts",
+    "drizzle/**",
+    "out/**",
+    "dist/**",
+    "dist-electron/**",
+    "resources/**",
+    "src/renderer/app/components/ui/**"
+  ],
+  "ignoreDependencies": ["electron-builder", "shadcn", "tailwindcss"],
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true
+  },
+  "vite": {
+    "config": ["electron.vite.config.ts"]
+  },
+  "drizzle": {
+    "config": ["drizzle.config.ts"]
+  },
+  "tags": ["-lintignore"]
+}

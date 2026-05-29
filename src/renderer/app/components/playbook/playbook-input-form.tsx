@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
+import { PlaybookWizardForm } from "~/components/playbook/playbook-wizard-form"
 import {
   extractSlotsFromSingleLine,
   loadLastPlaybookSlots,
@@ -55,6 +56,20 @@ export function PlaybookInputForm({
   const [values, setValues] = useState(initial)
   const [singleLine, setSingleLine] = useState("")
   const [extracting, setExtracting] = useState(false)
+
+  const useWizard = profile.fields.length > 2
+
+  if (useWizard) {
+    return (
+      <PlaybookWizardForm
+        playbookId={playbookId}
+        profile={profile}
+        disabled={disabled}
+        formId={formId}
+        onSubmit={onSubmit}
+      />
+    )
+  }
 
   const handleExtract = async () => {
     if (!singleLine.trim()) {

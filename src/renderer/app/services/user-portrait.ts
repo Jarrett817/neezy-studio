@@ -1,6 +1,8 @@
-import { getSetting, setSetting } from "~/services/storage/settings-store"
-
-const PORTRAIT_KEY = "user_portrait_v1"
+import {
+  getUserPortraitFromDb,
+  saveUserPortraitToDb,
+  type StoredUserPortrait,
+} from "~/services/storage/app-kv"
 
 export type PortraitDimension = {
   id: string
@@ -20,14 +22,7 @@ export type PortraitSignal = {
   at: number
 }
 
-export type UserPortrait = {
-  summary: string
-  dimensions: PortraitDimension[]
-  topics: PortraitTopic[]
-  signals: PortraitSignal[]
-  conversationTurns: number
-  lastUpdatedAt: number
-}
+export type UserPortrait = StoredUserPortrait
 
 const DIMENSION_DEFS = [
   {
@@ -235,7 +230,7 @@ function buildSummary(portrait: UserPortrait): string {
 }
 
 export async function getUserPortrait(): Promise<UserPortrait> {
-  const stored = await getSetting<UserPortrait>(PORTRAIT_KEY)
+  const stored = await getUserPortraitFromDb()
   if (!stored) return emptyPortrait()
   return {
     ...emptyPortrait(),
@@ -250,7 +245,7 @@ export async function getUserPortrait(): Promise<UserPortrait> {
 export async function saveUserPortrait(
   portrait: UserPortrait
 ): Promise<UserPortrait> {
-  await setSetting(PORTRAIT_KEY, portrait)
+  await saveUserPortraitToDb(portrait)
   return portrait
 }
 

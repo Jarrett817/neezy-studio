@@ -3,11 +3,10 @@ import os from "node:os"
 import type { MemoryPressure, RuntimeMetricsBase } from "../types"
 import { buildModelRecommendations } from "../model-recommendations"
 import {
+  catalogItemFromDefinition,
   ensureModelRegistry,
   getAllModelDefinitions,
-  getInstalledNames,
   isModelInstalled,
-  modelToCatalogItem,
   refreshInstalledNames,
 } from "./catalog"
 import { getOllamaClient } from "./client"
@@ -80,14 +79,5 @@ export async function getModelCatalogItems(kind?: import("../types").ModelKind) 
   const models = kind
     ? getAllModelDefinitions().filter((m) => m.kind === kind)
     : getAllModelDefinitions()
-  const installed = getInstalledNames()
-  return models.map((model) =>
-    modelToCatalogItem(model, {
-      installed: installed.has(model.fileName) || isModelInstalled(model.fileName),
-      status: isModelInstalled(model.fileName) ? "ready" : "available",
-      progress: null,
-      downloadedBytes: 0,
-      totalBytes: model.sizeBytes,
-    })
-  )
+  return models.map((model) => catalogItemFromDefinition(model))
 }

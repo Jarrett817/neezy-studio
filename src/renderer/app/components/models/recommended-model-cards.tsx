@@ -19,9 +19,8 @@ import type {
   RuntimeMetrics,
 } from "~/services/electron-client"
 
-function runLabel(kind: ModelKind, isActive: boolean, isLoading: boolean) {
+function runLabel(isActive: boolean, isLoading: boolean) {
   if (isLoading) return "加载中"
-  if (kind === "embedding") return isActive ? "取消选用" : "选用"
   return isActive ? "关闭" : "启动"
 }
 
@@ -61,8 +60,11 @@ export function RecommendedModelCards({
       {items.map((item) => {
         const selected = item.id === selectedId
         const isRecommended = item.id === recommendedId
-        const isActive = item.fileName === activeFileName
-        const isLoading = item.fileName === loadingFileName
+        const ollamaRef = item.path?.trim() || item.fileName
+        const isActive =
+          activeFileName === ollamaRef || activeFileName === item.fileName
+        const isLoading =
+          loadingFileName === ollamaRef || loadingFileName === item.fileName
         const isDownloading = item.status === "downloading"
         const isTesting = item.fileName === testingFileName
         const canCancel = isDownloading && item.cancellable && onCancelDownload
@@ -99,7 +101,7 @@ export function RecommendedModelCards({
                     </Badge>
                   )}
                   {item.installed && (
-                    <Badge variant="outline">已下载</Badge>
+                    <Badge variant="outline">Ollama 已安装</Badge>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -146,7 +148,7 @@ export function RecommendedModelCards({
                           加载中
                         </>
                       ) : (
-                        runLabel(kind, isActive, isLoading)
+                        runLabel(isActive, isLoading)
                       )}
                     </Button>
                     {onTest ? (

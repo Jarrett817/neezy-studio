@@ -2,7 +2,11 @@ import type { ChatRequest, Message, Tool } from "ollama"
 
 import type { ChatLoadResult, ChatPromptOptions, ChatStreamDelta } from "../types"
 import { getOllamaClient } from "./client"
-import { findCatalogEntryByName, isModelInstalled } from "./catalog"
+import {
+  findCatalogEntryByName,
+  isModelInstalled,
+  resolveInstalledModelRef,
+} from "./catalog"
 import { ensureOllama, ensureOllamaReady } from "./lifecycle"
 import { modelSupportsNativeThink } from "./thinking"
 import {
@@ -52,17 +56,18 @@ export async function loadChatModel(
 ): Promise<ChatLoadResult> {
   await ensureOllamaReady()
   const entry = findCatalogEntryByName(modelName)
-  const name = entry?.fileName ?? modelName
-  if (!isModelInstalled(name)) {
-    throw new Error(`模型 ${name} 未安装，请先在模型页下载（ollama pull）`)
+  const requested = entry?.fileName ?? modelName
+  const resolved = resolveInstalledModelRef(requested)
+  if (!resolved) {
+    throw new Error(`模型 ${requested} 未安装，请先在模型页下载或在 Ollama 中 pull`)
   }
-  activeModel = name
-  await refreshActiveModelCapabilities(name)
+  activeModel = resolved
+  await refreshActiveModelCapabilities(resolved)
   chatMessages = options.systemPrompt
     ? [{ role: "system", content: options.systemPrompt }]
     : []
   lastLoadInfo = {
-    modelPath: name,
+    modelPath: resolved,
     contextSize: 8192,
     preferLowPower: Boolean(options.preferLowPower),
     layerSplit: "auto",

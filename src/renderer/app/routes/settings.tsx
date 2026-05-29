@@ -79,9 +79,7 @@ export default function SettingsRoute() {
       <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <h2 className="text-lg font-semibold">本地模型</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {runtimeSettings?.llmProvider.kind === "ollama"
-            ? "下载、启动对话与 Embedding 模型。"
-            : "记忆检索用的 Embedding 与可选 Ollama 模型，均在应用内管理。"}
+          下载与管理 Ollama 对话模型；API 对话在「模型与连接」里配置。
         </p>
         <Button asChild className="mt-4 h-11 rounded-2xl" variant="outline">
           <Link to="/models">打开本地模型</Link>
@@ -112,9 +110,15 @@ function StoragePathsSection() {
       resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
       setDraft({ dataRoot: next.dataRoot })
-      toast.success("存储路径已保存", {
-        description: "若已下载模型或已有数据，请手动复制到新目录后重启应用。",
-      })
+      if (next.migration && next.migration.movedCount > 0) {
+        toast.success("存储路径已保存，数据已迁移", {
+          description: `已移动 ${next.migration.movedCount} 项至新目录，请重启应用后继续使用。`,
+        })
+      } else {
+        toast.success("存储路径已保存", {
+          description: "请重启应用以确保数据库与模型路径生效。",
+        })
+      }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "保存失败")
@@ -128,7 +132,13 @@ function StoragePathsSection() {
       resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
       setDraft({ dataRoot: next.dataRoot })
-      toast.success("已恢复系统默认存储位置")
+      if (next.migration && next.migration.movedCount > 0) {
+        toast.success("已恢复默认存储位置，数据已迁回", {
+          description: `已移动 ${next.migration.movedCount} 项，请重启应用。`,
+        })
+      } else {
+        toast.success("已恢复系统默认存储位置")
+      }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "恢复失败")
@@ -171,7 +181,7 @@ function StoragePathsSection() {
         <PathField
           id="dataRoot"
           label="存储目录"
-          hint="包含 memories.db、memories/、personas/、skills/、models/"
+          hint="包含 memories.db、memories/、personas/、skills/ 等；models/ 仅放内置 Embedding。Ollama 对话模型由 Ollama 自身目录管理。修改目录时会自动迁移已有数据（目标须为空目录）"
           value={draft.dataRoot}
           onChange={(value) => setDraft({ ...draft, dataRoot: value })}
           onBrowse={() => pickFolder("dataRoot")}
@@ -264,7 +274,7 @@ function DerivedPaths({
   const defaultNote =
     draft.dataRoot === paths.defaultDataRoot
       ? "当前为系统默认路径"
-      : "保存后生效；换目录不会自动迁移已有文件。Ollama 模型目录在由本应用启动 serve 时生效；若托盘 Ollama 已在运行，需退出后重启应用"
+      : "保存后生效；换目录时会自动迁移已有数据（目标须为空目录）"
 
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
@@ -272,7 +282,7 @@ function DerivedPaths({
       <ul className="space-y-1 font-mono break-all">
         <li>数据库：{previewDb}</li>
         <li>记忆 Markdown：{previewMemories}</li>
-        <li>Ollama 模型（OLLAMA_MODELS）：{previewModels}</li>
+        <li>内置 Embedding：{previewModels}</li>
       </ul>
       <p className="mt-2">{defaultNote}</p>
     </div>

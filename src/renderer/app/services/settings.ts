@@ -1,102 +1,182 @@
-// 运行时设置 - SQLite storage
-
-import { configureOllamaHost, syncRuntimeSettingsToMain } from "~/services/electron-client"
+import {
+  DEFAULT_APP_CONFIG,
+  type AppConfig,
+  type AppConfigChatModel,
+} from "../../../shared/app-config"
+import { configureOllamaHost, getAppConfig, saveAppConfig, syncRuntimeSettingsToMain } from "~/services/electron-client"
 import {
   DEFAULT_LLM_PROVIDER,
   normalizeLlmProvider,
   type LlmProviderConfig,
-  type LlmProviderKind,
 } from "~/services/llm-provider"
-import { getSetting, setSetting } from "~/services/storage/settings-store"
+import {
+  enforceChatModelRules,
+  isEntryConfigured,
+  type ChatModelEntry,
+  type ModelTier,
+} from "~/config/chat-models"
 
-export type ModelTier = "light" | "balanced" | "performance"
+export type { ModelTier } from "~/config/chat-models"
+export type ChatTierMode = "fixed" | "auto"
 
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
-  /** Ollama 模式下的对话模型名 */
-  llmModel: string
-  /** Ollama Embedding 模型名（记忆向量检索） */
-  embeddingModel: string
   chatTier: ModelTier | ""
-  embeddingTier: ModelTier | ""
-  /** 仅 Ollama 模式：本地 serve 地址 */
   ollamaHost: string
-  /** 对话模型来源：Coding Plan / 自定义 OpenAI 兼容，或本地 Ollama */
   llmProvider: LlmProviderConfig
-  /** 与 llmProvider.kind 同步写入，防止嵌套对象丢失时回退成 API */
-  chatProviderKind?: LlmProviderConfig["kind"]
+  chatModels: ChatModelEntry[]
+  chatTierMode: ChatTierMode
 }
+
+export type { ChatModelEntry } from "~/config/chat-models"
 
 const DEFAULT_SETTINGS: RuntimeSettings = {
-  preferLowPower: true,
-  maxCpuPercent: 95,
-  llmModel: "",
-  embeddingModel: "",
+  preferLowPower: DEFAULT_APP_CONFIG.preferLowPower,
+  maxCpuPercent: DEFAULT_APP_CONFIG.maxCpuPercent,
   chatTier: "",
-  embeddingTier: "",
-  ollamaHost: "http://127.0.0.1:11434",
+  ollamaHost: DEFAULT_APP_CONFIG.ollamaHost,
   llmProvider: DEFAULT_LLM_PROVIDER,
+  chatModels: [],
+  chatTierMode: DEFAULT_APP_CONFIG.chatTierMode,
 }
 
-function resolveStoredProviderKind(
-  stored: Partial<RuntimeSettings> | null
-): LlmProviderKind {
-  const fromNested = stored?.llmProvider?.kind
-  if (fromNested === "ollama" || fromNested === "openai-compatible") {
-    return fromNested
+function appConfigToRuntime(config: AppConfig): RuntimeSettings {
+  return {
+    preferLowPower: config.preferLowPower,
+    maxCpuPercent: config.maxCpuPercent,
+    chatTier: config.chatTier,
+    ollamaHost: config.ollamaHost,
+    llmProvider: { ...DEFAULT_LLM_PROVIDER },
+    chatModels: enforceChatModelRules(config.chatModels as ChatModelEntry[]),
+    chatTierMode: config.chatTierMode,
   }
-  const fromTop = stored?.chatProviderKind
-  if (fromTop === "ollama" || fromTop === "openai-compatible") {
-    return fromTop
-  }
-  return DEFAULT_LLM_PROVIDER.kind
 }
 
-function mergeRuntimeSettings(
-  stored: Partial<RuntimeSettings> | null
-): RuntimeSettings {
-  const merged = {
-    ...DEFAULT_SETTINGS,
-    ...stored,
+function runtimeToAppConfig(
+  settings: RuntimeSettings,
+  current: AppConfig
+): AppConfig {
+  const chatModels: AppConfigChatModel[] = settings.chatModels.map((e) => ({
+    id: e.id,
+    label: e.label,
+    tier: e.tier,
+    transport: e.transport,
+    model: e.model,
+    enabled: e.enabled,
+    preset: e.preset,
+    baseUrl: e.baseUrl,
+    apiKey: e.apiKey,
+  }))
+  return {
+    version: 1,
+    dataRoot: current.dataRoot,
+    preferLowPower: settings.preferLowPower,
+    maxCpuPercent: settings.maxCpuPercent,
+    ollamaHost: settings.ollamaHost.trim() || DEFAULT_APP_CONFIG.ollamaHost,
+    chatTier: settings.chatTier,
+    chatTierMode: settings.chatTierMode,
+    chatModels,
   }
-  const provider = normalizeLlmProvider({
+}
+
+function mergeRuntimeSettings(stored: Partial<RuntimeSettings> | null): RuntimeSettings {
+  const merged = { ...DEFAULT_SETTINGS, ...stored }
+  const llmProvider = normalizeLlmProvider({
     ...DEFAULT_LLM_PROVIDER,
     ...(stored?.llmProvider ?? {}),
-    kind: resolveStoredProviderKind(stored),
+    kind: "openai-compatible",
   })
-  const llmProvider =
-    provider.kind === "ollama" && merged.llmModel.trim()
-      ? { ...provider, model: merged.llmModel.trim() }
-      : provider
+  const chatModels = enforceChatModelRules(stored?.chatModels ?? [])
+
   return {
     ...merged,
     llmProvider,
-    chatProviderKind: llmProvider.kind,
+    chatTierMode:
+      stored?.chatTierMode === "fixed" || stored?.chatTierMode === "auto"
+        ? stored.chatTierMode
+        : DEFAULT_SETTINGS.chatTierMode,
+    chatModels,
   }
 }
 
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {
-  const settings = await getSetting<RuntimeSettings>("runtime_settings")
-  return mergeRuntimeSettings(settings)
+  const config = await getAppConfig()
+  return mergeRuntimeSettings(appConfigToRuntime(config))
 }
 
 export async function saveRuntimeSettings(
   settings: RuntimeSettings
 ): Promise<RuntimeSettings> {
+  const current = await getAppConfig()
   const merged = mergeRuntimeSettings(settings)
-  await setSetting("runtime_settings", merged)
-  await syncRuntimeSettingsToMain(merged)
-  if (merged.llmProvider.kind === "ollama" && merged.ollamaHost.trim()) {
+  const saved = await saveAppConfig(runtimeToAppConfig(merged, current))
+  if (merged.ollamaHost.trim()) {
     await configureOllamaHost(merged.ollamaHost.trim())
   }
-  return merged
+  return mergeRuntimeSettings(appConfigToRuntime(saved))
 }
 
 export async function pushRuntimeSettingsToMain(): Promise<void> {
   const settings = await getRuntimeSettings()
-  await syncRuntimeSettingsToMain(settings)
-  if (settings.llmProvider.kind === "ollama" && settings.ollamaHost.trim()) {
-    await configureOllamaHost(settings.ollamaHost.trim())
+  await syncRuntimeSettingsToMain({
+    preferLowPower: settings.preferLowPower,
+    maxCpuPercent: settings.maxCpuPercent,
+    chatTier: settings.chatTier,
+    ollamaHost: settings.ollamaHost,
+    llmProvider: settings.llmProvider,
+    chatModels: settings.chatModels,
+    chatTierMode: settings.chatTierMode,
+  })
+}
+
+export function pickTierForPrompt(message: string): ModelTier {
+  const text = message.trim()
+  const len = text.length
+  if (len < 80) return "light"
+  if (
+    len < 500 &&
+    !/分析|详细|复杂|架构|重构|代码|推理|长文|报告|方案/.test(text)
+  ) {
+    return "balanced"
   }
+  return "performance"
+}
+
+export function resolveTierForChat(
+  settings: RuntimeSettings,
+  userMessage?: string
+): ModelTier {
+  if (settings.chatTierMode === "fixed" && settings.chatTier) {
+    return settings.chatTier
+  }
+  if (userMessage?.trim()) return pickTierForPrompt(userMessage)
+  return settings.chatTier || "balanced"
+}
+
+export function resolveChatModelEntry(
+  settings: RuntimeSettings,
+  userMessage?: string
+): ChatModelEntry | null {
+  const tier = resolveTierForChat(settings, userMessage)
+  const configured = settings.chatModels.filter(
+    (e) =>
+      e.enabled &&
+      e.model.trim() &&
+      isEntryConfigured(e, settings.llmProvider)
+  )
+  if (!configured.length) return null
+
+  const tierCandidates = configured.filter((e) => e.tier === tier)
+  const candidates = tierCandidates.length ? tierCandidates : configured
+  if (candidates.length === 1) return candidates[0]
+  const seed = userMessage?.length ?? 0
+  return candidates[seed % candidates.length] ?? candidates[0]
+}
+
+export function resolveActiveChatModelId(
+  settings: RuntimeSettings,
+  userMessage?: string
+): string {
+  return resolveChatModelEntry(settings, userMessage)?.model.trim() ?? ""
 }

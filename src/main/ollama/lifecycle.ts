@@ -4,7 +4,7 @@ import { promisify } from "node:util"
 import { Ollama } from "ollama"
 
 import { getOllamaHost } from "./client"
-import { buildOllamaProcessEnv, getConfiguredOllamaModelsDir } from "./env"
+import { buildOllamaProcessEnv } from "./env"
 
 const execFileAsync = promisify(execFile)
 
@@ -17,31 +17,21 @@ export function isOllamaReady(): boolean {
   return ollamaReady
 }
 
-const DEFAULT_OLLAMA_HOSTS = [
-  "http://127.0.0.1:11434",
-  "http://localhost:11434",
-] as const
-
 export async function pingOllama(timeoutMs = 8000): Promise<boolean> {
-  const hosts = [getOllamaHost(), ...DEFAULT_OLLAMA_HOSTS].filter(
-    (h, i, arr) => arr.indexOf(h) === i
-  )
-
-  for (const host of hosts) {
-    try {
-      const probe = new Ollama({ host })
-      await Promise.race([
-        probe.version(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), timeoutMs)
-        ),
-      ])
-      return true
-    } catch {
-      // try next host
-    }
+  const host = getOllamaHost()
+  if (!host) return false
+  try {
+    const probe = new Ollama({ host })
+    await Promise.race([
+      probe.version(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), timeoutMs)
+      ),
+    ])
+    return true
+  } catch {
+    return false
   }
-  return false
 }
 
 export async function findOllamaBinary(): Promise<string | null> {
@@ -135,13 +125,7 @@ export async function ensureOllama(): Promise<void> {
 
   if (await waitForExistingOllama()) {
     ollamaReady = true
-    const modelsDir = getConfiguredOllamaModelsDir()
-    console.info("[ollama] 检测到已运行的 Ollama 服务（外部进程，未改写其模型目录）")
-    if (modelsDir) {
-      console.info(
-        `[ollama] 本应用期望模型目录：${modelsDir}；若 pull 落盘位置不对，请退出托盘 Ollama 后重启本应用，或设置系统环境变量 OLLAMA_MODELS`
-      )
-    }
+    console.info("[ollama] 检测到已运行的 Ollama 服务（模型目录由 Ollama 自身管理）")
     return
   }
 

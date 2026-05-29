@@ -1,37 +1,18 @@
 import type { App } from "electron"
 import fs from "node:fs/promises"
-import fsSync from "node:fs"
 import path from "node:path"
 
-import type { StoragePaths } from "./types"
-
-export const CONFIG_NAME = "storage-paths.json"
+import { loadAppConfig, saveAppConfig } from "./app-config"
+import { migrateDataRoot } from "./data-root-migrate"
+import type { StoragePaths, StoragePathsSaveResult } from "./types"
 
 let cachedPaths: StoragePaths | null = null
-
-export function getConfigFilePath(app: App): string {
-  return path.join(app.getPath("userData"), CONFIG_NAME)
-}
 
 function getSystemDefaultPaths(app: App) {
   const dataRoot = app.getPath("userData")
   return {
     dataRoot,
     modelsDir: path.join(dataRoot, "models"),
-  }
-}
-
-function readOverrides(app: App): { dataRoot?: string } | null {
-  const configFile = getConfigFilePath(app)
-  if (!fsSync.existsSync(configFile)) return null
-  try {
-    const raw = JSON.parse(fsSync.readFileSync(configFile, "utf8")) as {
-      dataRoot?: string
-    }
-    if (!raw || typeof raw !== "object") return null
-    return raw
-  } catch {
-    return null
   }
 }
 
@@ -46,14 +27,8 @@ function normalizeAbsolutePath(value: string, label: string): string {
   return resolved
 }
 
-function buildResolved(
-  app: App,
-  overrides: { dataRoot?: string } | null
-): StoragePaths {
+function buildResolved(app: App, dataRoot: string): StoragePaths {
   const systemDefaults = getSystemDefaultPaths(app)
-  const dataRoot = overrides?.dataRoot
-    ? normalizeAbsolutePath(overrides.dataRoot, "存储目录")
-    : systemDefaults.dataRoot
   const modelsDir = path.join(dataRoot, "models")
 
   return {
@@ -65,10 +40,10 @@ function buildResolved(
     skillsDir: path.join(dataRoot, "skills"),
     playbooksDir: path.join(dataRoot, "playbooks"),
     inputProfilesDir: path.join(dataRoot, "input-profiles"),
-    configFile: getConfigFilePath(app),
+    configFile: path.join(app.getPath("userData"), "app-config.json"),
     defaultDataRoot: systemDefaults.dataRoot,
     defaultModelsDir: systemDefaults.modelsDir,
-    isCustomized: Boolean(overrides?.dataRoot),
+    isCustomized: dataRoot !== systemDefaults.dataRoot,
   }
 }
 
@@ -77,8 +52,12 @@ export function resolveStoragePaths(
   { fresh = false }: { fresh?: boolean } = {}
 ): StoragePaths {
   if (!fresh && cachedPaths) return cachedPaths
-  const overrides = readOverrides(app)
-  cachedPaths = buildResolved(app, overrides)
+  const config = loadAppConfig(app)
+  const systemDefaults = getSystemDefaultPaths(app)
+  const dataRoot = config.dataRoot?.trim()
+    ? normalizeAbsolutePath(config.dataRoot, "存储目录")
+    : systemDefaults.dataRoot
+  cachedPaths = buildResolved(app, dataRoot)
   return cachedPaths
 }
 
@@ -96,32 +75,43 @@ export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
   await fs.mkdir(paths.inputProfilesDir, { recursive: true })
 }
 
-export async function saveStoragePaths(
+async function applyDataRootChange(
   app: App,
-  input: { dataRoot: string }
-): Promise<StoragePaths> {
-  const dataRoot = normalizeAbsolutePath(input.dataRoot, "存储目录")
-  const modelsDir = path.join(dataRoot, "models")
+  nextDataRoot: string
+): Promise<StoragePathsSaveResult> {
+  const before = resolveStoragePaths(app, { fresh: true })
+  const fromResolved = path.resolve(before.dataRoot)
+  const toResolved = path.resolve(nextDataRoot)
 
-  const nextOverrides = { dataRoot }
-  const resolved = buildResolved(app, nextOverrides)
-  await ensureStorageDirs(resolved)
-  await fs.writeFile(
-    getConfigFilePath(app),
-    JSON.stringify(nextOverrides, null, 2),
-    "utf8"
-  )
-  invalidateStoragePathsCache()
-  return resolveStoragePaths(app, { fresh: true })
-}
-
-export async function resetStoragePaths(app: App): Promise<StoragePaths> {
-  const configFile = getConfigFilePath(app)
-  if (fsSync.existsSync(configFile)) {
-    await fs.rm(configFile, { force: true })
+  let migration: StoragePathsSaveResult["migration"]
+  if (fromResolved !== toResolved) {
+    const result = await migrateDataRoot(fromResolved, toResolved)
+    if (result.moved.length > 0) {
+      migration = {
+        from: result.from,
+        to: result.to,
+        movedCount: result.moved.length,
+      }
+    }
   }
+
+  const config = loadAppConfig(app)
+  await saveAppConfig(app, { ...config, dataRoot: nextDataRoot })
   invalidateStoragePathsCache()
   const resolved = resolveStoragePaths(app, { fresh: true })
   await ensureStorageDirs(resolved)
-  return resolved
+  return migration ? { ...resolved, migration } : resolved
+}
+
+export async function saveStoragePaths(
+  app: App,
+  input: { dataRoot: string }
+): Promise<StoragePathsSaveResult> {
+  const dataRoot = normalizeAbsolutePath(input.dataRoot, "存储目录")
+  return applyDataRootChange(app, dataRoot)
+}
+
+export async function resetStoragePaths(app: App): Promise<StoragePathsSaveResult> {
+  const systemDefaults = getSystemDefaultPaths(app)
+  return applyDataRootChange(app, systemDefaults.dataRoot)
 }

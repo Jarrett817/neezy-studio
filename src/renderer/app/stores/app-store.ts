@@ -9,6 +9,7 @@ export type ChatMessage = {
   thinking: string
   agentSteps?: AgentStep[]
   isStreaming?: boolean
+  failed?: boolean
   toolCalls?: { name: string; args: Record<string, unknown>; result: string }[]
   timestamp: number
 }

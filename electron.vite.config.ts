@@ -24,6 +24,15 @@ const BUNDLE_MAIN_DEPS = [
   "@ai-sdk/provider",
 ] as const
 
+/** 含平台可选依赖，禁止打进 main bundle */
+const MAIN_NATIVE_EXTERNALS = [
+  "node-llama-cpp",
+  /^@node-llama-cpp\//,
+  "@libsql/client",
+  /^@libsql\//,
+  "libsql",
+] as const
+
 function mainProcessBundlePlugin(): Plugin {
   return {
     name: "neezy:main-bundle-policy",
@@ -36,6 +45,14 @@ function mainProcessBundlePlugin(): Plugin {
 
 export default defineConfig({
   main: {
+    build: {
+      rollupOptions: {
+        external: [...MAIN_NATIVE_EXTERNALS],
+      },
+      rolldownOptions: {
+        external: [...MAIN_NATIVE_EXTERNALS],
+      },
+    },
     plugins: [mainProcessBundlePlugin()],
   },
   preload: {

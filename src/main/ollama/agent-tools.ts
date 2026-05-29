@@ -14,8 +14,12 @@ export type OllamaTool = {
 
 export type AgentToolRuntimeContext = {
   getPaths: () => StoragePaths
-  runSelect: (dbPath: string, sql: string, params?: unknown[]) => Record<string, unknown>[]
-  runExecute: (dbPath: string, sql: string, params?: unknown[]) => void
+  runSelect: (
+    dbPath: string,
+    sql: string,
+    params?: unknown[]
+  ) => Promise<Record<string, unknown>[]>
+  runExecute: (dbPath: string, sql: string, params?: unknown[]) => Promise<void>
   embedTexts: (text: string) => Promise<number[]>
 }
 
@@ -32,7 +36,7 @@ function requireCtx(): AgentToolRuntimeContext {
 
 async function searchMemories(query: string): Promise<string> {
   const ctx = requireCtx()
-  const rows = ctx.runSelect(
+  const rows = await ctx.runSelect(
     ctx.getPaths().databaseFile,
     `SELECT title, category, content FROM memory_items
      WHERE title LIKE ? OR content LIKE ?
@@ -61,7 +65,7 @@ async function addMemory(
   const filePath = path.join(memoriesDir, fileName)
   await fs.writeFile(filePath, `# ${title}\n\n${content}`, "utf8")
   const cat = category || "记忆"
-  ctx.runExecute(
+  await ctx.runExecute(
     databaseFile,
     `INSERT INTO memory_items (id, title, category, content, file_path, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,

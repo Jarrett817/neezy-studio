@@ -1,3 +1,4 @@
+import { MEMORY_CATEGORY } from "~/config/memory-categories"
 import {
   listMemories,
   saveMemory,
@@ -118,6 +119,6 @@ export async function rememberConversationTurn(input: {
   await saveMemory({
     title,
     content: `用户说：${content}\n\n当时的回应：${compactText(input.assistantContent, 180)}`,
-    category: important ? "用户偏好" : "对话线索",
+    category: important ? `${MEMORY_CATEGORY.MEMORY}·偏好` : MEMORY_CATEGORY.MEMORY,
   })
 }

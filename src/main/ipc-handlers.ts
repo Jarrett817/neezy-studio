@@ -13,15 +13,13 @@ import {
   destroyAgentSession,
   promptAgent,
 } from "./pi-agent"
+import { applyAppConfig } from "./app-config-sync"
+import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
+import { ingestDocumentFile, INGEST_FILE_EXTENSIONS } from "./knowledge/document-ingest"
+import { log } from "./logger"
 import { getOllamaStatus, testOllamaModel } from "./ollama/ops"
 import type { IpcContext, ModelKind } from "./types"
-
-function vecErrorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code: unknown }).code)
-    : undefined
-}
 
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
 export function registerIpcHandlers(ctx: IpcContext): void {
@@ -52,17 +50,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:get-storage-paths", () => ctx.getPaths())
   ipcMain.handle("app:save-storage-paths", async (_event, input) => {
     ctx.closeAllSqliteHandles()
-    storagePaths.invalidateStoragePathsCache()
     ctx.invalidateModelScanCache?.()
-    const paths = storagePaths.saveStoragePaths(app, input)
-    ctx.syncOllamaStorageEnv()
+    const paths = await storagePaths.saveStoragePaths(app, input)
+    applyAppConfig(app, loadAppConfig(app))
     return paths
   })
   ipcMain.handle("app:reset-storage-paths", async () => {
     ctx.closeAllSqliteHandles()
     ctx.invalidateModelScanCache?.()
-    const paths = storagePaths.resetStoragePaths(app)
-    ctx.syncOllamaStorageEnv()
+    const paths = await storagePaths.resetStoragePaths(app)
+    applyAppConfig(app, loadAppConfig(app))
     return paths
   })
   ipcMain.handle("app:pick-directory", async (_event, options: { title?: string; defaultPath?: string } = {}) => {
@@ -74,11 +71,40 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+  ipcMain.handle("app:pick-documents", async () => {
+    const result = await dialog.showOpenDialog(ctx.mainWindow ?? (undefined as never), {
+      properties: ["openFile", "multiSelections"],
+      title: "选择要导入的文档",
+      filters: [
+        {
+          name: "文档",
+          extensions: INGEST_FILE_EXTENSIONS,
+        },
+      ],
+    })
+    if (result.canceled) return []
+    return result.filePaths
+  })
+  ipcMain.handle("knowledge:ingest-document", async (_event, filePath: string) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("无效的文件路径")
+    }
+    return ingestDocumentFile(filePath.trim())
+  })
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
   ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))
-  ipcMain.handle("app:get-migrations-dir", () =>
-    ctx.path.join(ctx.app.getAppPath(), "drizzle")
-  )
+  ipcMain.handle("app:get-migrations-dir", () => {
+    const candidates = [
+      ctx.path.join(ctx.app.getAppPath(), "drizzle"),
+      ctx.path.join(process.cwd(), "drizzle"),
+    ]
+    for (const dir of candidates) {
+      if (ctx.fsSync.existsSync(ctx.path.join(dir, "meta", "_journal.json"))) {
+        return dir
+      }
+    }
+    return ctx.path.join(process.cwd(), "drizzle")
+  })
 
   ipcMain.handle("fs:exists", async (_event, targetPath: string) =>
     ctx.fsSync.existsSync(targetPath)
@@ -189,8 +215,10 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:get-chat-model-file-info", (_event, fileName: string) =>
     ctx.getChatModelFileInfo(fileName)
   )
-  ipcMain.handle("app:get-embeddings", async (_event, texts: string | string[]) =>
-    ctx.embedTexts(texts)
+  ipcMain.handle(
+    "app:get-embeddings",
+    async (_event, texts: string | string[], purpose?: "query" | "document") =>
+      ctx.embedTexts(texts, purpose)
   )
   ipcMain.handle("app:get-embedding-status", () => ctx.getEmbeddingStatus())
 
@@ -198,63 +226,43 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     ctx.getSqlite(dbPath)
     return ctx.sqliteRuntime.getVecStatus(dbPath)
   })
-  ipcMain.handle("sqlite:ensure-vector-schema", (_event, dbPath: string) => {
+  ipcMain.handle("sqlite:ensure-vector-schema", async (_event, dbPath: string) => {
     ctx.getSqlite(dbPath)
     return ctx.sqliteRuntime.ensureVectorSchema(dbPath)
   })
   ipcMain.handle(
     "sqlite:vector-upsert-memory",
-    (_event, dbPath: string, id: string, embedding: number[]) => {
-      const { db, vecLoaded } = ctx.sqliteRuntime.getEntry(dbPath)
-      if (vecLoaded) {
-        ctx.sqliteRuntime.runStatement(
-          dbPath,
-          `INSERT OR REPLACE INTO memory_embeddings (id, embedding) VALUES (?, ?)`,
-          [id, embedding]
-        )
-        return { mode: "vec0" as const }
-      }
-      ctx.sqliteRuntime.vectorFallback.upsertMemoryEmbedding(db as never, id, embedding)
-      return { mode: "fallback" as const }
+    async (_event, dbPath: string, id: string, embedding: number[]) => {
+      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
+      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
+      await ctx.sqliteRuntime.libsqlVector.upsertMemoryEmbedding(client, id, embedding)
+      return { mode: "libsql" as const }
     }
   )
-  ipcMain.handle("sqlite:vector-delete-memory", (_event, dbPath: string, id: string) => {
-    const { db, vecLoaded } = ctx.sqliteRuntime.getEntry(dbPath)
-    if (vecLoaded) {
-      ctx.sqliteRuntime.runStatement(dbPath, `DELETE FROM memory_embeddings WHERE id = ?`, [id])
-      return { mode: "vec0" as const }
+  ipcMain.handle(
+    "sqlite:vector-delete-memory",
+    async (_event, dbPath: string, id: string) => {
+      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
+      await ctx.sqliteRuntime.libsqlVector.deleteMemoryEmbedding(client, id)
+      return { mode: "libsql" as const }
     }
-    ctx.sqliteRuntime.vectorFallback.deleteMemoryEmbedding(db as never, id)
-    return { mode: "fallback" as const }
-  })
+  )
   ipcMain.handle(
     "sqlite:vector-search-memories",
-    (_event, dbPath: string, embedding: number[], limit = 10) => {
-      const { db, vecLoaded } = ctx.sqliteRuntime.getEntry(dbPath)
-      if (vecLoaded) {
-        return {
-          mode: "vec0" as const,
-          rows: ctx.sqliteRuntime.selectStatement(
-            dbPath,
-            `SELECT m.id, m.title, m.category, m.content, m.file_path, m.created_at, m.updated_at
-           FROM memory_items m
-           JOIN memory_embeddings e ON m.id = e.id
-           WHERE e.embedding MATCH ?
-           ORDER BY distance
-           LIMIT ?`,
-            [embedding, limit]
-          ),
-        }
-      }
-      return {
-        mode: "fallback" as const,
-        rows: ctx.sqliteRuntime.vectorFallback.searchMemories(db as never, embedding, limit),
-      }
+    async (_event, dbPath: string, embedding: number[], limit = 10) => {
+      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
+      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
+      const rows = await ctx.sqliteRuntime.libsqlVector.searchMemories(
+        client,
+        embedding,
+        limit
+      )
+      return { mode: "libsql" as const, rows }
     }
   )
   ipcMain.handle(
     "sqlite:vector-upsert-slice",
-    (
+    async (
       _event,
       dbPath: string,
       id: string,
@@ -263,89 +271,55 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       memoryType: string,
       embedding: number[]
     ) => {
-      const { db, vecLoaded } = ctx.sqliteRuntime.getEntry(dbPath)
-      if (vecLoaded) {
-        ctx.sqliteRuntime.runStatement(
-          dbPath,
-          `INSERT OR REPLACE INTO memory_vector_slices (id, content, session_id, memory_type, embedding)
-           VALUES (?, ?, ?, ?, ?)`,
-          [id, content, sessionId, memoryType, embedding]
-        )
-        return { mode: "vec0" as const }
-      }
-      ctx.sqliteRuntime.vectorFallback.upsertMemorySlice(
-        db as never,
+      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
+      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
+      await ctx.sqliteRuntime.libsqlVector.upsertMemorySlice(
+        client,
         id,
         content,
         sessionId,
         memoryType,
         embedding
       )
-      return { mode: "fallback" as const }
+      return { mode: "libsql" as const }
     }
   )
   ipcMain.handle(
     "sqlite:vector-search-slices",
-    (_event, dbPath: string, embedding: number[], limit = 10, memoryType: string | null = null) => {
-      const { db, vecLoaded } = ctx.sqliteRuntime.getEntry(dbPath)
-      if (vecLoaded) {
-        let sql = `
-          SELECT m.id, m.session_id, m.memory_type, m.content_preview, m.created_at, v.content
-          FROM memory_slice_metadata m
-          JOIN memory_vector_slices v ON m.id = v.id
-          WHERE v.embedding MATCH ?
-        `
-        const params: unknown[] = [embedding]
-        if (memoryType) {
-          sql += ` AND m.memory_type = ?`
-          params.push(memoryType)
-        }
-        sql += ` ORDER BY distance LIMIT ?`
-        params.push(limit)
-        return { mode: "vec0" as const, rows: ctx.sqliteRuntime.selectStatement(dbPath, sql, params) }
-      }
-      return {
-        mode: "fallback" as const,
-        rows: ctx.sqliteRuntime.vectorFallback.searchMemorySlices(
-          db as never,
-          embedding,
-          limit,
-          memoryType
-        ),
-      }
+    async (
+      _event,
+      dbPath: string,
+      embedding: number[],
+      limit = 10,
+      memoryType: string | null = null
+    ) => {
+      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
+      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
+      const rows = await ctx.sqliteRuntime.libsqlVector.searchMemorySlices(
+        client,
+        embedding,
+        limit,
+        memoryType
+      )
+      return { mode: "libsql" as const, rows }
     }
   )
 
-  ipcMain.handle("sqlite:execute", (_event, dbPath: string, sql: string, params: unknown[] = []) => {
-    try {
+  ipcMain.handle(
+    "sqlite:execute",
+    async (_event, dbPath: string, sql: string, params: unknown[] = []) => {
       ctx.getSqlite(dbPath)
-      const result = ctx.sqliteRuntime.runStatement(dbPath, sql, params)
+      const result = await ctx.sqliteRuntime.runStatement(dbPath, sql, params)
       return { ok: true, rows: [], ...result }
-    } catch (error) {
-      if (vecErrorCode(error) === "VEC_UNAVAILABLE") {
-        return {
-          ok: false,
-          vecUnavailable: true,
-          error: error instanceof Error ? error.message : String(error),
-          rows: [],
-          lastInsertRowid: 0,
-          changes: 0,
-        }
-      }
-      throw error
     }
-  })
-  ipcMain.handle("sqlite:select", (_event, dbPath: string, sql: string, params: unknown[] = []) => {
-    try {
+  )
+  ipcMain.handle(
+    "sqlite:select",
+    async (_event, dbPath: string, sql: string, params: unknown[] = []) => {
       ctx.getSqlite(dbPath)
-      return ctx.sqliteRuntime.selectStatement(dbPath, sql, params)
-    } catch (error) {
-      if (vecErrorCode(error) === "VEC_UNAVAILABLE") {
-        return []
-      }
-      throw error
+      return await ctx.sqliteRuntime.selectStatement(dbPath, sql, params)
     }
-  })
+  )
 
   // agent:create - 创建新 Agent 会话
   ipcMain.handle("agent:create", async (event) => {
@@ -357,8 +331,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // agent:prompt - 发送消息给 Agent
   ipcMain.handle("agent:prompt", async (_event, { sessionId, message }: { sessionId: string; message: string }) => {
     if (!agentSessionExists(sessionId)) throw new Error("session not found")
-    await promptAgent(sessionId, message)
-    return { ok: true }
+    try {
+      await promptAgent(sessionId, message)
+      return { ok: true }
+    } catch (error) {
+      log.error("[agent:prompt]", error instanceof Error ? error.message : error)
+      throw error
+    }
   })
 
   // agent:destroy - 销毁 Agent 会话

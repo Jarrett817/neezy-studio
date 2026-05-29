@@ -8,14 +8,20 @@ import type { MemoryItem } from "~/services/memories"
 type MemoryListProps = {
   items: MemoryItem[]
   className?: string
+  emptyMessage?: string
   onDelete?: (item: MemoryItem) => void
 }
 
-export function MemoryList({ items, className, onDelete }: MemoryListProps) {
+export function MemoryList({
+  items,
+  className,
+  emptyMessage = "暂无条目",
+  onDelete,
+}: MemoryListProps) {
   if (items.length === 0) {
     return (
       <p className={cn("py-12 text-center text-sm text-muted-foreground", className)}>
-        暂无记忆，可在对话中让助手写入素材库
+        {emptyMessage}
       </p>
     )
   }

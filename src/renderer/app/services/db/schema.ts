@@ -40,10 +40,10 @@ export const chatMessages = sqliteTable(
   ]
 )
 
-export const settings = sqliteTable("settings", {
+/** 应用偏好（活跃会话 id、人格画像等），与 chat_messages 同属 memories.db */
+export const appKv = sqliteTable("app_kv", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
-  updated_at: integer("updated_at").notNull(),
 })
 
 export const memorySlices = sqliteTable("memory_slice_metadata", {

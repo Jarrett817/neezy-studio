@@ -25,14 +25,21 @@ type DrizzleJournal = {
 let db: SqliteBridge | null = null
 let migratePromise: Promise<void> | null = null
 
-async function getDb() {
-  if (!db) {
-    const { databaseFile: dbPath } = await getStoragePaths()
-    db = {
-      execute: (sql, params = []) => sqliteExecute(dbPath, sql, params),
-      select: (sql, params = []) => sqliteSelect(dbPath, sql, params),
-    }
+function createMigrateBridge(): SqliteBridge {
+  return {
+    execute: async (sql, params = []) => {
+      const { databaseFile: dbPath } = await getStoragePaths()
+      return sqliteExecute(dbPath, sql, params)
+    },
+    select: async (sql, params = []) => {
+      const { databaseFile: dbPath } = await getStoragePaths()
+      return sqliteSelect(dbPath, sql, params)
+    },
   }
+}
+
+async function getDb() {
+  if (!db) db = createMigrateBridge()
   return db
 }
 
@@ -103,19 +110,31 @@ async function runMigrationsInternal() {
 
   const applied = new Set(await getAppliedMigrations(sqlite))
   const migrationsDir = await getMigrationsDir()
+  const files = await listMigrationFiles(migrationsDir)
+  if (files.length === 0) {
+    throw new Error(
+      `[db] 未找到迁移文件（${migrationsDir}）。请在项目根目录执行 bun run db:generate`
+    )
+  }
 
-  for (const fileName of await listMigrationFiles(migrationsDir)) {
+  for (const fileName of files) {
     if (applied.has(fileName)) continue
 
     const filePath = await join(migrationsDir, fileName)
     if (!(await exists(filePath))) continue
 
-    await executeSql(sqlite, await readTextFile(filePath))
-    await sqlite.execute(
-      `INSERT INTO ${MIGRATIONS_TABLE} (name, applied_at) VALUES (?, ?)`,
-      [fileName, Date.now()]
-    )
-    applied.add(fileName)
+    try {
+      await executeSql(sqlite, await readTextFile(filePath))
+      await sqlite.execute(
+        `INSERT INTO ${MIGRATIONS_TABLE} (name, applied_at) VALUES (?, ?)`,
+        [fileName, Date.now()]
+      )
+      applied.add(fileName)
+      console.info("[db] migration applied:", fileName)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      throw new Error(`[db] migration failed (${fileName}): ${msg}`)
+    }
   }
 }
 

@@ -6,19 +6,15 @@ import {
   getChatModelFileInfo,
   type ChatSyncMessage,
   getEmbeddingsFromMain,
-  getModelCatalog,
-  getModelRecommendations,
   isElectronApp,
   listLlmModels as listLocalLlmModels,
   loadChatModel as loadChatModelInMain,
-  loadEmbeddingModel as loadEmbeddingModelInMain,
   primeChatHistoryFromMain,
   onChatStreamFromMain,
   unloadChatModel as unloadChatModelInMain,
-  unloadEmbeddingModel as unloadEmbeddingModelInMain,
   type ChatLoadResult,
-  type ModelCatalogItem,
 } from "~/services/electron-client"
+import { resolveChatModelEntry } from "~/services/settings"
 import { getRuntimeSettings } from "~/services/settings"
 
 export type LlmModel = {
@@ -160,7 +156,8 @@ export async function loadModel(
 
   try {
     const settings = await getRuntimeSettings()
-    const isRemote = settings.llmProvider.kind === "openai-compatible"
+    const routeEntry = resolveChatModelEntry(settings)
+    const isRemote = routeEntry?.transport === "openai-compatible"
     const fileInfo = isRemote
       ? { ok: true as const, filePath: modelId }
       : await getChatModelFileInfo(modelId)
@@ -172,9 +169,6 @@ export async function loadModel(
       )
     }
     try {
-      if (!isRemote) {
-        await unloadEmbeddingModelInMain().catch(() => {})
-      }
       const loadInfo = await loadChatModelInMain({
         modelPath: fileInfo.filePath,
         preferLowPower: settings.preferLowPower,
@@ -217,23 +211,21 @@ export function shouldKeepHot(): boolean {
 async function ensureChatModelLoaded(): Promise<void> {
   if (currentModel) return
   const settings = await getRuntimeSettings()
-  if (settings.llmProvider.kind === "openai-compatible") {
-    const model = settings.llmProvider.model.trim()
-    if (!settings.llmProvider.apiKey.trim()) {
-      throw new Error("请先在「AI 连接」中配置 API Key 与模型名")
-    }
-    if (!model) {
-      throw new Error("请先在「AI 连接」中配置对话模型名称")
-    }
-    await loadModel(model)
+  const entry = resolveChatModelEntry(settings)
+  if (!entry) {
+    throw new Error("请先在「模型与连接」配置至少一个已启用的对话模型")
+  }
+  if (entry.transport === "openai-compatible") {
+    const key = (entry.apiKey ?? settings.llmProvider.apiKey).trim()
+    if (!key) throw new Error("请配置 API Key")
+    if (!entry.model.trim()) throw new Error("请配置模型名")
+    await loadModel(entry.model.trim())
     return
   }
-  if (!settings.llmModel) {
-    throw new Error(
-      "未选择本地 Ollama 对话模型，请在「AI 连接」切换为 Ollama 并在模型页下载。"
-    )
+  if (!entry.model.trim()) {
+    throw new Error("请在「模型与连接」选择本机已安装的 Ollama 模型")
   }
-  await loadModel(settings.llmModel)
+  await loadModel(entry.model.trim())
 }
 
 async function chatViaGatewayMessages(
@@ -269,8 +261,9 @@ export async function chat(
   await ensureChatModelLoaded()
   touchLastUsed()
   const settings = await getRuntimeSettings()
+  const entry = resolveChatModelEntry(settings)
   const content =
-    settings.llmProvider.kind === "openai-compatible"
+    entry?.transport === "openai-compatible"
       ? await chatViaGatewayMessages(messages, options)
       : await chatPromptFromMain(formatPrompt(messages), {
           temperature: options?.temperature,
@@ -372,100 +365,21 @@ export async function unloadModel(): Promise<void> {
 
 export function preloadModel(): void {}
 
-let embeddingQueue: Promise<void> = Promise.resolve()
-
-async function resolveEmbeddingCatalogItem(): Promise<ModelCatalogItem | null> {
-  const settings = await getRuntimeSettings()
-  const catalog = await getModelCatalog("embedding")
-  if (settings.embeddingModel) {
-    const chosen = catalog.find(
-      (item) => item.fileName === settings.embeddingModel && item.installed
-    )
-    if (chosen) return chosen
-  }
-  const metrics = await getModelRecommendations()
-  return (
-    catalog.find(
-      (item) => item.id === metrics.recommendedEmbeddingId && item.installed
-    ) ?? null
-  )
-}
-
-async function withEmbeddingModel<T>(fn: () => Promise<T>): Promise<T | null> {
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  const prev = embeddingQueue
-  embeddingQueue = prev.then(() => gate)
-  await prev
-
-  const item = await resolveEmbeddingCatalogItem()
-  if (!item) {
-    release()
-    return null
-  }
-
-  const settings = await getRuntimeSettings()
-  const chatFileToRestore = currentModel
-
-  try {
-    await loadEmbeddingModelInMain(item.id, settings.preferLowPower)
-    return await fn()
-  } catch (error) {
-    console.warn("[embedding] Failed to load model:", error)
-    return null
-  } finally {
-    await unloadEmbeddingModelInMain().catch(() => {})
-    if (chatFileToRestore) {
-      const fileInfo = await getChatModelFileInfo(chatFileToRestore)
-      if (fileInfo.ok && fileInfo.filePath) {
-        await loadChatModelInMain({
-          modelPath: fileInfo.filePath,
-          preferLowPower: settings.preferLowPower,
-          temperature: 0.7,
-          topK: 10,
-        }).catch((error) =>
-          console.warn("[chat] Failed to restore model after embedding:", error)
-        )
-      }
-    }
-    release()
-  }
-}
-
-export async function loadEmbeddingByFileName(
-  fileName: string,
-  modelId: string
-): Promise<void> {
-  const { startEmbeddingModel } = await import("~/services/model-runtime")
-  const item = (await getModelCatalog("embedding")).find((m) => m.id === modelId)
-  if (item) {
-    await startEmbeddingModel(item)
-    return
-  }
-  const settings = await getRuntimeSettings()
-  const { saveRuntimeSettings } = await import("~/services/settings")
-  await saveRuntimeSettings({ ...settings, embeddingModel: fileName })
-}
-
-export async function getEmbeddings(_texts: string): Promise<number[]>
-export async function getEmbeddings(_texts: string[]): Promise<number[][]>
+export async function getEmbeddings(_texts: string, options?: { purpose?: "query" | "document" }): Promise<number[]>
+export async function getEmbeddings(_texts: string[], options?: { purpose?: "query" | "document" }): Promise<number[][]>
 export async function getEmbeddings(
-  _texts: string[] | string
+  _texts: string[] | string,
+  options?: { purpose?: "query" | "document" }
 ): Promise<number[][] | number[]> {
   const empty = Array.isArray(_texts) ? ([] as number[][]) : ([] as number[])
-  const result = await withEmbeddingModel(async () => {
+  if (!isElectronLlmAvailable()) return empty
+  try {
     if (Array.isArray(_texts)) {
-      return getEmbeddingsFromMain(_texts)
+      return (await getEmbeddingsFromMain(_texts, options)) as number[][]
     }
-    return getEmbeddingsFromMain(_texts)
-  })
-  if (result == null) {
-    console.warn(
-      "[embedding] No embedding model configured; vector search is disabled."
-    )
+    return (await getEmbeddingsFromMain(_texts, options)) as number[]
+  } catch (error) {
+    console.warn("[embedding] Failed:", error)
     return empty
   }
-  return result
 }

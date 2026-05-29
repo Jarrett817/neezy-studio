@@ -4,6 +4,10 @@ import type { ModelDefinition, ModelKind, ModelTier } from "../types"
 import { getOllamaClient } from "./client"
 import { ensureOllama } from "./lifecycle"
 import { buildRecommendedCatalog, definitionFromOllamaName } from "./library"
+import {
+  isModelRefInstalled,
+  resolveInstalledRef,
+} from "./model-ref"
 import { embeddingDimFromShow, showOllamaModel } from "./model-info"
 
 const TIER_LABELS: Record<ModelTier, string> = {
@@ -60,7 +64,8 @@ async function enrichInstalledWithShow(models: ModelDefinition[]): Promise<void>
   const installed = models.filter((m) => isModelInstalled(m.fileName))
   await Promise.all(
     installed.slice(0, 12).map(async (model) => {
-      const show = await showOllamaModel(model.fileName)
+      const ref = resolveInstalledRef(model.fileName, installedNames) ?? model.fileName
+      const show = await showOllamaModel(ref)
       if (!show) return
       const dim = embeddingDimFromShow(show)
       if (dim) model.embeddingDim = dim
@@ -132,6 +137,7 @@ export function modelToCatalogItem(
   model: ModelDefinition,
   extra: {
     installed: boolean
+    resolvedRef?: string | null
     status: "available" | "ready" | "downloading" | "error"
     progress: number | null
     downloadedBytes: number
@@ -140,10 +146,11 @@ export function modelToCatalogItem(
     cancellable?: boolean
   }
 ) {
+  const ollamaRef = extra.resolvedRef ?? (extra.installed ? model.fileName : null)
   return {
     ...model,
     installed: extra.installed,
-    path: extra.installed ? model.fileName : null,
+    path: ollamaRef,
     status: extra.status,
     progress: extra.progress,
     downloadedBytes: extra.downloadedBytes,
@@ -153,11 +160,28 @@ export function modelToCatalogItem(
   }
 }
 
+export function catalogItemFromDefinition(
+  model: ModelDefinition,
+  status: "available" | "ready" | "downloading" | "error" = "available"
+) {
+  const resolvedRef = resolveInstalledRef(model.fileName, installedNames)
+  const installed = resolvedRef !== null
+  return modelToCatalogItem(model, {
+    installed,
+    resolvedRef,
+    status: installed ? "ready" : status,
+    progress: null,
+    downloadedBytes: 0,
+    totalBytes: model.sizeBytes,
+  })
+}
+
 const activePulls = new Map<
   string,
   { stream: AbortableAsyncIterator<ProgressResponse>; progress: number }
 >()
 
+/** 应用内「下载」= 调用 Ollama pull，落盘由 Ollama 管理 */
 export async function pullModel(
   ollamaName: string,
   onProgress?: (progress: number) => void
@@ -193,16 +217,16 @@ export function getPullProgress(ollamaName: string): number | null {
 
 export async function deleteOllamaModel(ollamaName: string): Promise<void> {
   await ensureOllama()
-  await getOllamaClient().delete({ model: ollamaName })
+  const resolved = resolveInstalledRef(ollamaName, installedNames) ?? ollamaName
+  await getOllamaClient().delete({ model: resolved })
   await refreshInstalledNames()
   await rebuildRegistry()
 }
 
 export function isModelInstalled(ollamaName: string): boolean {
-  if (installedNames.has(ollamaName)) return true
-  const base = ollamaName.split(":")[0]
-  for (const n of installedNames) {
-    if (n === ollamaName || n.startsWith(`${base}:`)) return true
-  }
-  return false
+  return isModelRefInstalled(ollamaName, installedNames)
+}
+
+export function resolveInstalledModelRef(ollamaName: string): string | null {
+  return resolveInstalledRef(ollamaName, installedNames)
 }

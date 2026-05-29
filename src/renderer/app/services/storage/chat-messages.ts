@@ -4,6 +4,7 @@ import type { ChatMessage } from "~/stores/app-store"
 import { ensureInit, getDb, schema } from "../db"
 
 import { updateSession, type Session } from "./sessions"
+import { selectSqliteRows } from "./sqlite-rows"
 
 type StoredToolCall = {
   name: string
@@ -11,7 +12,17 @@ type StoredToolCall = {
   result: string
 }
 
-function rowToMessage(row: typeof schema.chatMessages.$inferSelect): ChatMessage {
+type ChatMessageRow = {
+  id: string
+  session_id: string
+  role: string
+  content: string
+  thinking: string | null
+  tool_calls_json: string | null
+  created_at: number
+}
+
+function rowToMessage(row: ChatMessageRow): ChatMessage {
   let toolCalls: StoredToolCall[] | undefined
   if (row.tool_calls_json) {
     try {
@@ -24,21 +35,29 @@ function rowToMessage(row: typeof schema.chatMessages.$inferSelect): ChatMessage
   return {
     id: row.id,
     role: row.role as ChatMessage["role"],
-    content: row.content,
+    content: row.content ?? "",
     thinking: row.thinking ?? "",
     toolCalls,
-    timestamp: row.created_at,
+    timestamp: Number(row.created_at) || 0,
   }
 }
 
+export async function countChatMessages(sessionId: string): Promise<number> {
+  const rows = await selectSqliteRows<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM chat_messages WHERE session_id = ?`,
+    [sessionId]
+  )
+  return Number(rows[0]?.n ?? 0)
+}
+
 export async function listChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  await ensureInit()
-  const db = getDb()
-  const rows = await db
-    .select()
-    .from(schema.chatMessages)
-    .where(eq(schema.chatMessages.session_id, sessionId))
-    .orderBy(asc(schema.chatMessages.created_at))
+  const rows = await selectSqliteRows<ChatMessageRow>(
+    `SELECT id, session_id, role, content, thinking, tool_calls_json, created_at
+     FROM chat_messages
+     WHERE session_id = ?
+     ORDER BY created_at ASC`,
+    [sessionId]
+  )
   return rows.map(rowToMessage)
 }
 

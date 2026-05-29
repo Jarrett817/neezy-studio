@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useSearchParams } from "react-router"
 import {
   Bot,
   MoreHorizontal,
@@ -15,6 +16,7 @@ import {
 import { toast } from "sonner"
 
 import { ChatModelStatus } from "~/components/chat/chat-model-status"
+import { ChatTierPicker } from "~/components/chat/chat-tier-picker"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
 import { ModelThinkingBlock } from "~/components/chat/model-thinking-block"
 import { Button } from "~/components/ui/button"
@@ -32,13 +34,21 @@ import { Label } from "~/components/ui/label"
 import { Input } from "~/components/ui/input"
 import { listSkills } from "~/services/workspace"
 import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
-import { getCurrentModel } from "~/services/llm"
-import { getRuntimeSettings } from "~/services/settings"
+import { entryDisplayName, type ModelTransport } from "~/config/chat-models"
+import {
+  getRuntimeSettings,
+  resolveChatModelEntry,
+} from "~/services/settings"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
+import { ensureInit } from "~/services/db"
 import { upsertChatMessage, deleteChatMessagesForSession } from "~/services/storage/chat-messages"
 import {
-  ensureActiveChatSession,
+  ensureChatSessionForSend,
+  getActiveSessionId,
+  loadActiveChatSession,
+  loadChatSessionById,
   loadChatSessionMessages,
+  pruneEmptyChatSessions,
   setActiveSessionId as persistActiveSessionId,
 } from "~/services/storage/chat-history"
 import { updateSession } from "~/services/storage/sessions"
@@ -56,6 +66,8 @@ const SYSTEM_PROMPT =
 
 export default function ChatRoute() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const sessionFromUrl = searchParams.get("session")?.trim() || null
   const [input, setInput] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeSkill, setActiveSkill] = useState<string | null>(null)
@@ -113,28 +125,6 @@ export default function ChatRoute() {
     [updateMessage, persistMessage]
   )
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const session = await ensureActiveChatSession()
-        if (cancelled) return
-        sessionIdRef.current = session.id
-        setActiveSessionId(session.id)
-        const loaded = await loadChatSessionMessages(session.id)
-        if (cancelled) return
-        setConversationHistory(loaded)
-      } catch (err) {
-        console.warn("[chat] load sessions failed:", err)
-      } finally {
-        if (!cancelled) setSessionsReady(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [setConversationHistory])
-
   const { data: skills = [] } = useQuery({
     queryKey: ["skills"],
     queryFn: listSkills,
@@ -158,6 +148,45 @@ export default function ChatRoute() {
     enabled: sessionsReady,
   })
 
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        await ensureInit()
+        const keepId = sessionFromUrl ?? (await getActiveSessionId())
+        await pruneEmptyChatSessions(keepId)
+
+        const loaded = sessionFromUrl
+          ? await loadChatSessionById(sessionFromUrl)
+          : await loadActiveChatSession()
+
+        if (cancelled) return
+        if (loaded.session && loaded.messages.length > 0) {
+          sessionIdRef.current = loaded.session.id
+          setActiveSessionId(loaded.session.id)
+          await persistActiveSessionId(loaded.session.id)
+          setConversationHistory(loaded.messages)
+        } else {
+          sessionIdRef.current = null
+          setActiveSessionId(null)
+          clearConversation()
+        }
+        void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+        void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+        void queryClient.invalidateQueries({
+          queryKey: ["chat-sessions", "with-messages"],
+        })
+      } catch (err) {
+        console.warn("[chat] load sessions failed:", err)
+      } finally {
+        if (!cancelled) setSessionsReady(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [setConversationHistory, clearConversation, sessionFromUrl, queryClient])
+
   const handleSelectSession = useCallback(
     async (sessionId: string) => {
       if (sessionId === sessionIdRef.current) return
@@ -165,8 +194,10 @@ export default function ChatRoute() {
       setActiveSessionId(sessionId)
       await persistActiveSessionId(sessionId)
       const loaded = await loadChatSessionMessages(sessionId)
+      await resetAgent(loaded).catch((err) =>
+        console.warn("[chat] reset agent failed:", err)
+      )
       setConversationHistory(loaded)
-      await resetAgent().catch(() => {})
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
     },
     [setConversationHistory, queryClient, resetAgent]
@@ -177,16 +208,20 @@ export default function ChatRoute() {
       sessionIdRef.current = sessionId
       setActiveSessionId(sessionId)
       clearConversation()
-      await resetAgent().catch(() => {})
+      await resetAgent([]).catch((err) =>
+        console.warn("[chat] reset agent failed:", err)
+      )
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
     },
     [clearConversation, queryClient, resetAgent]
   )
 
-  const chatModelName =
-    runtimeSettings?.llmProvider.kind === "openai-compatible"
-      ? runtimeSettings.llmProvider.model.trim() || "API"
-      : getCurrentModel() || runtimeSettings?.llmModel || "本地模型"
+  const chatEntry = runtimeSettings
+    ? resolveChatModelEntry(runtimeSettings, input.trim() || undefined)
+    : null
+  const chatModelName = chatEntry
+    ? entryDisplayName(chatEntry)
+    : "未配置"
 
   const readFileContent = async (file: File): Promise<string> => {
     const MAX_CHUNK_SIZE = 32000
@@ -218,6 +253,13 @@ export default function ChatRoute() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  const patchAssistantStream = useCallback(
+    (id: string, patch: Partial<ChatMessage>) => {
+      updateMessage(id, patch)
+    },
+    [updateMessage]
+  )
+
   const patchAssistant = useCallback(
     (id: string, patch: Partial<ChatMessage>) => {
       updateMessagePersist(id, patch)
@@ -230,6 +272,15 @@ export default function ChatRoute() {
     const hasText = text.length > 0
     const hasFile = attachedFile !== null
     if ((!hasText && !hasFile) || isGenerating) return
+
+    let sid = sessionIdRef.current
+    if (!sid) {
+      const session = await ensureChatSessionForSend()
+      sid = session.id
+      sessionIdRef.current = sid
+      setActiveSessionId(sid)
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    }
 
     const userId = crypto.randomUUID()
     const assistantId = crypto.randomUUID()
@@ -261,7 +312,9 @@ export default function ChatRoute() {
       toolCalls: [],
     })
 
-    const modelFile = getCurrentModel()
+    const settingsForSend = await getRuntimeSettings()
+    const entryForSend = resolveChatModelEntry(settingsForSend, userContent)
+    const modelFile = entryForSend?.model ?? chatEntry?.model
     try {
       let portraitContext = ""
       await getPortraitContextForPrompt().then((ctx) => {
@@ -277,7 +330,7 @@ export default function ChatRoute() {
         userMessage: userForAgent,
         assistantId,
         onStream: ({ thinking, content }) => {
-          patchAssistant(assistantId, { thinking, content })
+          patchAssistantStream(assistantId, { thinking, content })
         },
         onToolCall: (name, args, toolResult) => {
           const current = getMessage(assistantId)
@@ -298,8 +351,13 @@ export default function ChatRoute() {
       const finalContent = parsed.visible || result.content
 
       if (!finalContent.trim()) {
-        patchAssistant(assistantId, { isStreaming: false })
-        toast.error("模型未返回内容，请检查连接或模型是否已启动")
+        const emptyMsg = "模型未返回内容，请检查连接或 API 配置"
+        patchAssistant(assistantId, {
+          isStreaming: false,
+          failed: true,
+          content: emptyMsg,
+        })
+        toast.error(emptyMsg)
         return
       }
 
@@ -308,6 +366,7 @@ export default function ChatRoute() {
         thinking: finalThinking,
         isStreaming: false,
       })
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
 
       if (text || attachedFile) {
         updatePortraitFromConversation({
@@ -329,12 +388,10 @@ export default function ChatRoute() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "生成失败"
-      patchAssistant(assistantId, { isStreaming: false })
-      addMessagePersist({
-        id: crypto.randomUUID(),
-        role: "error",
+      patchAssistant(assistantId, {
+        isStreaming: false,
+        failed: true,
         content: message,
-        thinking: "",
       })
       toast.error(message)
     } finally {
@@ -348,6 +405,7 @@ export default function ChatRoute() {
     attachedFile,
     addMessagePersist,
     patchAssistant,
+    patchAssistantStream,
     getMessage,
     queryClient,
     runPrompt,
@@ -381,8 +439,8 @@ export default function ChatRoute() {
         onSelectSession={(id) => void handleSelectSession(id)}
         onSessionCreated={(id) => void handleNewSession(id)}
       />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/10 px-1 pb-3 pt-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-4 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/10 pb-3 pt-2">
           <ChatModelStatus className="min-w-0 flex-1" />
           <div className="flex shrink-0 items-center gap-1">
             <Sheet open={optionsOpen} onOpenChange={setOptionsOpen}>
@@ -501,19 +559,23 @@ export default function ChatRoute() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto py-4">
           {messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center py-20 text-center">
+            <div className="flex h-full flex-col items-center justify-center px-4 py-20 text-center">
               <div className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-primary/10 shadow-sm">
                 <Sparkles className="size-9 text-primary" />
               </div>
               <p className="text-xl font-semibold tracking-tight">说说你想做什么</p>
             </div>
           ) : (
-            <div className="space-y-5 pb-4">
+            <div className="space-y-6 pb-6">
               {messages.map((message) => (
                 <div key={message.id}>
-                  <MessageBubble message={message} modelName={chatModelName} />
+                  <MessageBubble
+                    message={message}
+                    modelName={chatModelName}
+                    transport={chatEntry?.transport}
+                  />
                 </div>
               ))}
             </div>
@@ -521,9 +583,9 @@ export default function ChatRoute() {
           <div ref={bottomRef} />
         </div>
 
-        <div className="mt-3 shrink-0 rounded-2xl border border-border/15 bg-card shadow-sm">
+        <div className="mt-4 shrink-0 rounded-2xl border border-border/40 bg-card shadow-sm">
           {attachedFile && (
-            <div className="flex items-center gap-2 border-b border-border/10 px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-border/20 px-4 py-2.5">
               <FileText className="size-4 shrink-0 text-primary" />
               <span className="flex-1 truncate text-xs">
                 {attachedFile.name}
@@ -540,37 +602,43 @@ export default function ChatRoute() {
           )}
 
           <Textarea
-            className="min-h-[52px] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm leading-relaxed shadow-none focus-visible:border-transparent focus-visible:ring-0"
+            className="min-h-[56px] resize-none rounded-none border-0 bg-transparent px-4 py-3.5 text-sm leading-relaxed shadow-none focus-visible:border-transparent focus-visible:ring-0"
             placeholder="输入消息…"
             rows={3}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send()
+              if (e.key !== "Enter") return
+              if (e.ctrlKey || e.metaKey) return
+              e.preventDefault()
+              send()
             }}
           />
 
-          <div className="flex items-center justify-between gap-2 border-t border-border/10 px-2 py-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 rounded-full"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isGenerating || isReadingFile}
-              aria-label="附加文件"
-            >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/20 px-3 py-2.5 sm:px-4">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <ChatTierPicker disabled={isGenerating} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0 rounded-full"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isGenerating || isReadingFile}
+                aria-label="附加文件"
+              >
               {isReadingFile ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Paperclip className="size-4" />
               )}
-            </Button>
+              </Button>
+            </div>
 
             {isGenerating ? (
               <Button
@@ -603,12 +671,14 @@ export default function ChatRoute() {
 function MessageBubble({
   message,
   modelName,
+  transport,
 }: {
   message: ChatMessage
   modelName: string
+  transport?: ModelTransport
 }) {
   const isUser = message.role === "user"
-  const isError = message.role === "error"
+  const isError = message.role === "error" || Boolean(message.failed)
   const hasAnswer = Boolean(message.content?.trim())
   const hasThinkingText = Boolean(message.thinking?.trim())
   const showThinking =
@@ -637,15 +707,16 @@ function MessageBubble({
         )}
       >
         {isUser ? (
-          <div className="rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground">
-            <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="rounded-2xl rounded-tr-md bg-primary px-4 py-3.5 text-sm leading-relaxed text-primary-foreground shadow-sm">
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
           </div>
         ) : isError ? (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400">
-            {message.content}
+          <div className="rounded-2xl border border-red-200/80 bg-red-50 px-4 py-3.5 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
+            <p className="mb-2 text-xs font-medium opacity-80">请求失败</p>
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             {showThinking && (
               <ModelThinkingBlock
                 modelName={modelName}
@@ -653,15 +724,16 @@ function MessageBubble({
                 isStreaming={Boolean(message.isStreaming)}
                 hasAnswerContent={hasAnswer}
                 toolCalls={message.toolCalls}
+                transport={transport}
               />
             )}
 
             {hasAnswer ? (
-              <div className="rounded-2xl rounded-tl-md border border-border/60 bg-card px-4 py-3.5 text-sm leading-relaxed shadow-sm">
+              <div className="overflow-hidden rounded-2xl rounded-tl-md border border-border/50 bg-card px-4 py-4 text-sm shadow-sm sm:px-5 sm:py-4">
                 <MarkdownContent content={message.content} />
               </div>
             ) : message.isStreaming && !showThinking ? (
-              <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md border border-border/50 bg-muted/30 px-4 py-3.5 text-sm text-muted-foreground">
                 <Loader2 className="size-4 shrink-0 animate-spin" />
                 <span>正在生成…</span>
               </div>

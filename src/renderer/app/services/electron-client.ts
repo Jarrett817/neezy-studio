@@ -1,3 +1,4 @@
+import type { AppConfig } from "../../../shared/app-config"
 import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
 
 export type ModelTier = "light" | "balanced" | "performance"
@@ -15,13 +16,10 @@ export type RuntimeMetrics = {
   vramSummary?: string
   gpuInspectLines?: string[]
   chatTier: ModelTier
-  embeddingTier: ModelTier
   recommendedChatId: string | null
-  recommendedEmbeddingId: string | null
   recommendedReason: string
   systemSummary: string
   chatAlternatives: string[]
-  embeddingAlternatives: string[]
 }
 
 type DirEntry = {
@@ -141,6 +139,14 @@ export type StoragePaths = {
   isCustomized: boolean
 }
 
+export type StoragePathsSaveResult = StoragePaths & {
+  migration?: {
+    from: string
+    to: string
+    movedCount: number
+  }
+}
+
 type ElectronApi = {
   invoke: <T = unknown>(channel: string, data?: unknown) => Promise<T>
   on: <T = unknown>(
@@ -150,14 +156,16 @@ type ElectronApi = {
   getBuildInfo: () => Promise<BuildInfo>
   configureOllamaHost: (host: string) => Promise<void>
   syncRuntimeSettings: (settings: Record<string, unknown>) => Promise<void>
+  getAppConfig?: () => Promise<AppConfig>
+  saveAppConfig?: (config: AppConfig) => Promise<AppConfig>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
   rebuildModelCatalog: () => Promise<void>
   getModelRecommendations: () => Promise<RuntimeMetrics>
   loadEmbeddingModel: (
-    modelId: string,
+    modelId?: string,
     preferLowPower?: boolean
-  ) => Promise<{ embeddingDim: number; modelId: string | null }>
+  ) => Promise<{ embeddingDim: number; modelId: string | null; loaded?: boolean }>
   unloadEmbeddingModel: () => Promise<void>
   loadChatModel: (payload: ChatLoadPayload) => Promise<ChatLoadResult>
   unloadChatModel: () => Promise<void>
@@ -169,6 +177,10 @@ type ElectronApi = {
     latencyMs: number
     error?: string
   }>
+  listOpenAiModels?: (payload: {
+    baseUrl: string
+    apiKey: string
+  }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
   getOllamaStatus: () => Promise<OllamaStatus>
   testOllamaModel: (
     modelName: string,
@@ -189,7 +201,10 @@ type ElectronApi = {
     expectedBytes?: number | null
     reason?: string | null
   }>
-  getEmbeddings: (texts: string | string[]) => Promise<number[] | number[][]>
+  getEmbeddings: (
+    texts: string | string[],
+    purpose?: "query" | "document"
+  ) => Promise<number[] | number[][]>
   getEmbeddingStatus: () => Promise<{
     loaded: boolean
     filePath: string | null
@@ -208,12 +223,19 @@ type ElectronApi = {
   getStoragePaths: () => Promise<StoragePaths>
   saveStoragePaths: (input: {
     dataRoot: string
-  }) => Promise<StoragePaths>
-  resetStoragePaths: () => Promise<StoragePaths>
+  }) => Promise<StoragePathsSaveResult>
+  resetStoragePaths: () => Promise<StoragePathsSaveResult>
   pickDirectory: (options?: {
     title?: string
     defaultPath?: string
   }) => Promise<string | null>
+  pickDocuments?: () => Promise<string[]>
+  ingestDocument?: (filePath: string) => Promise<{
+    fileName: string
+    title: string
+    fullText: string
+    chunks: { index: number; title: string; content: string }[]
+  }>
   getMigrationsDir: () => Promise<string>
   join: (...parts: string[]) => Promise<string>
   exists: (path: string) => Promise<boolean>
@@ -246,21 +268,21 @@ type ElectronApi = {
   }>
   sqliteEnsureVectorSchema: (
     dbPath: string
-  ) => Promise<{ mode: "vec0" | "fallback" }>
+  ) => Promise<{ mode: "libsql" }>
   sqliteVectorUpsertMemory: (
     dbPath: string,
     id: string,
     embedding: number[]
-  ) => Promise<{ mode: "vec0" | "fallback" }>
+  ) => Promise<{ mode: "libsql" }>
   sqliteVectorDeleteMemory: (
     dbPath: string,
     id: string
-  ) => Promise<{ mode: "vec0" | "fallback" }>
+  ) => Promise<{ mode: "libsql" }>
   sqliteVectorSearchMemories: (
     dbPath: string,
     embedding: number[],
     limit?: number
-  ) => Promise<{ mode: "vec0" | "fallback"; rows: Record<string, unknown>[] }>
+  ) => Promise<{ mode: "libsql"; rows: Record<string, unknown>[] }>
   sqliteVectorUpsertSlice: (
     dbPath: string,
     id: string,
@@ -268,13 +290,13 @@ type ElectronApi = {
     sessionId: string | null,
     memoryType: string,
     embedding: number[]
-  ) => Promise<{ mode: "vec0" | "fallback" }>
+  ) => Promise<{ mode: "libsql" }>
   sqliteVectorSearchSlices: (
     dbPath: string,
     embedding: number[],
     limit?: number,
     memoryType?: string | null
-  ) => Promise<{ mode: "vec0" | "fallback"; rows: Record<string, unknown>[] }>
+  ) => Promise<{ mode: "libsql"; rows: Record<string, unknown>[] }>
 }
 
 declare global {
@@ -322,6 +344,18 @@ export async function syncRuntimeSettingsToMain(
   await api.invoke("app:sync-runtime-settings", settings)
 }
 
+export async function getAppConfig(): Promise<AppConfig> {
+  const api = getElectronApi()
+  if (api.getAppConfig) return api.getAppConfig()
+  return api.invoke<AppConfig>("app:get-app-config")
+}
+
+export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
+  const api = getElectronApi()
+  if (api.saveAppConfig) return api.saveAppConfig(config)
+  return api.invoke<AppConfig>("app:save-app-config", config)
+}
+
 export async function testLlmConnection(): Promise<{
   ok: boolean
   latencyMs: number
@@ -332,6 +366,15 @@ export async function testLlmConnection(): Promise<{
     return api.testLlmConnection()
   }
   return getElectronApi().invoke("app:test-llm-connection")
+}
+
+export async function listOpenAiModels(payload: {
+  baseUrl: string
+  apiKey: string
+}): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
+  const api = getElectronApi()
+  if (api.listOpenAiModels) return api.listOpenAiModels(payload)
+  return api.invoke("app:list-openai-models", payload)
 }
 
 export async function getOllamaStatus(): Promise<OllamaStatus> {
@@ -374,7 +417,7 @@ export async function getModelRecommendations(): Promise<RuntimeMetrics> {
 }
 
 export async function loadEmbeddingModel(
-  modelId: string,
+  modelId?: string,
   preferLowPower?: boolean
 ) {
   return getElectronApi().loadEmbeddingModel(modelId, preferLowPower)
@@ -430,14 +473,19 @@ export function isElectronApp(): boolean {
   return typeof window !== "undefined" && window.electronAPI != null
 }
 
-export async function getEmbeddingsFromMain(texts: string): Promise<number[]>
 export async function getEmbeddingsFromMain(
-  texts: string[]
+  texts: string,
+  options?: { purpose?: "query" | "document" }
+): Promise<number[]>
+export async function getEmbeddingsFromMain(
+  texts: string[],
+  options?: { purpose?: "query" | "document" }
 ): Promise<number[][]>
 export async function getEmbeddingsFromMain(
-  texts: string | string[]
+  texts: string | string[],
+  options?: { purpose?: "query" | "document" }
 ): Promise<number[] | number[][]> {
-  return getElectronApi().getEmbeddings(texts)
+  return getElectronApi().getEmbeddings(texts, options?.purpose)
 }
 
 export async function getEmbeddingStatus() {
@@ -480,11 +528,11 @@ export async function getStoragePaths(): Promise<StoragePaths> {
 
 export async function saveStoragePaths(input: {
   dataRoot: string
-}): Promise<StoragePaths> {
+}): Promise<StoragePathsSaveResult> {
   return getElectronApi().saveStoragePaths(input)
 }
 
-export async function resetStoragePaths(): Promise<StoragePaths> {
+export async function resetStoragePaths(): Promise<StoragePathsSaveResult> {
   return getElectronApi().resetStoragePaths()
 }
 

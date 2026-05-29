@@ -1,1 +1,0 @@
-CREATE INDEX IF NOT EXISTS `chat_messages_session_id_created_at_idx` ON `chat_messages` (`session_id`,`created_at`);

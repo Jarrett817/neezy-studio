@@ -3,10 +3,11 @@ import { MessageSquarePlus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
+import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import {
   ensureActiveChatSession,
-  listChatSessions,
+  listChatSessionsWithMessages,
   removeChatSession,
   startNewChatSession,
 } from "~/services/storage/chat-history"
@@ -23,14 +24,15 @@ export function ChatSessionSidebar({
   const queryClient = useQueryClient()
 
   const { data: sessions = [], isLoading } = useQuery({
-    queryKey: ["chat-sessions"],
-    queryFn: listChatSessions,
+    queryKey: ["chat-sessions", "sidebar"],
+    queryFn: listChatSessionsWithMessages,
   })
 
   const newSessionMutation = useMutation({
     mutationFn: () => startNewChatSession(),
     onSuccess: (session) => {
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
       onSessionCreated(session.id)
       toast.success("已新建对话")
     },
@@ -43,6 +45,10 @@ export function ChatSessionSidebar({
     mutationFn: (sessionId: string) => removeChatSession(sessionId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      await queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      await queryClient.invalidateQueries({
+        queryKey: ["chat-sessions", "with-messages"],
+      })
       const session = await ensureActiveChatSession()
       onSelectSession(session.id)
     },
@@ -73,6 +79,7 @@ export function ChatSessionSidebar({
           <ul className="space-y-1">
             {sessions.map((session) => {
               const active = session.id === activeSessionId
+              const timeLabel = formatSessionTime(session.updated_at)
               return (
                 <li key={session.id}>
                   <div
@@ -90,8 +97,7 @@ export function ChatSessionSidebar({
                     >
                       <p className="truncate text-sm font-medium">{session.title}</p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {session.last_message_preview ||
-                          new Date(session.updated_at).toLocaleString()}
+                        {session.last_message_preview?.trim() || timeLabel || "—"}
                       </p>
                     </button>
                     <Button

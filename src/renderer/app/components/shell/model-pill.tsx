@@ -2,11 +2,15 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router"
 import { PlugZap } from "lucide-react"
 
+import { entryDisplayName } from "~/config/chat-models"
 import { getPresetLabel } from "~/config/llm-presets"
 import { useCodingPlanCatalog } from "~/hooks/use-coding-plan-catalog"
 import { cn } from "~/lib/utils"
-import { getCurrentModel, isModelLoaded } from "~/services/llm"
-import { getRuntimeSettings } from "~/services/settings"
+import { isModelLoaded } from "~/services/llm"
+import {
+  getRuntimeSettings,
+  resolveChatModelEntry,
+} from "~/services/settings"
 
 export function ModelPill() {
   const { vendors } = useCodingPlanCatalog()
@@ -16,16 +20,21 @@ export function ModelPill() {
     staleTime: 10_000,
   })
 
-  const isApi = settings?.llmProvider.kind === "openai-compatible"
-  const hasKey = Boolean(settings?.llmProvider.apiKey.trim())
-  const modelName = isApi
-    ? settings?.llmProvider.model.trim() || "未配置模型"
-    : getCurrentModel() || settings?.llmModel || "未选择模型"
-  const presetId = settings?.llmProvider.preset ?? "custom"
+  const entry = settings ? resolveChatModelEntry(settings) : null
+  const isApi = entry?.transport === "openai-compatible"
+  const hasKey = Boolean(
+    (entry?.apiKey ?? settings?.llmProvider.apiKey)?.trim()
+  )
+  const modelName = entry
+    ? entryDisplayName(entry)
+    : settings?.llmProvider.model.trim() || "未配置模型"
+  const presetId = entry?.preset ?? settings?.llmProvider.preset ?? "custom"
   const vendorLabel = isApi
     ? vendors.find((v) => v.id === presetId)?.label ?? getPresetLabel(presetId)
-    : "本地 Ollama"
-  const connected = isApi ? hasKey && Boolean(settings?.llmProvider.model.trim()) : isModelLoaded()
+    : "Ollama"
+  const connected = isApi
+    ? hasKey && Boolean(entry?.model.trim())
+    : Boolean(entry?.model.trim()) || isModelLoaded()
   const label = `${modelName} · ${vendorLabel}`
 
   return (

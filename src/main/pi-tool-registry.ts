@@ -7,8 +7,12 @@ export interface AgentToolRuntimeContext {
     databaseFile: string
     memoriesDir: string
   }
-  runSelect: (dbPath: string, sql: string, params?: unknown[]) => unknown[]
-  runExecute: (dbPath: string, sql: string, params?: unknown[]) => void
+  runSelect: (
+    dbPath: string,
+    sql: string,
+    params?: unknown[]
+  ) => Promise<unknown[]>
+  runExecute: (dbPath: string, sql: string, params?: unknown[]) => Promise<void>
   embedTexts: (text: string) => Promise<number[]>
 }
 
@@ -49,13 +53,13 @@ const memorySearchTool: AgentTool = {
     const ctx = requireCtx()
     const dbPath = ctx.getPaths().databaseFile
     const p = params as { query: string }
-    const rows = ctx.runSelect(
+    const rows = (await ctx.runSelect(
       dbPath,
       `SELECT title, category, content FROM memory_items
        WHERE title LIKE ? OR content LIKE ?
        ORDER BY updated_at DESC LIMIT 8`,
       [`%${p.query}%`, `%${p.query}%`]
-    ) as unknown as MemoryRow[]
+    )) as unknown as MemoryRow[]
     const text =
       rows.length === 0
         ? "记忆中未找到相关内容"
@@ -94,7 +98,7 @@ const memoryAddTool: AgentTool = {
     const fileName = `${safeTitle || "memory"}_${now}.md`
     const filePath = path.join(memoriesDir, fileName)
     await fs.writeFile(filePath, `# ${p.title}\n\n${p.content}`, "utf8")
-    ctx.runExecute(
+    await ctx.runExecute(
       databaseFile,
       `INSERT INTO memory_items (id, title, category, content, file_path, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -130,7 +134,7 @@ const memoryEventTool: AgentTool = {
       `# 事件记录\n\n${p.content}`,
       "utf8"
     )
-    ctx.runExecute(
+    await ctx.runExecute(
       databaseFile,
       `INSERT INTO memory_items (id, title, category, content, file_path, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,

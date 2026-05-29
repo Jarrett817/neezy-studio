@@ -8,22 +8,23 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { applyAppConfig } from "./app-config-sync"
+import { loadAppConfig } from "./app-config"
+import { initBundledEmbedding } from "./bundled-embedding"
+import { initMainLogger, log } from "./logger"
 import { setAgentToolRuntimeContext } from "./ollama/agent-tools"
 import { initToolContext } from "./pi-tool-registry"
 import * as ollamaCatalog from "./ollama/catalog"
 import * as chatRouter from "./chat-router"
 import * as ollamaChat from "./ollama/chat-runtime"
-import * as ollamaEmbed from "./ollama/embed-runtime"
-import { configureOllamaStorage } from "./ollama/env"
+import * as embeddingRuntime from "./embedding-runtime"
 import { ensureOllama } from "./ollama/lifecycle"
 import { getOllamaRuntimeMetrics, getModelCatalogItems } from "./ollama/metrics"
 import * as storagePaths from "./storage-paths"
 import { registerCoreIpcHandlers } from "./core-ipc"
 import { registerIpcHandlers } from "./ipc-handlers"
-import {
-  getSyncedRuntimeSettings,
-  usesOpenAiCompatibleChat,
-} from "./runtime-settings"
+import { resolvedChatUsesApi } from "./model-routing"
+import { getSyncedRuntimeSettings } from "./runtime-settings"
 import * as sqliteRuntime from "./sqlite-runtime"
 import type {
   ChatLoadPayload,
@@ -59,10 +60,6 @@ function appDataDir(): string {
 
 function modelsDir(): string {
   return getPaths().modelsDir
-}
-
-function syncOllamaStorageEnv(): void {
-  configureOllamaStorage(modelsDir())
 }
 
 function closeAllSqliteHandles(): void {
@@ -163,22 +160,16 @@ async function deleteModel(modelId: string) {
   return items.find((m) => m.id === modelId)
 }
 
-async function loadEmbeddingModel(modelId: string, preferLowPower = false) {
-  await ollamaChat.unloadChatModel().catch(() => {})
-  const entry = ollamaCatalog.findCatalogEntry(modelId)
-  if (!entry || entry.kind !== "embedding") throw new Error("Unknown embedding model")
-  return ollamaEmbed.loadEmbeddingModel(entry.fileName, modelId, { preferLowPower })
+async function loadEmbeddingModel(_modelId?: string, _preferLowPower?: boolean) {
+  return embeddingRuntime.loadEmbeddingModel()
 }
 
 async function loadChatModel(payload: ChatLoadPayload): Promise<ChatLoadResult> {
-  if (!usesOpenAiCompatibleChat()) {
-    await ollamaEmbed.unloadEmbeddingModel().catch(() => {})
-  }
   return chatRouter.loadChatModel(payload.modelPath, payload)
 }
 
 async function getChatModelFileInfo(modelName: string) {
-  if (usesOpenAiCompatibleChat()) {
+  if (resolvedChatUsesApi()) {
     const settings = getSyncedRuntimeSettings()
     const name = modelName.trim() || settings.llmProvider.model.trim()
     if (!settings.llmProvider.apiKey.trim()) {
@@ -198,19 +189,21 @@ async function getChatModelFileInfo(modelName: string) {
   }
   await ensureOllama().catch(() => {})
   const entry = ollamaCatalog.findCatalogEntryByName(modelName)
-  const name = entry?.fileName ?? modelName
-  if (!ollamaCatalog.isModelInstalled(name)) {
+  const requested = entry?.fileName ?? modelName
+  let resolved = ollamaCatalog.resolveInstalledModelRef(requested)
+  if (!resolved) {
     await ollamaCatalog.refreshInstalledNames()
+    resolved = ollamaCatalog.resolveInstalledModelRef(requested)
   }
-  if (!ollamaCatalog.isModelInstalled(name)) {
+  if (!resolved) {
     return {
       ok: false,
-      reason: `模型 ${name} 未在 Ollama 中安装，请先在模型页下载。`,
+      reason: `模型 ${requested} 未在 Ollama 中安装，请先在模型页下载或使用 ollama pull。`,
     }
   }
   return {
     ok: true,
-    filePath: name,
+    filePath: resolved,
     sizeBytes: entry?.sizeBytes,
     expectedBytes: entry?.sizeBytes ?? null,
     reason: null,
@@ -232,7 +225,6 @@ const ipcCtx = {
   getPaths,
   appDataDir,
   modelsDir,
-  syncOllamaStorageEnv,
   closeAllSqliteHandles,
   runtimeMetrics: getOllamaRuntimeMetrics,
   ensureModelRegistry: () => ollamaCatalog.ensureModelRegistry(),
@@ -246,7 +238,7 @@ const ipcCtx = {
   cancelModelDownload,
   deleteModel,
   loadEmbeddingModel,
-  unloadEmbeddingModel: ollamaEmbed.unloadEmbeddingModel,
+  unloadEmbeddingModel: embeddingRuntime.unloadEmbeddingModel,
   loadChatModel,
   unloadChatModel: chatRouter.unloadChatModel,
   resetChatHistory: chatRouter.resetChatHistory,
@@ -254,8 +246,8 @@ const ipcCtx = {
   chatPromptStream: chatRouter.runChatPromptStream,
   getChatModelStatus: chatRouter.getChatModelStatus,
   getChatModelFileInfo,
-  embedTexts: ollamaEmbed.embedTexts,
-  getEmbeddingStatus: ollamaEmbed.getEmbeddingStatus,
+  embedTexts: embeddingRuntime.embedTexts,
+  getEmbeddingStatus: embeddingRuntime.getEmbeddingStatus,
   getSqlite: (dbPath: string) => getSqliteRuntime().openDatabase(dbPath),
   get sqliteRuntime() {
     return getSqliteRuntime()
@@ -264,25 +256,29 @@ const ipcCtx = {
 
 setAgentToolRuntimeContext({
   getPaths,
-  runSelect: (dbPath, sql, params) =>
-    getSqliteRuntime().selectStatement(dbPath, sql, params ?? []) as Record<
+  runSelect: async (dbPath, sql, params) =>
+    (await getSqliteRuntime().selectStatement(dbPath, sql, params ?? [])) as Record<
       string,
       unknown
     >[],
-  runExecute: (dbPath, sql, params) => {
-    getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
+  runExecute: async (dbPath, sql, params) => {
+    await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },
-  embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
+  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
 })
 
 initToolContext({
   getPaths,
-  runSelect: (dbPath, sql, params) =>
-    getSqliteRuntime().selectStatement(dbPath, sql, params ?? []) as Record<string, unknown>[],
-  runExecute: (dbPath, sql, params) => {
-    getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
+  runSelect: async (dbPath, sql, params) =>
+    (await getSqliteRuntime().selectStatement(
+      dbPath,
+      sql,
+      params ?? []
+    )) as Record<string, unknown>[],
+  runExecute: async (dbPath, sql, params) => {
+    await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },
-  embedTexts: async (text) => (await ollamaEmbed.embedTexts(text)) as number[],
+  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
 })
 
 registerCoreIpcHandlers()
@@ -332,13 +328,21 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    await initMainLogger()
     const paths = getPaths()
     await storagePaths.ensureStorageDirs(paths)
-    syncOllamaStorageEnv()
+    const appConfig = loadAppConfig(app)
+    applyAppConfig(app, appConfig)
+    void initBundledEmbedding().catch((error) => {
+      log.warn(
+        "[main] 内置 Embedding 预加载失败:",
+        error instanceof Error ? error.message : error
+      )
+    })
     await ollamaCatalog.ensureModelRegistry()
     const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
     console.log(
-      `[main] sqlite-vec ${vecStatus.available ? "ready" : "fallback"}${vecStatus.path ? ` (${vecStatus.path})` : ""}`,
+      `[main] SQLite @libsql/client · 向量 ${vecStatus.available ? "F32_BLOB" : "未就绪"}`,
       vecStatus.error ?? ""
     )
 
@@ -373,6 +377,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   sqliteRuntime.closeAll()
-  ollamaEmbed.unloadEmbeddingModel().catch(() => {})
+  embeddingRuntime.unloadEmbeddingModel().catch(() => {})
   ollamaChat.unloadChatModel().catch(() => {})
 })

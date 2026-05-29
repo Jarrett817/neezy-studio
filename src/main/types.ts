@@ -5,7 +5,8 @@ import type * as FsSync from "node:fs"
 import type * as Os from "node:os"
 import type * as Path from "node:path"
 
-export const EMBEDDING_DIM = 768
+/** sentence-transformers/all-MiniLM-L6-v2 · 内置 GGUF 输出 384 维 */
+export const EMBEDDING_DIM = 384
 
 export type ModelTier = "light" | "balanced" | "performance"
 export type ModelKind = "chat" | "embedding"
@@ -123,6 +124,14 @@ export type StoragePaths = {
   isCustomized: boolean
 }
 
+export type StoragePathsSaveResult = StoragePaths & {
+  migration?: {
+    from: string
+    to: string
+    movedCount: number
+  }
+}
+
 export type ModelDownloadState = {
   status: string
   progress: number | null
@@ -132,24 +141,29 @@ export type ModelDownloadState = {
   cancellable?: boolean
 }
 
+export type VectorStoreMode = "libsql"
+
 export type SqliteRuntimeModule = {
-  VecUnavailableError: new (message: string) => Error & { code: string }
   openDatabase: (dbPath: string) => unknown
-  getEntry: (dbPath: string) => { db: unknown; vecLoaded: boolean; vecPath: string | null }
+  getEntry: (dbPath: string) => { client: import("@libsql/client").Client }
   closeAll: () => void
   getVecStatus: (dbPath: string) => {
     available: boolean
     path: string | null
     error: string | null
   }
-  ensureVectorSchema: (dbPath: string) => { mode: "vec0" | "fallback" }
+  ensureVectorSchema: (dbPath: string) => Promise<{ mode: VectorStoreMode }>
   runStatement: (
     dbPath: string,
     sql: string,
     params?: unknown[]
-  ) => { lastInsertRowid: number; changes: number }
-  selectStatement: (dbPath: string, sql: string, params?: unknown[]) => unknown[]
-  vectorFallback: typeof import("./vector-fallback")
+  ) => Promise<{ lastInsertRowid: number; changes: number }>
+  selectStatement: (
+    dbPath: string,
+    sql: string,
+    params?: unknown[]
+  ) => Promise<unknown[]>
+  libsqlVector: typeof import("./libsql-vector")
 }
 
 export interface IpcContext {
@@ -165,7 +179,6 @@ export interface IpcContext {
   getPaths: () => StoragePaths
   appDataDir: () => string
   modelsDir: () => string
-  syncOllamaStorageEnv: () => void
   closeAllSqliteHandles: () => void
   runtimeMetrics: () => Promise<Record<string, unknown>>
   ensureModelRegistry: (modelsDir?: string) => Promise<void>
@@ -205,7 +218,10 @@ export interface IpcContext {
     expectedBytes?: number | null
     reason?: string | null
   }>
-  embedTexts: (texts: string | string[]) => Promise<number[] | number[][]>
+  embedTexts: (
+    texts: string | string[],
+    purpose?: "query" | "document"
+  ) => Promise<number[] | number[][]>
   getEmbeddingStatus: () => unknown
   getSqlite: (dbPath: string) => unknown
   sqliteRuntime: SqliteRuntimeModule

@@ -122,7 +122,23 @@ export default function ChatRoute() {
 
   const syncFromDisk = useCallback(
     (diskMessages: ChatMessage[]) => {
-      setConversationHistory(diskMessages)
+      const prev = useAppStore.getState().conversationHistory
+      const prevAssistants = prev.filter((m) => m.role === "assistant")
+      let assistantIdx = 0
+      const merged = diskMessages.map((dm) => {
+        if (dm.role !== "assistant") return dm
+        const keep = prevAssistants[assistantIdx]
+        assistantIdx += 1
+        if (!keep) return dm
+        return {
+          ...dm,
+          agentSteps: keep.agentSteps?.length ? keep.agentSteps : dm.agentSteps,
+          toolCalls: keep.toolCalls?.length ? keep.toolCalls : dm.toolCalls,
+          usageSummary: keep.usageSummary ?? dm.usageSummary,
+          thinking: keep.thinking?.trim() ? keep.thinking : dm.thinking,
+        }
+      })
+      setConversationHistory(merged)
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
       void queryClient.invalidateQueries({
@@ -417,10 +433,14 @@ export default function ChatRoute() {
         return
       }
 
+      const finalMsg = getMessage(assistantId)
       patchAssistant(assistantId, {
         content: finalContent,
         thinking: finalThinking,
         isStreaming: false,
+        agentSteps: finalMsg?.agentSteps,
+        toolCalls: finalMsg?.toolCalls,
+        usageSummary: finalMsg?.usageSummary,
       })
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
 

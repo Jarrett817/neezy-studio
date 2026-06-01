@@ -28,14 +28,14 @@ export function ChatMessageBubble({
   const isError = message.role === "error" || Boolean(message.failed)
   const hasAnswer = Boolean(message.content?.trim())
   const hasThinkingText = Boolean(message.thinking?.trim())
-  const workflowActive =
-    message.agentSteps?.some((s) => s.status === "active") ||
-    message.toolCalls?.some((t) => t.status === "running")
-  const showThinking =
+  const hasActivityRecord =
+    (message.agentSteps?.length ?? 0) > 0 ||
+    (message.toolCalls?.length ?? 0) > 0 ||
+    hasThinkingText ||
+    Boolean(message.usageSummary?.trim())
+  const showActivity =
     message.role === "assistant" &&
-    (workflowActive ||
-      (message.isStreaming && !hasAnswer) ||
-      (hasThinkingText && message.isStreaming && !hasAnswer))
+    (hasActivityRecord || Boolean(message.isStreaming))
 
   if (isUser) {
     return (
@@ -67,12 +67,9 @@ export function ChatMessageBubble({
       <div className="mb-1 flex items-center gap-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         <span className="size-1.5 rounded-full bg-primary/60" aria-hidden />
         <span>{modelName}</span>
-        {message.isStreaming && !hasAnswer && !showThinking ? (
-          <Loader2 className="size-3 animate-spin opacity-60" />
-        ) : null}
       </div>
 
-      {showThinking ? (
+      {showActivity ? (
         <ModelThinkingBlock
           modelName={modelName}
           thinking={message.thinking ?? ""}
@@ -82,7 +79,6 @@ export function ChatMessageBubble({
           agentSteps={message.agentSteps}
           usageSummary={message.usageSummary}
           transport={transport}
-          className="mb-3"
         />
       ) : null}
 
@@ -96,7 +92,7 @@ export function ChatMessageBubble({
           <MarkdownContent content={message.content} variant="chat" />
           {message.isStreaming ? <StreamCursor /> : null}
         </div>
-      ) : message.isStreaming && !showThinking ? (
+      ) : message.isStreaming && !showActivity ? (
         <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 shrink-0 animate-spin" />
           <span>正在生成</span>

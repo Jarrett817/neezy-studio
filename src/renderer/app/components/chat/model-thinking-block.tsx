@@ -1,132 +1,99 @@
 import { useEffect, useRef, useState } from "react"
-import { AlertCircle, Check, ChevronRight, Loader2, Wrench } from "lucide-react"
+import { AlertCircle, Check, ChevronRight, Loader2 } from "lucide-react"
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "~/components/ui/collapsible"
-import {
-  formatToolArgsSummary,
-  type AgentStep,
-  type ChatToolCall,
-  toolLabel,
-} from "~/lib/agent-steps"
+import { type AgentStep, type ChatToolCall, toolLabel } from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
-import type { ModelTransport } from "~/config/chat-models"
-
-function ToolPill({ tool }: { tool: ChatToolCall }) {
-  const argsSummary = formatToolArgsSummary(tool.name, tool.args)
-  const isError = tool.status === "error"
-  const isRunning = tool.status === "running"
+function StepRow({ step }: { step: AgentStep }) {
+  const isActive = step.status === "active"
+  const isDone = step.status === "done"
+  const isError = step.variant === "error"
 
   return (
-    <span
+    <li
       className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ring-1 ring-inset",
-        isError
-          ? "bg-destructive/10 text-destructive ring-destructive/25"
-          : isRunning
-            ? "bg-muted/60 text-foreground ring-border/40"
-            : "bg-muted/40 text-muted-foreground ring-border/30"
+        "flex items-start gap-2.5 py-0.5 text-xs leading-snug",
+        isActive ? "text-foreground" : "text-muted-foreground",
+        isError && "text-destructive"
       )}
-      title={tool.result?.slice(0, 200) || tool.partialResult?.slice(0, 200)}
     >
-      {isRunning ? (
-        <Loader2 className="size-2.5 shrink-0 animate-spin" />
-      ) : isError ? (
-        <AlertCircle className="size-2.5 shrink-0" />
-      ) : (
-        <Check className="size-2.5 shrink-0 opacity-50" />
-      )}
-      <span className="font-medium text-foreground/90">{toolLabel(tool.name)}</span>
-      {argsSummary ? (
-        <span className="truncate opacity-70">{argsSummary}</span>
-      ) : null}
-    </span>
+      <span className="mt-1 flex size-4 shrink-0 items-center justify-center">
+        {isActive ? (
+          <Loader2 className="size-3 animate-spin text-foreground/70" />
+        ) : isDone ? (
+          isError ? (
+            <AlertCircle className="size-3" />
+          ) : (
+            <Check className="size-3 text-foreground/40" />
+          )
+        ) : (
+          <span className="size-1.5 rounded-full border border-border/50" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn("font-medium", isActive && "text-foreground")}>
+          {step.label}
+        </span>
+        {step.detail ? (
+          <span className="text-muted-foreground"> · {step.detail}</span>
+        ) : null}
+      </span>
+    </li>
   )
 }
 
-function StepIcon({ step }: { step: AgentStep }) {
-  if (step.status === "active") {
-    return <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-foreground/70" />
-  }
-  if (step.status === "done") {
-    return step.variant === "error" ? (
-      <AlertCircle className="mt-0.5 size-3 shrink-0 text-destructive" />
-    ) : (
-      <Check className="mt-0.5 size-3 shrink-0 text-foreground/45" />
-    )
-  }
-  return (
-    <span className="mt-1.5 size-1.5 shrink-0 rounded-full border border-border/50 bg-transparent" />
+function buildTimelineSteps(
+  agentSteps: AgentStep[],
+  tools: ChatToolCall[]
+): AgentStep[] {
+  const fromAgent = agentSteps.filter(
+    (s) => s.status === "active" || s.status === "done"
   )
+  if (fromAgent.length > 0) return fromAgent
+
+  return tools.map((t) => ({
+    id: t.toolCallId || t.name,
+    label: toolLabel(t.name),
+    detail:
+      t.status === "running"
+        ? t.partialResult?.trim() || "执行中…"
+        : t.result?.trim().slice(0, 80) || "已完成",
+    status:
+      t.status === "running"
+        ? ("active" as const)
+        : ("done" as const),
+    variant: t.status === "error" ? ("error" as const) : undefined,
+  }))
 }
 
-function AgentWorkflowList({ steps }: { steps: AgentStep[] }) {
-  const visible = steps.filter((s) => s.status === "active" || s.status === "done")
-  if (visible.length === 0) return null
-
-  return (
-    <ul className="space-y-1.5">
-      {visible.map((step) => (
-        <li
-          key={step.id}
-          className={cn(
-            "flex items-start gap-2 text-xs leading-snug transition-opacity",
-            step.status === "active" ? "text-foreground/90" : "text-muted-foreground",
-            step.variant === "error" && "text-destructive"
-          )}
-        >
-          <StepIcon step={step} />
-          <span className="min-w-0">
-            <span
-              className={cn(
-                "font-medium",
-                step.variant === "error" ? "text-destructive" : "text-foreground/85"
-              )}
-            >
-              {step.label}
-            </span>
-            {step.detail ? (
-              <span className="text-muted-foreground"> · {step.detail}</span>
-            ) : null}
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function activitySummary(
-  tools: ChatToolCall[],
-  steps: AgentStep[] | undefined,
-  hasActiveStep: boolean
+function headerLabel(
+  timeline: AgentStep[],
+  workflowBusy: boolean,
+  isStreaming: boolean
 ): string {
-  const activeStep = steps?.find((s) => s.status === "active")
-  if (activeStep) {
-    return activeStep.detail
-      ? `${activeStep.label} · ${activeStep.detail}`
-      : activeStep.label
+  if (workflowBusy) {
+    const active = timeline.find((s) => s.status === "active")
+    return active?.label ?? "处理中"
   }
-  const runningTool = tools.find((t) => t.status === "running")
-  if (runningTool) return toolLabel(runningTool.name)
-  if (hasActiveStep) return "处理中"
-  const doneCount = steps?.filter((s) => s.status === "done").length ?? 0
-  if (doneCount > 0) return `已完成 ${doneCount} 步`
-  return "活动"
+  if (timeline.length > 0) {
+    return `${timeline.length} 步已完成`
+  }
+  if (isStreaming) return "准备中"
+  return "活动记录"
 }
 
 export function ModelThinkingBlock({
-  modelName,
   thinking,
   isStreaming,
   hasAnswerContent = false,
   toolCalls,
   agentSteps,
   usageSummary,
-  transport = "openai-compatible",
   className,
 }: {
   modelName: string
@@ -136,45 +103,36 @@ export function ModelThinkingBlock({
   toolCalls?: ChatToolCall[]
   agentSteps?: AgentStep[]
   usageSummary?: string
-  transport?: ModelTransport
+  transport?: import("~/config/chat-models").ModelTransport
   className?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const tools = toolCalls ?? []
-  const hasTools = tools.length > 0
-  const steps = agentSteps ?? []
-  const hasSteps = steps.some((s) => s.status === "active" || s.status === "done")
-  const hasActiveStep = steps.some((s) => s.status === "active")
-  const hasRunningTool = tools.some((t) => t.status === "running")
+  const timeline = buildTimelineSteps(agentSteps ?? [], tools)
+  const hasTimeline = timeline.length > 0
   const hasThinking = thinking.trim().length > 0
   const hasUsage = Boolean(usageSummary?.trim())
+  const hasActiveStep = timeline.some((s) => s.status === "active")
+  const hasRunningTool = tools.some((t) => t.status === "running")
   const workflowBusy = hasActiveStep || hasRunningTool
   const thinkingLive = isStreaming && hasThinking && !hasAnswerContent
+  const showPanel =
+    hasTimeline || hasThinking || hasUsage || (isStreaming && !hasAnswerContent)
 
-  const [open, setOpen] = useState(workflowBusy || thinkingLive)
-
-  if (
-    isStreaming &&
-    !hasThinking &&
-    !hasTools &&
-    !hasSteps &&
-    hasAnswerContent &&
-    !workflowBusy
-  ) {
-    return null
-  }
+  const [open, setOpen] = useState(false)
+  const userToggledRef = useRef(false)
 
   useEffect(() => {
-    if (workflowBusy || thinkingLive) setOpen(true)
-  }, [workflowBusy, thinkingLive])
+    if (userToggledRef.current) return
+    if (workflowBusy || thinkingLive || (isStreaming && !hasAnswerContent)) {
+      setOpen(true)
+    }
+  }, [workflowBusy, thinkingLive, isStreaming, hasAnswerContent])
 
   useEffect(() => {
+    if (userToggledRef.current) return
     if (!isStreaming && !workflowBusy) setOpen(false)
   }, [isStreaming, workflowBusy])
-
-  useEffect(() => {
-    if (hasAnswerContent && !workflowBusy && !thinkingLive) setOpen(false)
-  }, [hasAnswerContent, workflowBusy, thinkingLive])
 
   useEffect(() => {
     if (!thinkingLive || !hasThinking) return
@@ -182,64 +140,59 @@ export function ModelThinkingBlock({
     if (el) el.scrollTop = el.scrollHeight
   }, [thinking, thinkingLive, hasThinking])
 
-  if (!hasThinking && !hasTools && !hasSteps && !isStreaming && !hasUsage) {
-    return null
-  }
+  if (!showPanel) return null
 
-  const summary = activitySummary(tools, steps, workflowBusy)
-  const waitHint = transport === "ollama" ? "Ollama" : "模型"
-  const headerBusy = workflowBusy || thinkingLive
+  const title = headerLabel(timeline, workflowBusy, isStreaming)
 
   return (
     <Collapsible
       open={open}
-      onOpenChange={setOpen}
-      className={cn("text-muted-foreground", className)}
+      onOpenChange={(next) => {
+        userToggledRef.current = true
+        setOpen(next)
+      }}
+      className={cn("mb-3 text-muted-foreground", className)}
     >
-      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md py-1 text-left text-xs transition-colors hover:bg-muted/40 hover:text-foreground">
-        {headerBusy ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-foreground/60" />
-        ) : (
-          <ChevronRight
-            className={cn(
-              "size-3.5 shrink-0 transition-transform",
-              open && "rotate-90"
-            )}
-          />
-        )}
-        <span className="font-medium text-foreground/80">
-          {headerBusy ? "进行中" : "活动记录"}
-        </span>
-        <span className="min-w-0 truncate opacity-70">
-          {summary} · {modelName} · {waitHint}
-        </span>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground">
+        <ChevronRight
+          className={cn(
+            "size-3.5 shrink-0 transition-transform",
+            open && "rotate-90"
+          )}
+        />
+        <span className="font-medium text-foreground/75">{title}</span>
+        {workflowBusy ? (
+          <span className="text-muted-foreground/80">进行中</span>
+        ) : null}
       </CollapsibleTrigger>
 
-      <CollapsibleContent className="mt-1.5 space-y-2 border-l border-border/25 pl-3">
-        {hasSteps ? <AgentWorkflowList steps={steps} /> : null}
-
-        {hasTools ? (
-          <div className="flex flex-wrap gap-1.5">
-            {tools.map((tc) => (
-              <ToolPill
-                key={tc.toolCallId || `${tc.name}-${tc.result.slice(0, 24)}`}
-                tool={tc}
-              />
+      <CollapsibleContent className="pt-1 pb-2">
+        {hasTimeline ? (
+          <ul className="space-y-0.5 border-l border-border/30 pl-3">
+            {timeline.map((step) => (
+              <StepRow key={step.id} step={step} />
             ))}
-          </div>
+          </ul>
+        ) : isStreaming && !hasAnswerContent ? (
+          <p className="border-l border-border/30 pl-3 text-xs text-muted-foreground">
+            等待模型响应…
+          </p>
         ) : null}
 
-        {hasThinking ? (
+        {hasThinking && open ? (
           <div
             ref={scrollRef}
-            className="max-h-28 overflow-y-auto text-[12px] leading-relaxed whitespace-pre-wrap text-muted-foreground/90"
+            className={cn(
+              "mt-2 max-h-24 overflow-y-auto border-l border-border/30 pl-3 text-[12px] leading-relaxed whitespace-pre-wrap text-muted-foreground/90",
+              hasTimeline && "mt-2"
+            )}
           >
             {thinking}
           </div>
         ) : null}
 
-        {hasUsage ? (
-          <p className="text-[10px] tracking-wide uppercase opacity-60">
+        {hasUsage && open ? (
+          <p className="mt-2 border-l border-border/30 pl-3 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
             {usageSummary}
           </p>
         ) : null}

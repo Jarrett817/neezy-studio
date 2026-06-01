@@ -1,4 +1,4 @@
-import { chat } from "~/services/llm"
+import { promptAgentOnce } from "~/services/agent-prompt"
 
 import { parseJsonFromLlm } from "./parse-llm-json"
 import type { InputField, InputProfile, PlaybookSlots } from "./types"
@@ -72,20 +72,17 @@ export async function extractSlotsFromSingleLine(
     })
     .join("；")
 
-  const raw = await chat(
-    [
-      {
-        role: "system",
-        content:
-          "你是槽位抽取器。根据用户一句话填充 JSON 对象，键为字段 key，值为字符串或数字。只输出合法 JSON，不要 markdown。",
-      },
-      {
-        role: "user",
-        content: `字段定义：${fieldSpec}\n\n用户输入：${trimmed}`,
-      },
-    ],
-    { temperature: 0.2 }
-  )
+  const { content: raw } = await promptAgentOnce([
+    {
+      role: "system",
+      content:
+        "你是槽位抽取器。根据用户一句话填充 JSON 对象，键为字段 key，值为字符串或数字。只输出合法 JSON，不要 markdown。",
+    },
+    {
+      role: "user",
+      content: `字段定义：${fieldSpec}\n\n用户输入：${trimmed}`,
+    },
+  ])
 
   const parsed = parseJsonFromLlm(raw) as Record<string, unknown>
   return normalizeSlots(profile, { ...parsed, extra: parsed.extra ?? trimmed })

@@ -1,0 +1,220 @@
+- generic [ref=e13]:
+  - generic [ref=e14]:
+    - generic [ref=e17]:
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21] [cursor=pointer]:
+            - text: Spotlight...
+            - generic [ref=e23]: Ctrl+K
+          - button "SQL console" [ref=e24] [cursor=pointer]:
+            - img [ref=e26]
+            - generic [ref=e30]: SQL console
+          - button "Drizzle runner" [ref=e31] [cursor=pointer]:
+            - img [ref=e33]
+            - generic [ref=e37]: Drizzle runner
+          - button "Schema" [ref=e38] [cursor=pointer]:
+            - img [ref=e40]
+            - generic [ref=e44]: Schema
+        - generic [ref=e47]:
+          - generic [ref=e48]:
+            - textbox "Search..." [ref=e49]
+            - button "Filter entities" [ref=e50] [cursor=pointer]:
+              - img [ref=e52]
+          - generic [ref=e53]:
+            - button "Refresh schema" [ref=e54] [cursor=pointer]:
+              - img [ref=e55]
+            - button "Create new entity" [ref=e60] [cursor=pointer]:
+              - img [ref=e61]
+      - generic [ref=e65]:
+        - generic [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]:
+            - img [ref=e69]
+            - checkbox [ref=e71]
+          - generic [ref=e72]:
+            - paragraph [ref=e74]: __drizzle_migrations
+            - generic [ref=e75]:
+              - paragraph [ref=e76]: "3"
+              - button "Table options" [ref=e77]:
+                - img [ref=e78]
+        - generic [ref=e81] [cursor=pointer]:
+          - generic [ref=e82]:
+            - img [ref=e83]
+            - checkbox [ref=e85]
+          - generic [ref=e86]:
+            - paragraph [ref=e88]: app_kv
+            - generic [ref=e89]:
+              - paragraph [ref=e90]: "2"
+              - button "Table options" [ref=e91]:
+                - img [ref=e92]
+        - generic [ref=e95] [cursor=pointer]:
+          - generic [ref=e96]:
+            - img [ref=e97]
+            - checkbox [ref=e99]
+          - generic [ref=e100]:
+            - paragraph [ref=e102]: chat_messages
+            - generic [ref=e103]:
+              - paragraph [ref=e104]: "16"
+              - button "Table options" [ref=e105]:
+                - img [ref=e106]
+        - generic [ref=e109] [cursor=pointer]:
+          - generic [ref=e110]:
+            - img [ref=e111]
+            - checkbox [ref=e113]
+          - generic [ref=e114]:
+            - paragraph [ref=e116]: memory_embeddings
+            - generic [ref=e117]:
+              - paragraph [ref=e118]: "1"
+              - button "Table options" [ref=e119]:
+                - img [ref=e120]
+        - generic [ref=e123] [cursor=pointer]:
+          - generic [ref=e124]:
+            - img [ref=e125]
+            - checkbox [ref=e127]
+          - generic [ref=e128]:
+            - paragraph [ref=e130]: memory_embeddings_vec_idx_shadow
+            - generic [ref=e131]:
+              - paragraph [ref=e132]: "1"
+              - button "Table options" [ref=e133]:
+                - img [ref=e134]
+        - generic [ref=e137] [cursor=pointer]:
+          - generic [ref=e138]:
+            - img [ref=e139]
+            - checkbox [ref=e141]
+          - generic [ref=e142]:
+            - paragraph [ref=e144]: memory_items
+            - generic [ref=e145]:
+              - paragraph [ref=e146]: "1"
+              - button "Table options" [ref=e147]:
+                - img [ref=e148]
+        - generic [ref=e151] [cursor=pointer]:
+          - generic [ref=e152]:
+            - img [ref=e153]
+            - checkbox [ref=e155]
+          - generic [ref=e156]:
+            - paragraph [ref=e158]: memory_slice_metadata
+            - generic [ref=e159]:
+              - paragraph [ref=e160]: "25"
+              - button "Table options" [ref=e161]:
+                - img [ref=e162]
+        - generic [ref=e165] [cursor=pointer]:
+          - generic [ref=e166]:
+            - img [ref=e167]
+            - checkbox [ref=e169]
+          - generic [ref=e170]:
+            - paragraph [ref=e172]: memory_vector_slices
+            - generic [ref=e173]:
+              - paragraph [ref=e174]: "25"
+              - button "Table options" [ref=e175]:
+                - img [ref=e176]
+        - generic [ref=e179] [cursor=pointer]:
+          - generic [ref=e180]:
+            - img [ref=e181]
+            - checkbox [ref=e183]
+          - generic [ref=e184]:
+            - paragraph [ref=e186]: memory_vector_slices_vec_idx_shadow
+            - generic [ref=e187]:
+              - paragraph [ref=e188]: "25"
+              - button "Table options" [ref=e189]:
+                - img [ref=e190]
+        - generic [ref=e193] [cursor=pointer]:
+          - generic [ref=e194]:
+            - img [ref=e195]
+            - checkbox [ref=e197]
+          - generic [ref=e198]:
+            - paragraph [ref=e200]: sessions
+            - generic [ref=e201]:
+              - paragraph [ref=e202]: "2"
+              - button "Table options" [ref=e203]:
+                - img [ref=e204]
+      - generic [ref=e208]:
+        - button "Settings" [ref=e209] [cursor=pointer]:
+          - img [ref=e210]
+        - button "Tools" [ref=e213] [cursor=pointer]:
+          - img [ref=e214]
+        - button "Notifications" [ref=e218] [cursor=pointer]:
+          - img [ref=e219]
+    - generic [ref=e226]:
+      - generic [ref=e228]:
+        - button "Toggle sidebar" [ref=e229] [cursor=pointer]:
+          - img [ref=e230]
+        - generic [ref=e234]:
+          - button "Switch to content view" [ref=e235] [cursor=pointer]:
+            - img [ref=e237]
+          - button "Switch to structure view" [ref=e239] [cursor=pointer]:
+            - img [ref=e241]
+        - generic [ref=e244]:
+          - generic [ref=e245]:
+            - button "Toggle filters" [ref=e246] [cursor=pointer]:
+              - img [ref=e248]
+            - button "Toggle columns view" [ref=e249] [cursor=pointer]:
+              - img [ref=e251]
+            - button "Toggle columns view" [ref=e254] [cursor=pointer]:
+              - img [ref=e256]
+          - button "Add record" [ref=e258] [cursor=pointer]:
+            - img [ref=e260]
+            - paragraph [ref=e261]: Add record
+        - generic [ref=e263]:
+          - button "Previous page" [disabled]:
+            - img
+          - generic [ref=e264]:
+            - button "1 - 3" [ref=e265] [cursor=pointer]
+            - text: of
+            - button "3" [ref=e266] [cursor=pointer]
+          - button "Next page" [disabled]:
+            - img
+        - button "Refresh rows" [ref=e267] [cursor=pointer]:
+          - img [ref=e268]
+        - generic [ref=e273]:
+          - button "Export and refresh rows" [ref=e274] [cursor=pointer]:
+            - img [ref=e275]
+          - region "Notifications (F8)":
+            - list
+      - grid [ref=e280]:
+        - row "Select All idinteger nametext applied_atinteger" [ref=e281]:
+          - columnheader "Select All" [ref=e282]:
+            - checkbox "Select All" [ref=e283] [cursor=pointer]
+          - columnheader "idinteger" [ref=e284] [cursor=pointer]:
+            - generic [ref=e285]:
+              - generic [ref=e286]: idinteger
+              - img [ref=e287]
+          - columnheader "nametext" [ref=e291] [cursor=pointer]:
+            - generic [ref=e292]:
+              - generic [ref=e293]: nametext
+              - img [ref=e294]
+          - columnheader "applied_atinteger" [ref=e298] [cursor=pointer]:
+            - generic [ref=e299]:
+              - generic [ref=e300]: applied_atinteger
+              - img [ref=e301]
+          - columnheader [ref=e305]:
+            - img [ref=e310] [cursor=pointer]
+        - row "Select 1 0000_workable_ken_ellis.sql 1780046494530" [ref=e311]:
+          - gridcell "Select" [ref=e312]:
+            - checkbox "Select" [ref=e313] [cursor=pointer]
+          - gridcell "1" [ref=e314]:
+            - generic [ref=e316]: "1"
+          - gridcell "0000_workable_ken_ellis.sql" [ref=e317]:
+            - generic [ref=e319]: 0000_workable_ken_ellis.sql
+          - gridcell "1780046494530" [ref=e320]:
+            - generic [ref=e322]: "1780046494530"
+        - row "Select 2 0001_smiling_moonstone.sql 1780046494796" [ref=e323]:
+          - gridcell "Select" [ref=e324]:
+            - checkbox "Select" [ref=e325] [cursor=pointer]
+          - gridcell "2" [ref=e326]:
+            - generic [ref=e328]: "2"
+          - gridcell "0001_smiling_moonstone.sql" [ref=e329]:
+            - generic [ref=e331]: 0001_smiling_moonstone.sql
+          - gridcell "1780046494796" [ref=e332]:
+            - generic [ref=e334]: "1780046494796"
+        - row "Select 3 0002_libsql_vectors.sql 1780046496146" [ref=e335]:
+          - gridcell "Select" [ref=e336]:
+            - checkbox "Select" [ref=e337] [cursor=pointer]
+          - gridcell "3" [ref=e338]:
+            - generic [ref=e340]: "3"
+          - gridcell "0002_libsql_vectors.sql" [ref=e341]:
+            - generic [ref=e343]: 0002_libsql_vectors.sql
+          - gridcell "1780046496146" [ref=e344]:
+            - generic [ref=e346]: "1780046496146"
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications (F8)":
+    - list

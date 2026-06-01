@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react"
 
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
+import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import type { MemoryItem } from "~/services/memories"
 
@@ -30,7 +31,9 @@ export function MemoryList({
 
   return (
     <ul className={cn("space-y-3", className)}>
-      {sorted.map((item) => (
+      {sorted.map((item) => {
+        const updatedLabel = formatSessionTime(item.updated_at)
+        return (
         <li
           key={item.id}
           className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm"
@@ -46,9 +49,9 @@ export function MemoryList({
               <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-muted-foreground">
                 {item.content}
               </p>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {new Date(item.updated_at).toLocaleString()}
-              </p>
+              {updatedLabel ? (
+                <p className="mt-3 text-xs text-muted-foreground">{updatedLabel}</p>
+              ) : null}
             </div>
             {onDelete ? (
               <Button
@@ -64,7 +67,8 @@ export function MemoryList({
             ) : null}
           </div>
         </li>
-      ))}
+        )
+      })}
     </ul>
   )
 }

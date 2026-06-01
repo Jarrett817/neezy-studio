@@ -264,7 +264,8 @@ setAgentToolRuntimeContext({
   runExecute: async (dbPath, sql, params) => {
     await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },
-  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
+  embedTexts: async (text, purpose = "document") =>
+    (await embeddingRuntime.embedTexts(text, purpose)) as number[],
 })
 
 initToolContext({
@@ -278,7 +279,8 @@ initToolContext({
   runExecute: async (dbPath, sql, params) => {
     await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
   },
-  embedTexts: async (text) => (await embeddingRuntime.embedTexts(text)) as number[],
+  embedTexts: async (text, purpose = "document") =>
+    (await embeddingRuntime.embedTexts(text, purpose)) as number[],
 })
 
 registerCoreIpcHandlers()

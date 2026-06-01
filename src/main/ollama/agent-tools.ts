@@ -1,7 +1,9 @@
-import fs from "node:fs/promises"
-import path from "node:path"
-
 import type { StoragePaths } from "../types"
+import {
+  saveMemoryItem,
+  searchMemoryItems,
+  type MemoryStoreDeps,
+} from "../memory-store"
 
 export type OllamaTool = {
   type: "function"
@@ -12,15 +14,8 @@ export type OllamaTool = {
   }
 }
 
-export type AgentToolRuntimeContext = {
+export type AgentToolRuntimeContext = MemoryStoreDeps & {
   getPaths: () => StoragePaths
-  runSelect: (
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<Record<string, unknown>[]>
-  runExecute: (dbPath: string, sql: string, params?: unknown[]) => Promise<void>
-  embedTexts: (text: string) => Promise<number[]>
 }
 
 let toolCtx: AgentToolRuntimeContext | null = null
@@ -34,57 +29,17 @@ function requireCtx(): AgentToolRuntimeContext {
   return toolCtx
 }
 
-async function searchMemories(query: string): Promise<string> {
-  const ctx = requireCtx()
-  const rows = await ctx.runSelect(
-    ctx.getPaths().databaseFile,
-    `SELECT title, category, content FROM memory_items
-     WHERE title LIKE ? OR content LIKE ?
-     ORDER BY updated_at DESC LIMIT 8`,
-    [`%${query}%`, `%${query}%`]
-  )
-  if (rows.length === 0) return "记忆中未找到相关内容"
-  return rows.map((r) => `[${r.category}] ${r.title}\n${r.content}`).join("\n\n")
-}
-
-async function addMemory(
-  title: string,
-  content: string,
-  category?: string
-): Promise<string> {
-  const ctx = requireCtx()
-  const { memoriesDir, databaseFile } = ctx.getPaths()
-  await fs.mkdir(memoriesDir, { recursive: true })
-  const now = Date.now()
-  const id = crypto.randomUUID().replace(/-/g, "").slice(0, 21)
-  const safeTitle = title
-    .replace(/[^a-zA-Z0-9一-龥\s\-_]/g, "")
-    .trim()
-    .replace(/\s+/g, "_")
-  const fileName = `${safeTitle || "memory"}_${now}.md`
-  const filePath = path.join(memoriesDir, fileName)
-  await fs.writeFile(filePath, `# ${title}\n\n${content}`, "utf8")
-  const cat = category || "记忆"
-  await ctx.runExecute(
-    databaseFile,
-    `INSERT INTO memory_items (id, title, category, content, file_path, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, title, cat, content, filePath, now, now]
-  )
-  return `已存入记忆: ${title}`
-}
-
 export function getOllamaTools(): OllamaTool[] {
   return [
     {
       type: "function",
       function: {
         name: "memory_search",
-        description: "搜索长期记忆中与查询相关的内容",
+        description: "搜索长期记忆中与查询语义相关的内容",
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string", description: "搜索关键词" },
+            query: { type: "string", description: "搜索关键词或自然语言问题" },
           },
           required: ["query"],
         },
@@ -94,7 +49,7 @@ export function getOllamaTools(): OllamaTool[] {
       type: "function",
       function: {
         name: "memory_add",
-        description: "将信息写入长期记忆",
+        description: "将信息写入长期记忆（含向量索引）",
         parameters: {
           type: "object",
           properties: {
@@ -113,15 +68,18 @@ export async function runToolCall(
   name: string,
   args: Record<string, unknown>
 ): Promise<string> {
+  const ctx = requireCtx()
   if (name === "memory_search") {
-    return searchMemories(String(args.query ?? ""))
+    const { text } = await searchMemoryItems(ctx, String(args.query ?? ""), 8)
+    return text
   }
   if (name === "memory_add") {
-    return addMemory(
-      String(args.title ?? ""),
-      String(args.content ?? ""),
-      args.category != null ? String(args.category) : undefined
-    )
+    const saved = await saveMemoryItem(ctx, {
+      title: String(args.title ?? ""),
+      content: String(args.content ?? ""),
+      category: args.category != null ? String(args.category) : undefined,
+    })
+    return `已存入记忆: ${saved.title}`
   }
   return `未知工具: ${name}`
 }

@@ -1,13 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router"
 import {
-  Bot,
   MoreHorizontal,
   Paperclip,
   Square,
   Trash2,
-  User,
   Zap,
   Sparkles,
   FileText,
@@ -18,10 +16,9 @@ import { toast } from "sonner"
 import { ChatModelStatus } from "~/components/chat/chat-model-status"
 import { ChatTierPicker } from "~/components/chat/chat-tier-picker"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
-import { ModelThinkingBlock } from "~/components/chat/model-thinking-block"
+import { ChatMessageBubble } from "~/components/chat/chat-message"
 import { Button } from "~/components/ui/button"
 import { Textarea } from "~/components/ui/textarea"
-import { MarkdownContent } from "~/components/markdown-content"
 import {
   Sheet,
   SheetContent,
@@ -34,24 +31,26 @@ import { Label } from "~/components/ui/label"
 import { Input } from "~/components/ui/input"
 import { listSkills } from "~/services/workspace"
 import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
-import { entryDisplayName, type ModelTransport } from "~/config/chat-models"
+import { entryDisplayName } from "~/config/chat-models"
 import {
   getRuntimeSettings,
   resolveChatModelEntry,
 } from "~/services/settings"
 import { useAppStore, type ChatMessage } from "~/stores/app-store"
-import { ensureInit } from "~/services/db"
-import { upsertChatMessage, deleteChatMessagesForSession } from "~/services/storage/chat-messages"
+import { ensureDbReady } from "~/services/db"
 import {
-  ensureChatSessionForSend,
+  ensurePiChatSessionForSend,
   getActiveSessionId,
-  loadActiveChatSession,
-  loadChatSessionById,
-  loadChatSessionMessages,
-  pruneEmptyChatSessions,
+  loadActivePiChatSession,
+  loadPiChatSessionById,
+  loadPiChatMessages,
+  pruneEmptyPiChatSessions,
+  reconcileActivePiSession,
+  removePiChatSession,
   setActiveSessionId as persistActiveSessionId,
-} from "~/services/storage/chat-history"
-import { updateSession } from "~/services/storage/sessions"
+  startNewPiChatSession,
+} from "~/services/pi-chat-sessions"
+import { clearActiveChatSessionId } from "~/services/storage/app-kv"
 import { addConversationSlice } from "~/services/storage/memory-vectors"
 import { rememberConversationTurn } from "~/services/memory-profile"
 import {
@@ -62,7 +61,13 @@ import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
 const SYSTEM_PROMPT =
-  `你是 Neezy Studio 中的对话助手。回答用中文，语气清晰自然。已注册工具：memory_search、memory_add、memory_event、datetime、calculator；需要时请直接调用工具。`.trim()
+  `你是 Neezy Studio 中的对话助手。回答用中文，语气清晰自然。已注册工具：memory_search、memory_add、memory_event，以及 Pi 内置文件/命令工具；需要时请直接调用。`.trim()
+
+const CHAT_SCROLL_NEAR_BOTTOM_PX = 80
+
+function isChatNearBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= CHAT_SCROLL_NEAR_BOTTOM_PX
+}
 
 export default function ChatRoute() {
   const queryClient = useQueryClient()
@@ -80,8 +85,25 @@ export default function ChatRoute() {
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(2048)
   const activeAssistantId = useRef<string | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const armStickToBottom = useCallback(() => {
+    stickToBottomRef.current = true
+  }, [])
+
+  const scrollChatToBottom = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [])
+
+  const onMessagesScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    stickToBottomRef.current = isChatNearBottom(el)
+  }, [])
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [sessionsReady, setSessionsReady] = useState(false)
@@ -98,31 +120,16 @@ export default function ChatRoute() {
     []
   )
 
-  const persistMessage = useCallback((message: ChatMessage) => {
-    const sid = sessionIdRef.current
-    if (!sid) return
-    void upsertChatMessage(sid, message).catch((err) =>
-      console.warn("[chat] persist message failed:", err)
-    )
-  }, [])
-
-  const addMessagePersist = useCallback(
-    (msg: Omit<ChatMessage, "timestamp">) => {
-      addMessage(msg)
-      const full: ChatMessage = { ...msg, timestamp: Date.now() }
-      persistMessage(full)
-      return full
+  const syncFromDisk = useCallback(
+    (diskMessages: ChatMessage[]) => {
+      setConversationHistory(diskMessages)
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      void queryClient.invalidateQueries({
+        queryKey: ["chat-sessions", "with-messages"],
+      })
     },
-    [addMessage, persistMessage]
-  )
-
-  const updateMessagePersist = useCallback(
-    (id: string, updates: Partial<ChatMessage>) => {
-      updateMessage(id, updates)
-      const current = useAppStore.getState().conversationHistory.find((m) => m.id === id)
-      if (current) persistMessage({ ...current, ...updates })
-    },
-    [updateMessage, persistMessage]
+    [setConversationHistory, queryClient]
   )
 
   const { data: skills = [] } = useQuery({
@@ -144,31 +151,40 @@ export default function ChatRoute() {
 
   const { runPrompt, abort: abortPiAgent, resetAgent } = usePiAgentChat({
     systemPrompt: agentSystemPrompt,
-    messages,
-    enabled: sessionsReady,
+    diskSessionId: activeSessionId,
+    enabled: sessionsReady && Boolean(activeSessionId),
+    onDiskMessagesReload: syncFromDisk,
+    onDiskSessionIdRebound: (id) => {
+      sessionIdRef.current = id
+      setActiveSessionId(id)
+      void persistActiveSessionId(id)
+    },
   })
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        await ensureInit()
+        await ensureDbReady()
+        await reconcileActivePiSession()
         const keepId = sessionFromUrl ?? (await getActiveSessionId())
-        await pruneEmptyChatSessions(keepId)
+        await pruneEmptyPiChatSessions(keepId)
 
         const loaded = sessionFromUrl
-          ? await loadChatSessionById(sessionFromUrl)
-          : await loadActiveChatSession()
+          ? await loadPiChatSessionById(sessionFromUrl)
+          : await loadActivePiChatSession()
 
         if (cancelled) return
         if (loaded.session && loaded.messages.length > 0) {
           sessionIdRef.current = loaded.session.id
           setActiveSessionId(loaded.session.id)
           await persistActiveSessionId(loaded.session.id)
+          armStickToBottom()
           setConversationHistory(loaded.messages)
         } else {
           sessionIdRef.current = null
           setActiveSessionId(null)
+          await clearActiveChatSessionId().catch(() => {})
           clearConversation()
         }
         void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
@@ -185,7 +201,7 @@ export default function ChatRoute() {
     return () => {
       cancelled = true
     }
-  }, [setConversationHistory, clearConversation, sessionFromUrl, queryClient])
+  }, [setConversationHistory, clearConversation, sessionFromUrl, queryClient, armStickToBottom])
 
   const handleSelectSession = useCallback(
     async (sessionId: string) => {
@@ -193,22 +209,24 @@ export default function ChatRoute() {
       sessionIdRef.current = sessionId
       setActiveSessionId(sessionId)
       await persistActiveSessionId(sessionId)
-      const loaded = await loadChatSessionMessages(sessionId)
-      await resetAgent(loaded).catch((err) =>
+      const loaded = await loadPiChatMessages(sessionId)
+      await resetAgent([], sessionId).catch((err) =>
         console.warn("[chat] reset agent failed:", err)
       )
+      armStickToBottom()
       setConversationHistory(loaded)
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
     },
-    [setConversationHistory, queryClient, resetAgent]
+    [setConversationHistory, queryClient, resetAgent, armStickToBottom]
   )
 
   const handleNewSession = useCallback(
     async (sessionId: string) => {
       sessionIdRef.current = sessionId
       setActiveSessionId(sessionId)
+      await persistActiveSessionId(sessionId)
       clearConversation()
-      await resetAgent([]).catch((err) =>
+      await resetAgent([], sessionId).catch((err) =>
         console.warn("[chat] reset agent failed:", err)
       )
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
@@ -249,9 +267,11 @@ export default function ChatRoute() {
     e.target.value = ""
   }
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  useLayoutEffect(() => {
+    if (messages.length === 0) return
+    if (!stickToBottomRef.current) return
+    scrollChatToBottom()
+  }, [messages, scrollChatToBottom])
 
   const patchAssistantStream = useCallback(
     (id: string, patch: Partial<ChatMessage>) => {
@@ -262,9 +282,9 @@ export default function ChatRoute() {
 
   const patchAssistant = useCallback(
     (id: string, patch: Partial<ChatMessage>) => {
-      updateMessagePersist(id, patch)
+      updateMessage(id, patch)
     },
-    [updateMessagePersist]
+    [updateMessage]
   )
 
   const send = useCallback(async () => {
@@ -273,12 +293,17 @@ export default function ChatRoute() {
     const hasFile = attachedFile !== null
     if ((!hasText && !hasFile) || isGenerating) return
 
+    stickToBottomRef.current = true
+
     let sid = sessionIdRef.current
+    let createdSession = false
     if (!sid) {
-      const session = await ensureChatSessionForSend()
+      const session = await ensurePiChatSessionForSend()
       sid = session.id
+      createdSession = true
       sessionIdRef.current = sid
       setActiveSessionId(sid)
+      await persistActiveSessionId(sid)
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
     }
 
@@ -297,13 +322,13 @@ export default function ChatRoute() {
     setIsGenerating(true)
     setAttachedFile(null)
 
-    addMessagePersist({
+    addMessage({
       id: userId,
       role: "user",
       content: hasText ? userContent : `[文件] ${attachedFile?.name}`,
       thinking: "",
     })
-    addMessagePersist({
+    addMessage({
       id: assistantId,
       role: "assistant",
       content: "",
@@ -311,6 +336,10 @@ export default function ChatRoute() {
       isStreaming: true,
       toolCalls: [],
     })
+
+    if (createdSession && sid) {
+      await resetAgent([], sid)
+    }
 
     const settingsForSend = await getRuntimeSettings()
     const entryForSend = resolveChatModelEntry(settingsForSend, userContent)
@@ -332,14 +361,41 @@ export default function ChatRoute() {
         onStream: ({ thinking, content }) => {
           patchAssistantStream(assistantId, { thinking, content })
         },
-        onToolCall: (name, args, toolResult) => {
+        onWorkflow: (steps) => {
+          patchAssistantStream(assistantId, { agentSteps: steps })
+        },
+        onToolStart: (item) => {
+          const current = getMessage(assistantId)
+          const list = current?.toolCalls ?? []
+          const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
+          const next =
+            idx >= 0
+              ? list.map((t, i) => (i === idx ? { ...t, ...item } : t))
+              : [...list, item]
+          patchAssistant(assistantId, { toolCalls: next })
+        },
+        onToolUpdate: (toolCallId, partialResult) => {
           const current = getMessage(assistantId)
           patchAssistant(assistantId, {
-            toolCalls: [
-              ...(current?.toolCalls || []),
-              { name, args, result: toolResult },
-            ],
+            toolCalls: (current?.toolCalls ?? []).map((t) =>
+              t.toolCallId === toolCallId
+                ? { ...t, partialResult, status: "running" as const }
+                : t
+            ),
           })
+        },
+        onToolEnd: (item) => {
+          const current = getMessage(assistantId)
+          const list = current?.toolCalls ?? []
+          const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
+          const next =
+            idx >= 0
+              ? list.map((t, i) => (i === idx ? { ...t, ...item } : t))
+              : [...list, item]
+          patchAssistant(assistantId, { toolCalls: next })
+        },
+        onUsage: (summary) => {
+          patchAssistantStream(assistantId, { usageSummary: summary })
         },
       })
 
@@ -403,12 +459,13 @@ export default function ChatRoute() {
     isGenerating,
     messages,
     attachedFile,
-    addMessagePersist,
+    addMessage,
     patchAssistant,
     patchAssistantStream,
     getMessage,
     queryClient,
     runPrompt,
+    resetAgent,
   ])
 
   const stop = useCallback(() => {
@@ -516,12 +573,19 @@ export default function ChatRoute() {
                     <p className="text-sm font-medium">工具 trace</p>
                     {lastAssistant?.toolCalls?.length ? (
                       <ul className="space-y-2 text-xs">
-                        {lastAssistant.toolCalls.map((tc, i) => (
+                        {lastAssistant.toolCalls.map((tc) => (
                           <li
-                            key={`${tc.name}-${i}`}
+                            key={tc.toolCallId}
                             className="rounded-xl border border-border/60 bg-muted/30 p-2 font-mono"
                           >
-                            {tc.name}
+                            <span className="font-sans font-medium text-foreground">
+                              {tc.name}
+                            </span>
+                            {tc.result ? (
+                              <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-muted-foreground">
+                                {tc.result.slice(0, 400)}
+                              </pre>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
@@ -538,18 +602,18 @@ export default function ChatRoute() {
                 size="icon"
                 className="size-9 rounded-full text-muted-foreground"
                 onClick={() => {
-                  const sid = sessionIdRef.current
-                  clearConversation()
-                  resetAgent().catch(() => {})
-                  if (sid) {
-                    void deleteChatMessagesForSession(sid)
-                    void updateSession(sid, {
-                      message_count: 0,
-                      last_message_preview: null,
-                      title: "新对话",
-                    })
+                  void (async () => {
+                    const sid = sessionIdRef.current
+                    clearConversation()
+                    if (sid) {
+                      await removePiChatSession(sid)
+                    }
+                    const session = await startNewPiChatSession()
+                    sessionIdRef.current = session.id
+                    setActiveSessionId(session.id)
+                    await resetAgent([])
                     void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-                  }
+                  })()
                 }}
                 aria-label="清空对话"
               >
@@ -559,7 +623,11 @@ export default function ChatRoute() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto py-4">
+        <div
+          ref={scrollContainerRef}
+          onScroll={onMessagesScroll}
+          className="min-h-0 flex-1 overflow-y-auto py-4"
+        >
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-4 py-20 text-center">
               <div className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-primary/10 shadow-sm">
@@ -568,19 +636,17 @@ export default function ChatRoute() {
               <p className="text-xl font-semibold tracking-tight">说说你想做什么</p>
             </div>
           ) : (
-            <div className="space-y-6 pb-6">
+            <div className="mx-auto w-full max-w-3xl pb-8">
               {messages.map((message) => (
-                <div key={message.id}>
-                  <MessageBubble
-                    message={message}
-                    modelName={chatModelName}
-                    transport={chatEntry?.transport}
-                  />
-                </div>
+                <ChatMessageBubble
+                  key={message.id}
+                  message={message}
+                  modelName={chatModelName}
+                  transport={chatEntry?.transport}
+                />
               ))}
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
 
         <div className="mt-4 shrink-0 rounded-2xl border border-border/40 bg-card shadow-sm">
@@ -668,79 +734,3 @@ export default function ChatRoute() {
   )
 }
 
-function MessageBubble({
-  message,
-  modelName,
-  transport,
-}: {
-  message: ChatMessage
-  modelName: string
-  transport?: ModelTransport
-}) {
-  const isUser = message.role === "user"
-  const isError = message.role === "error" || Boolean(message.failed)
-  const hasAnswer = Boolean(message.content?.trim())
-  const hasThinkingText = Boolean(message.thinking?.trim())
-  const showThinking =
-    message.role === "assistant" &&
-    (hasThinkingText ||
-      Boolean(message.toolCalls?.length) ||
-      (Boolean(message.isStreaming) && !hasAnswer))
-
-  return (
-    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
-      <div
-        className={cn(
-          "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl",
-          isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-primary/10 text-primary"
-        )}
-      >
-        {isUser ? <User className="size-4" /> : <Bot className="size-4" />}
-      </div>
-
-      <div
-        className={cn(
-          "max-w-[min(100%,42rem)] min-w-0",
-          isUser ? "items-end" : "items-start"
-        )}
-      >
-        {isUser ? (
-          <div className="rounded-2xl rounded-tr-md bg-primary px-4 py-3.5 text-sm leading-relaxed text-primary-foreground shadow-sm">
-            <div className="whitespace-pre-wrap break-words">{message.content}</div>
-          </div>
-        ) : isError ? (
-          <div className="rounded-2xl border border-red-200/80 bg-red-50 px-4 py-3.5 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
-            <p className="mb-2 text-xs font-medium opacity-80">请求失败</p>
-            <div className="whitespace-pre-wrap break-words">{message.content}</div>
-          </div>
-        ) : (
-          <div className="space-y-3.5">
-            {showThinking && (
-              <ModelThinkingBlock
-                modelName={modelName}
-                thinking={message.thinking ?? ""}
-                isStreaming={Boolean(message.isStreaming)}
-                hasAnswerContent={hasAnswer}
-                toolCalls={message.toolCalls}
-                transport={transport}
-              />
-            )}
-
-            {hasAnswer ? (
-              <div className="overflow-hidden rounded-2xl rounded-tl-md border border-border/50 bg-card px-4 py-4 text-sm shadow-sm sm:px-5 sm:py-4">
-                <MarkdownContent content={message.content} />
-              </div>
-            ) : message.isStreaming && !showThinking ? (
-              <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md border border-border/50 bg-muted/30 px-4 py-3.5 text-sm text-muted-foreground">
-                <Loader2 className="size-4 shrink-0 animate-spin" />
-                <span>正在生成…</span>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}

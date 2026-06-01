@@ -21,8 +21,7 @@
     "knip:clean": "knip --fix --fix-type exports,types,dependencies,files --allow-remove-files"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.75.5",
-    "@earendil-works/pi-ai": "^0.75.5",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@libsql/client": "^0.17.3",
     "@tanstack/react-query": "^5.100.11",
@@ -41,6 +40,7 @@
     "node-llama-cpp": "^3.18.1",
     "ollama": "^0.6.3",
     "pdf-parse": "^2.4.5",
+    "pi-web-access": "^0.10.7",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-day-picker": "^10.0.1",
@@ -67,7 +67,11 @@
   },
   "overrides": {
     "@types/react": "19.2.15",
-    "@types/react-dom": "19.2.3"
+    "@types/react-dom": "19.2.3",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.0",
+    "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.0",
+    "@mariozechner/pi-tui": "npm:@earendil-works/pi-tui@^0.78.0",
+    "@mariozechner/pi-agent-core": "npm:@earendil-works/pi-agent-core@^0.78.0"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",

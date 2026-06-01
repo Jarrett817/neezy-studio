@@ -135,15 +135,27 @@ const markdownComponents: Components = {
   ),
 }
 
+const chatMarkdownClass =
+  "text-[15px] leading-[1.7] text-foreground [&_p]:mb-4 [&_p:last-child]:mb-0 [&_li]:text-[15px] [&_pre]:my-4 [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border/40 [&_pre]:bg-muted/30 [&_pre]:shadow-none [&_code]:text-[13px]"
+
 export function MarkdownContent({
   content,
   className,
+  variant = "default",
 }: {
   content: string
   className?: string
+  variant?: "default" | "chat"
 }) {
   return (
-    <div className={cn("markdown-content min-w-0 text-foreground/95", className)}>
+    <div
+      className={cn(
+        "markdown-content min-w-0",
+        variant === "default" && "text-foreground/95",
+        variant === "chat" && chatMarkdownClass,
+        className
+      )}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {content}
       </ReactMarkdown>

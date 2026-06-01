@@ -16,8 +16,10 @@ import type { Plugin } from "vite"
  */
 
 const BUNDLE_MAIN_DEPS = [
+  "@earendil-works/pi-coding-agent",
   "@earendil-works/pi-agent-core",
   "@earendil-works/pi-ai",
+  "typebox",
   "ollama",
   "ai",
   "@ai-sdk/openai",
@@ -31,6 +33,8 @@ const MAIN_NATIVE_EXTERNALS = [
   "@libsql/client",
   /^@libsql\//,
   "libsql",
+  /** jiti 运行时从 node_modules 加载 extension 源码 */
+  "pi-web-access",
 ] as const
 
 function mainProcessBundlePlugin(): Plugin {

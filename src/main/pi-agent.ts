@@ -1,102 +1,216 @@
-import { Agent } from "@earendil-works/pi-agent-core"
-import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core"
+import {
+  createAgentSession as createPiAgentSession,
+  DefaultResourceLoader,
+  ModelRegistry,
+  SettingsManager,
+  type ResourceLoader,
+  type AgentSession,
+  type AgentSessionEvent,
+} from "@earendil-works/pi-coding-agent"
+import type { SessionManager } from "@earendil-works/pi-coding-agent"
+import type { Api, Model } from "@earendil-works/pi-ai"
 import type { BrowserWindow } from "electron"
-import { randomUUID } from "node:crypto"
+import { app } from "electron"
+import path from "node:path"
 
 import { ensureOllamaReady } from "./ollama/lifecycle"
 import { normalizeMainChatModels, resolveEntryApiKey } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"
-import { resolveRouteApiKey } from "./pi-llm"
+import {
+  createPiSessionManager,
+  findPiSessionById,
+  getPiSessionsDir,
+  openPiSessionManager,
+} from "./pi-disk-sessions"
+import { getPiAuthStorage, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
-import { getToolRegistry } from "./pi-tool-registry"
+import { getNeezyCustomTools } from "./pi-tool-registry"
+import {
+  getBundledPiExtensionPaths,
+  getBundledPiSkillPaths,
+} from "./pi-bundled-extensions"
+import { resolveStoragePaths } from "./storage-paths"
 import { log } from "./logger"
 
-interface Session {
-  agent: Agent
+export interface CreateDiskAgentOptions {
+  diskSessionId?: string
+  createNew?: boolean
+}
+
+interface IpcAgentSession {
+  diskSessionId: string
+  session: AgentSession
   unsubscribe: () => void
   window: BrowserWindow
-  /** 当前路由 API Key，供 Agent.getApiKey 使用（与 pi-agent-core 文档一致） */
-  apiKeyRef: { value: string | undefined }
 }
 
-const sessions = new Map<string, Session>()
+const ipcSessions = new Map<string, IpcAgentSession>()
 
-function syncSessionChatRoute(session: Session, userMessage?: string): void {
+/** 同一陈旧 id 多次 agent:create 时复用已恢复的磁盘会话，避免疯狂新建 */
+const staleDiskSessionRecovery = new Map<string, string>()
+
+let resourceLoaderCache: { key: string; loader: ResourceLoader } | null = null
+let bundledExtensionsLogged = false
+
+let modelRegistry: ModelRegistry | null = null
+
+function getModelRegistry(): ModelRegistry {
+  if (!modelRegistry) {
+    modelRegistry = ModelRegistry.inMemory(getPiAuthStorage())
+  }
+  return modelRegistry
+}
+
+function getPiDirs() {
+  const paths = resolveStoragePaths(app)
+  return { cwd: paths.dataRoot, agentDir: path.join(app.getPath("userData"), "pi-agent") }
+}
+
+function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
+  const sm = SettingsManager.create(cwd, agentDir)
+  const level = resolveAgentThinkingLevel(resolvePiChatModel())
+  sm.applyOverrides({
+    defaultThinkingLevel: level === "off" ? "off" : level,
+    compaction: { enabled: true },
+  })
+  return sm
+}
+
+async function getResourceLoader(
+  cwd: string,
+  agentDir: string,
+  settingsManager: SettingsManager
+): Promise<ResourceLoader> {
+  const key = `${cwd}\0${agentDir}`
+  if (resourceLoaderCache?.key === key) {
+    return resourceLoaderCache.loader
+  }
+
+  const skillsDir = path.join(cwd, "skills")
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    additionalExtensionPaths: getBundledPiExtensionPaths(),
+    additionalSkillPaths: [skillsDir, ...getBundledPiSkillPaths()],
+  })
+  await loader.reload()
+  const ext = loader.getExtensions()
+  if (ext.errors.length > 0) {
+    log.warn("[pi-agent] bundled extension errors:", ext.errors)
+  }
+  if (!bundledExtensionsLogged && ext.extensions.length > 0) {
+    bundledExtensionsLogged = true
+    log.info(
+      "[pi-agent] bundled extensions:",
+      ext.extensions.map((e) => e.path).join(", ")
+    )
+  }
+  resourceLoaderCache = { key, loader }
+  return loader
+}
+
+function syncSessionChatRoute(session: AgentSession, userMessage?: string): void {
   const model = resolvePiChatModel(userMessage)
   session.agent.state.model = model
-  session.agent.state.thinkingLevel = resolveAgentThinkingLevel(model)
-  session.apiKeyRef.value = resolveRouteApiKey(userMessage)
+  session.setThinkingLevel(resolveAgentThinkingLevel(model))
+  syncPiAuthForRoute(userMessage)
 }
 
-function toAgentMessage(m: {
-  role: "user" | "assistant"
-  content: string
-}): AgentMessage {
-  if (m.role === "user") {
-    return { role: "user", content: m.content, timestamp: Date.now() }
+async function resolveSessionManager(
+  options: CreateDiskAgentOptions
+): Promise<{ sm: SessionManager; diskSessionId: string }> {
+  if (options.createNew) {
+    const sm = createPiSessionManager(app)
+    return { sm, diskSessionId: sm.getSessionId() }
   }
+  if (options.diskSessionId) {
+    const meta = await findPiSessionById(app, options.diskSessionId)
+    if (meta) {
+      const sm = openPiSessionManager(app, meta.path)
+      return { sm, diskSessionId: sm.getSessionId() }
+    }
+
+    const recoveredId = staleDiskSessionRecovery.get(options.diskSessionId)
+    if (recoveredId) {
+      const recovered = await findPiSessionById(app, recoveredId)
+      if (recovered) {
+        const sm = openPiSessionManager(app, recovered.path)
+        return { sm, diskSessionId: sm.getSessionId() }
+      }
+      staleDiskSessionRecovery.delete(options.diskSessionId)
+    }
+
+    log.warn("[pi-agent] 磁盘会话缺失，已恢复新建:", options.diskSessionId)
+    const sm = createPiSessionManager(app)
+    const newId = sm.getSessionId()
+    staleDiskSessionRecovery.set(options.diskSessionId, newId)
+    return { sm, diskSessionId: newId }
+  }
+  throw new Error("缺少 diskSessionId，请先创建或选择 Pi 磁盘会话")
+}
+
+async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
+  const { cwd, agentDir } = getPiDirs()
   const model = resolvePiChatModel()
-  return {
-    role: "assistant",
-    content: [{ type: "text", text: m.content }],
-    api: model.api,
-    provider: model.provider,
-    model: model.id,
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: Date.now(),
-  }
-}
+  syncPiAuthForRoute()
+  const settingsManager = buildSettingsManager(cwd, agentDir)
 
-function createAgent(apiKeyRef: Session["apiKeyRef"]): Agent {
-  const model = resolvePiChatModel()
-  return new Agent({
-    initialState: {
-      systemPrompt: "",
-      model,
-      thinkingLevel: resolveAgentThinkingLevel(model),
-      tools: getToolRegistry(),
-      messages: [],
-    },
-    toolExecution: "sequential",
-    getApiKey: () => apiKeyRef.value,
+  const { session } = await createPiAgentSession({
+    cwd,
+    agentDir,
+    authStorage: getPiAuthStorage(),
+    modelRegistry: getModelRegistry(),
+    model: model as Model<Api>,
+    thinkingLevel: resolveAgentThinkingLevel(model),
+    settingsManager,
+    customTools: getNeezyCustomTools(),
+    sessionManager,
+    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
   })
+
+  session.agent.toolExecution = "sequential"
+  return session
 }
 
-export async function createAgentSession(window: BrowserWindow): Promise<string> {
-  const sessionId = randomUUID()
-  const apiKeyRef: Session["apiKeyRef"] = { value: undefined }
-  const agent = createAgent(apiKeyRef)
-  syncSessionChatRoute({ agent, unsubscribe: () => {}, window, apiKeyRef })
-  const unsubscribe = await agent.subscribe((event: AgentEvent) => {
-    window.webContents.send("agent:event", { sessionId, event })
-  })
-  sessions.set(sessionId, { agent, unsubscribe, window, apiKeyRef })
-  return sessionId
-}
-
-export function configureAgentSession(
-  sessionId: string,
-  config: {
-    systemPrompt: string
-    messages?: { role: "user" | "assistant"; content: string }[]
+export async function createAgentSession(
+  window: BrowserWindow,
+  options: CreateDiskAgentOptions = {}
+): Promise<string> {
+  const { sm, diskSessionId } = await resolveSessionManager(options)
+  const existing = ipcSessions.get(diskSessionId)
+  if (existing && !existing.window.isDestroyed()) {
+    return diskSessionId
   }
-): void {
-  const session = sessions.get(sessionId)
-  if (!session) throw new Error("session not found")
-  session.agent.state.systemPrompt = config.systemPrompt
+  if (existing) {
+    existing.unsubscribe()
+    ipcSessions.delete(diskSessionId)
+  }
+
+  const session = await createPiSession(sm)
   syncSessionChatRoute(session)
-  if (config.messages) {
-    session.agent.state.messages = config.messages.map(toAgentMessage)
-  }
+
+  const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+    window.webContents.send("agent:event", { sessionId: diskSessionId, event })
+  })
+
+  ipcSessions.set(diskSessionId, { diskSessionId, session, unsubscribe, window })
+  return diskSessionId
+}
+
+/** 仅更新产品层 systemPrompt；对话正文由 SessionManager 持久化，勿再注入 messages。 */
+export function configureAgentSession(
+  diskSessionId: string,
+  config: { systemPrompt: string }
+): void {
+  const entry = ipcSessions.get(diskSessionId)
+  if (!entry) throw new Error("session not found")
+  const loaderPrompt = entry.session.agent.state.systemPrompt?.trim()
+  entry.session.agent.state.systemPrompt = loaderPrompt
+    ? `${loaderPrompt}\n\n${config.systemPrompt}`
+    : config.systemPrompt
+  syncSessionChatRoute(entry.session)
 }
 
 async function ensureAgentChatReady(userMessage?: string): Promise<void> {
@@ -121,21 +235,23 @@ async function ensureAgentChatReady(userMessage?: string): Promise<void> {
   await ensureOllamaReady()
 }
 
-export async function promptAgent(sessionId: string, message: string): Promise<void> {
-  const session = sessions.get(sessionId)
-  if (!session) throw new Error("session not found")
+export async function promptAgent(diskSessionId: string, message: string): Promise<void> {
+  const entry = ipcSessions.get(diskSessionId)
+  if (!entry) throw new Error("session not found")
   await ensureAgentChatReady(message)
-  syncSessionChatRoute(session, message)
-  const model = session.agent.state.model
+  syncSessionChatRoute(entry.session, message)
+  const model = entry.session.agent.state.model
   log.info(
     "[pi-agent] prompt",
     model.provider,
     model.id,
     model.api,
-    model.baseUrl
+    model.baseUrl,
+    "piSession",
+    diskSessionId
   )
   try {
-    await session.agent.prompt(message)
+    await entry.session.prompt(message)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     log.error("[pi-agent] prompt failed:", msg)
@@ -143,18 +259,22 @@ export async function promptAgent(sessionId: string, message: string): Promise<v
   }
 }
 
-export function abortAgentSession(sessionId: string): void {
-  sessions.get(sessionId)?.agent.abort()
+export function abortAgentSession(diskSessionId: string): void {
+  ipcSessions.get(diskSessionId)?.session.agent.abort()
 }
 
-export async function destroyAgentSession(sessionId: string): Promise<void> {
-  const session = sessions.get(sessionId)
-  if (!session) return
-  session.agent.abort()
-  await session.unsubscribe()
-  sessions.delete(sessionId)
+export async function destroyAgentSession(diskSessionId: string): Promise<void> {
+  const entry = ipcSessions.get(diskSessionId)
+  if (!entry) return
+  entry.session.agent.abort()
+  entry.unsubscribe()
+  ipcSessions.delete(diskSessionId)
 }
 
-export function agentSessionExists(sessionId: string): boolean {
-  return sessions.has(sessionId)
+export function agentSessionExists(diskSessionId: string): boolean {
+  return ipcSessions.has(diskSessionId)
+}
+
+export function getPiSessionsDirectory(): string {
+  return getPiSessionsDir(app)
 }

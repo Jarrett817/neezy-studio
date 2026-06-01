@@ -12,7 +12,10 @@ import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
 import { loadLastPlaybookSlots } from "~/services/playbook/extract-slots"
 import { ensurePlaybookDirs, listPlaybooks } from "~/services/playbook"
-import { listChatSessionsWithMessages } from "~/services/storage/chat-history"
+import {
+  listPiChatSessionsWithMessages,
+  sessionListTitle,
+} from "~/services/pi-chat-sessions"
 import { listMemories } from "~/services/memories"
 import { isModelLoaded } from "~/services/llm"
 import { isEntryConfigured } from "~/config/chat-models"
@@ -46,7 +49,7 @@ export default function WorkbenchRoute() {
 
   const { data: chatSessions = [] } = useQuery({
     queryKey: ["chat-sessions", "with-messages"],
-    queryFn: listChatSessionsWithMessages,
+    queryFn: listPiChatSessionsWithMessages,
   })
 
   const { data: memories = [] } = useQuery({
@@ -65,7 +68,7 @@ export default function WorkbenchRoute() {
       ? {
           type: "chat" as const,
           id: latestChat.id,
-          label: latestChat.title,
+          label: sessionListTitle(latestChat),
         }
       : null
 
@@ -186,7 +189,7 @@ export default function WorkbenchRoute() {
                 >
                   <span className="flex min-w-0 items-center gap-2 font-medium">
                     <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{session.title}</span>
+                    <span className="truncate">{sessionListTitle(session)}</span>
                   </span>
                   <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
                 </Link>

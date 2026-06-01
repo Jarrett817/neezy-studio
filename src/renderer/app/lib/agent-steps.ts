@@ -5,26 +5,114 @@ export type AgentStep = {
   label: string
   detail?: string
   status: AgentStepStatus
+  /** 工具步骤为 error 时用于 UI 强调 */
+  variant?: "error"
 }
+
+export type { ChatWireToolCall as ChatToolCall } from "../../../shared/chat-wire"
 
 export const TOOL_LABELS: Record<string, string> = {
   memory_search: "查阅记忆",
   memory_add: "写入记忆",
   memory_event: "记录片段",
-  datetime: "确认时间",
-  calculator: "演算",
+  web_search: "网页搜索",
+  code_search: "代码搜索",
+  fetch_content: "抓取网页",
+  read: "读取文件",
+  bash: "执行命令",
+  edit: "编辑文件",
+  write: "写入文件",
+  grep: "搜索内容",
+  find: "查找文件",
+  ls: "列出目录",
 }
 
 export function toolLabel(name: string) {
   return TOOL_LABELS[name] ?? "处理信息"
 }
 
+const TOOL_ARG_KEYS: Record<string, string[]> = {
+  read: ["path", "file"],
+  edit: ["path", "file"],
+  write: ["path", "file"],
+  bash: ["command"],
+  grep: ["pattern", "path"],
+  find: ["pattern", "path"],
+  ls: ["path"],
+  memory_search: ["query", "q"],
+  memory_add: ["title"],
+  memory_event: ["text", "content"],
+}
+
+function pickArgString(args: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const v = args[key]
+    if (typeof v === "string" && v.trim()) return v.trim()
+  }
+  return ""
+}
+
+export function formatToolArgsSummary(
+  toolName: string,
+  args: Record<string, unknown>
+): string {
+  const keys = TOOL_ARG_KEYS[toolName]
+  if (keys) {
+    const picked = pickArgString(args, keys)
+    if (picked) return truncateThinkingPreview(picked, 120)
+  }
+  const compact = JSON.stringify(args)
+  if (!compact || compact === "{}") return "执行中…"
+  return truncateThinkingPreview(compact, 120)
+}
+
+export function formatToolPartialPreview(partial: unknown): string {
+  const text =
+    typeof partial === "string"
+      ? partial
+      : partial == null
+        ? ""
+        : JSON.stringify(partial)
+  return truncateThinkingPreview(text.replace(/\s+/g, " ").trim(), 200)
+}
+
+export function formatToolResultPreview(result: unknown, isError: boolean): string {
+  const text =
+    typeof result === "string"
+      ? result
+      : result == null
+        ? ""
+        : JSON.stringify(result)
+  const trimmed = text.replace(/\s+/g, " ").trim()
+  if (!trimmed) return isError ? "失败" : "已完成"
+  return truncateThinkingPreview(trimmed, isError ? 240 : 160)
+}
+
+export function formatUsageSummary(usage: {
+  input: number
+  output: number
+  totalTokens?: number
+  cost?: { total?: number }
+}): string {
+  const inTok = usage.input ?? 0
+  const outTok = usage.output ?? 0
+  const parts = [`${inTok} 入 · ${outTok} 出`]
+  if (usage.cost?.total != null && usage.cost.total > 0) {
+    parts.push(`$${usage.cost.total.toFixed(4)}`)
+  }
+  return parts.join(" · ")
+}
+
+function toolStepId(toolCallId: string) {
+  return `tool-${toolCallId}`
+}
+
+const TURN_STEP_ID = "turn"
+const RESPOND_STEP_ID = "respond"
+
+/** 回合开始后再追加步骤，避免顶部长期停在 loading */
 export function createInitialAgentSteps(): AgentStep[] {
-  return [
-    { id: "understand", label: "理解你的问题", status: "active" },
-    { id: "think", label: "整理思路", status: "pending" },
-    { id: "reply", label: "组织回答", status: "pending" },
-  ]
+  return []
 }
 
 export function setStepStatus(
@@ -38,39 +126,197 @@ export function setStepStatus(
   )
 }
 
-export function advanceToThink(steps: AgentStep[]): AgentStep[] {
-  return steps.map((s) => {
-    if (s.id === "understand") return { ...s, status: "done" as const }
-    if (s.id === "think") return { ...s, status: "active" as const }
-    return s
-  })
+/** turn_start：模型规划 / 决定是否调工具 */
+export function setTurnPlanning(steps: AgentStep[]): AgentStep[] {
+  const hasTurn = steps.some((s) => s.id === TURN_STEP_ID)
+  const next = hasTurn
+    ? steps.map((s) =>
+        s.id === TURN_STEP_ID
+          ? {
+              ...s,
+              label: "调用模型",
+              detail: "规划与工具决策",
+              status: "active" as const,
+            }
+          : s
+      )
+    : [
+        ...steps,
+        {
+          id: TURN_STEP_ID,
+          label: "调用模型",
+          detail: "规划与工具决策",
+          status: "active" as const,
+        },
+      ]
+  return next.filter((s) => s.id !== RESPOND_STEP_ID)
 }
 
-export function advanceToReply(steps: AgentStep[]): AgentStep[] {
-  return steps.map((s) => {
-    if (s.id === "understand" || s.id === "think")
-      return { ...s, status: "done" as const }
-    if (s.id === "reply") return { ...s, status: "active" as const }
-    return s
-  })
-}
-
-export function addToolStep(steps: AgentStep[], toolName: string): AgentStep[] {
-  const id = `tool-${toolName}-${Date.now()}`
-  const done = steps.map((s) =>
-    s.status === "active" ? { ...s, status: "done" as const } : s
+/** thinking_delta：模型在推理（非用户可见正文） */
+export function setTurnThinking(steps: AgentStep[]): AgentStep[] {
+  return steps.map((s) =>
+    s.id === TURN_STEP_ID && s.status === "active"
+      ? { ...s, detail: "推理中…" }
+      : s
   )
+}
+
+/** 正文开始流式输出：结束当前活动步骤，正文区单独展示（不再挂「生成回复」loading） */
+export function setTurnResponding(steps: AgentStep[]): AgentStep[] {
+  return steps
+    .map((s) => {
+      if (s.status !== "active") return s
+      if (s.id.startsWith("tool-")) return s
+      return { ...s, status: "done" as const, detail: s.detail || "已完成" }
+    })
+    .filter((s) => s.id !== RESPOND_STEP_ID)
+}
+
+export function startToolStep(
+  steps: AgentStep[],
+  toolCallId: string,
+  toolName: string,
+  detail?: string
+): AgentStep[] {
+  const id = toolStepId(toolCallId)
+  if (steps.some((s) => s.id === id)) {
+    return updateToolStep(steps, toolCallId, detail ?? "执行中…")
+  }
+  const settled = steps.map((s) => {
+    if (s.id === TURN_STEP_ID) {
+      return { ...s, status: "done" as const, detail: "已派发工具" }
+    }
+    if (s.status === "active") return { ...s, status: "done" as const }
+    return s
+  })
   return [
-    ...done,
+    ...settled.filter((s) => s.id !== RESPOND_STEP_ID),
     {
       id,
       label: toolLabel(toolName),
-      detail: "已完成",
-      status: "done",
+      detail: detail ?? formatToolArgsSummary(toolName, {}),
+      status: "active",
     },
-    { id: "think", label: "继续推理", status: "active" },
-    { id: "reply", label: "组织回答", status: "pending" },
   ]
+}
+
+export function updateToolStep(
+  steps: AgentStep[],
+  toolCallId: string,
+  detail: string
+): AgentStep[] {
+  const id = toolStepId(toolCallId)
+  return steps.map((s) => (s.id === id ? { ...s, detail } : s))
+}
+
+export function completeToolStep(
+  steps: AgentStep[],
+  toolCallId: string,
+  toolName: string,
+  detail: string,
+  isError = false
+): AgentStep[] {
+  const id = toolStepId(toolCallId)
+  let matched = false
+  const updated = steps.map((s) => {
+    if (s.id !== id) return s
+    matched = true
+    return {
+      ...s,
+      status: "done" as const,
+      detail,
+      variant: isError ? ("error" as const) : undefined,
+    }
+  })
+  const base = matched
+    ? updated
+    : startToolStep(steps, toolCallId, toolName, detail).map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              status: "done" as const,
+              detail,
+              variant: isError ? ("error" as const) : undefined,
+            }
+          : s
+      )
+  return base
+}
+
+export function setRetryStep(
+  steps: AgentStep[],
+  phase: "start" | "end",
+  meta: {
+    attempt: number
+    maxAttempts: number
+    errorMessage?: string
+    success?: boolean
+  }
+): AgentStep[] {
+  const id = "retry"
+  if (phase === "start") {
+    const settled = steps.map((s) =>
+      s.status === "active" ? { ...s, status: "done" as const } : s
+    )
+    const err = meta.errorMessage?.trim()
+    const detail = err
+      ? `第 ${meta.attempt}/${meta.maxAttempts} 次 · ${truncateThinkingPreview(err, 80)}`
+      : `第 ${meta.attempt}/${meta.maxAttempts} 次`
+    return [
+      ...settled.filter((s) => s.id !== id),
+      { id, label: "重试模型请求", detail, status: "active" },
+    ]
+  }
+  return steps.map((s) =>
+    s.id === id
+      ? {
+          ...s,
+          status: "done" as const,
+          detail: meta.success ? "已恢复" : "仍失败",
+          variant: meta.success ? undefined : ("error" as const),
+        }
+      : s
+  )
+}
+
+const COMPACTION_REASON_LABEL: Record<string, string> = {
+  manual: "手动",
+  threshold: "上下文接近上限",
+  overflow: "上下文溢出",
+}
+
+export function setCompactionStep(
+  steps: AgentStep[],
+  phase: "start" | "end",
+  reason?: string
+): AgentStep[] {
+  const id = "compaction"
+  const reasonLabel = reason
+    ? (COMPACTION_REASON_LABEL[reason] ?? reason)
+    : undefined
+  if (phase === "start") {
+    const settled = steps.map((s) =>
+      s.status === "active" ? { ...s, status: "done" as const } : s
+    )
+    return [
+      ...settled.filter((s) => s.id !== id),
+      {
+        id,
+        label: "压缩对话上下文",
+        detail: reasonLabel ? `${reasonLabel} · 生成摘要…` : "生成摘要…",
+        status: "active",
+      },
+    ]
+  }
+  return steps.map((s) =>
+    s.id === id
+      ? {
+          ...s,
+          status: "done" as const,
+          detail: reasonLabel ? `${reasonLabel} · 已完成` : "已完成",
+        }
+      : s
+  )
 }
 
 export function markAllDone(steps: AgentStep[]): AgentStep[] {

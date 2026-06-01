@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Search } from "lucide-react"
 
 import { MemoryList } from "~/components/memory/memory-list"
 import { Input } from "~/components/ui/input"
-import { MEMORY_CATEGORY } from "~/config/memory-categories"
+import {
+  isMemoryPanelCategory,
+  MEMORY_CATEGORY,
+} from "~/config/memory-categories"
 import {
   deleteMemory,
-  listMemoriesByCategory,
+  listMemories,
   searchMemoriesScoped,
   type MemoryItem,
 } from "~/services/memories"
@@ -17,12 +20,25 @@ export function MemoriesPanel() {
   const [keyword, setKeyword] = useState("")
   const [semanticQuery, setSemanticQuery] = useState("")
   const [searching, setSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<MemoryItem[] | null>(null)
+  const [semanticMode, setSemanticMode] = useState(false)
+  const [searchResults, setSearchResults] = useState<MemoryItem[]>([])
 
-  const { data: items = [], isLoading } = useQuery({
-    queryKey: ["memories", "chat"],
-    queryFn: () => listMemoriesByCategory(MEMORY_CATEGORY.MEMORY),
+  const { data: allMemories = [], isLoading } = useQuery({
+    queryKey: ["memories"],
+    queryFn: listMemories,
   })
+
+  const items = useMemo(
+    () => allMemories.filter((item) => isMemoryPanelCategory(item.category)),
+    [allMemories]
+  )
+
+  useEffect(() => {
+    if (!semanticQuery.trim()) {
+      setSemanticMode(false)
+      setSearchResults([])
+    }
+  }, [semanticQuery])
 
   const deleteMutation = useMutation({
     mutationFn: async (item: MemoryItem) => {
@@ -34,18 +50,19 @@ export function MemoriesPanel() {
   })
 
   const filtered = useMemo(() => {
-    const base = searchResults ?? items
+    const base = semanticMode ? searchResults : items
     if (!keyword.trim()) return base
     const q = keyword.toLowerCase()
     return base.filter((item) =>
       `${item.title} ${item.content}`.toLowerCase().includes(q)
     )
-  }, [items, keyword, searchResults])
+  }, [items, keyword, searchResults, semanticMode])
 
   const runSemanticSearch = async () => {
     const q = semanticQuery.trim()
     if (!q) {
-      setSearchResults(null)
+      setSemanticMode(false)
+      setSearchResults([])
       return
     }
     setSearching(true)
@@ -55,10 +72,15 @@ export function MemoriesPanel() {
         category: MEMORY_CATEGORY.MEMORY,
       })
       setSearchResults(found)
+      setSemanticMode(true)
     } finally {
       setSearching(false)
     }
   }
+
+  const emptyMessage = semanticMode
+    ? "未找到相关记忆，可清空搜索框查看全部"
+    : "暂无记忆，可在对话中让助手写入素材库"
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -86,13 +108,16 @@ export function MemoriesPanel() {
       />
 
       <p className="text-xs text-muted-foreground">
-        {isLoading ? "加载中…" : `${filtered.length} 条对话记忆 · 对话中自动累积`}
+        {isLoading
+          ? "加载中…"
+          : semanticMode
+            ? `语义搜索 ${filtered.length} 条 · 共 ${items.length} 条对话记忆`
+            : `${filtered.length} 条对话记忆 · 对话中自动累积`}
       </p>
 
       <MemoryList
-        className="min-h-0 flex-1"
         items={filtered}
-        emptyMessage="暂无记忆，可在对话中让助手写入素材库"
+        emptyMessage={emptyMessage}
         onDelete={(item) => deleteMutation.mutate(item)}
       />
     </div>

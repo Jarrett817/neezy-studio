@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm"
 
+import type { ChatToolCall } from "~/lib/agent-steps"
 import type { ChatMessage } from "~/stores/app-store"
 import { ensureInit, getDb, schema } from "../db"
 
@@ -22,12 +23,24 @@ type ChatMessageRow = {
   created_at: number
 }
 
+function legacyToolCall(tc: StoredToolCall, index: number): ChatToolCall {
+  return {
+    toolCallId: `${tc.name}-${index}`,
+    name: tc.name,
+    args: tc.args ?? {},
+    status: "done",
+    result: tc.result ?? "",
+  }
+}
+
 function rowToMessage(row: ChatMessageRow): ChatMessage {
-  let toolCalls: StoredToolCall[] | undefined
+  let toolCalls: ChatToolCall[] | undefined
   if (row.tool_calls_json) {
     try {
       const parsed = JSON.parse(row.tool_calls_json) as StoredToolCall[]
-      if (Array.isArray(parsed) && parsed.length > 0) toolCalls = parsed
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        toolCalls = parsed.map(legacyToolCall)
+      }
     } catch {
       toolCalls = undefined
     }

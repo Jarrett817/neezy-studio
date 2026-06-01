@@ -8,7 +8,8 @@ import {
   upsertMemoryEmbedding,
 } from "~/services/vector-store"
 import { writeMemoryFile, deleteMemoryFile } from "./fs-memory"
-import { desc, eq } from "drizzle-orm"
+import { selectSqliteRows } from "./storage/sqlite-rows"
+import { eq } from "drizzle-orm"
 import {
   isKnowledgeCategory,
   isMemoryPanelCategory,
@@ -25,6 +26,34 @@ export type MemoryItem = {
   file_path: string
   created_at: number
   updated_at: number
+}
+
+type MemoryItemRow = {
+  id: string
+  title: string | null
+  category: string | null
+  content: string | null
+  file_path: string | null
+  created_at: number | string | null
+  updated_at: number | string | null
+}
+
+function rowToMemoryItem(row: MemoryItemRow): MemoryItem {
+  const updatedAt = Number(row.updated_at) || Number(row.created_at) || 0
+  const createdAt = Number(row.created_at) || updatedAt
+  const category =
+    typeof row.category === "string" && row.category.trim()
+      ? row.category.trim()
+      : "记忆"
+  return {
+    id: row.id,
+    title: typeof row.title === "string" ? row.title : "",
+    content: typeof row.content === "string" ? row.content : "",
+    category,
+    file_path: typeof row.file_path === "string" ? row.file_path : "",
+    created_at: createdAt,
+    updated_at: updatedAt,
+  }
 }
 
 // 保存记忆（写 MD 文件 + 写 SQLite via Drizzle）
@@ -88,15 +117,15 @@ export async function saveMemory(item: {
   }
 }
 
-// 列出所有记忆
+// 列出所有记忆（直读 SQLite，避免 drizzle sqlite-proxy 经 IPC 丢字段）
 export async function listMemories(): Promise<MemoryItem[]> {
   await ensureInit()
-  const db = getDb()
-  const result = await db
-    .select()
-    .from(schema.memoryItems)
-    .orderBy(desc(schema.memoryItems.updated_at))
-  return result
+  const rows = await selectSqliteRows<MemoryItemRow>(
+    `SELECT id, title, category, content, file_path, created_at, updated_at
+     FROM memory_items
+     ORDER BY updated_at DESC`
+  )
+  return rows.map(rowToMemoryItem)
 }
 
 export async function listMemoriesByCategory(
@@ -190,7 +219,8 @@ export async function searchMemories(
   if (!queryEmbedding || queryEmbedding.length === 0) return fallbackSearch()
 
   try {
-    return await searchMemoriesByVector(queryEmbedding, limit)
+    const rows = await searchMemoriesByVector(queryEmbedding, limit)
+    return rows.map((row) => rowToMemoryItem(row))
   } catch (e) {
     console.warn("Vector search failed, using text fallback:", e)
     return fallbackSearch()

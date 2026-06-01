@@ -15,6 +15,7 @@ import { ensureOllamaReady } from "./ollama/lifecycle"
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 
+/** Playbook 单轮流式：仅 role + 文本，经 toPiUserOrAssistant 转为 pi-ai Message */
 export type PiChatMessage = {
   role: "system" | "user" | "assistant"
   content: string

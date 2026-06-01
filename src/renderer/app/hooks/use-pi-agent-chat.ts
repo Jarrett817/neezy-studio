@@ -1,8 +1,26 @@
 import { useCallback, useEffect, useRef } from "react"
 
-import { mergeStreamThinking } from "~/lib/agent-steps"
+import {
+  completeToolStep,
+  createInitialAgentSteps,
+  formatToolArgsSummary,
+  formatToolPartialPreview,
+  formatToolResultPreview,
+  formatUsageSummary,
+  markAllDone,
+  mergeStreamThinking,
+  setCompactionStep,
+  setRetryStep,
+  setTurnPlanning,
+  setTurnResponding,
+  setTurnThinking,
+  startToolStep,
+  updateToolStep,
+  type AgentStep,
+  type ChatToolCall,
+} from "~/lib/agent-steps"
 import { reduceAgentEvent } from "~/lib/pi-agent-events"
-import { useAppStore, type ChatMessage } from "~/stores/app-store"
+import { useAppStore } from "~/stores/app-store"
 import {
   abortAgentSession,
   configureAgentSession,
@@ -11,29 +29,21 @@ import {
   promptAgent,
   subscribeAgentEvents,
 } from "~/services/pi-agent-client"
+import {
+  listPiChatSessions,
+  loadPiChatMessages,
+} from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
 
 const AGENT_PROMPT_TIMEOUT_MS = 120_000
 
 type UsePiAgentChatOptions = {
   systemPrompt: string
-  messages: ChatMessage[]
+  diskSessionId: string | null
   enabled: boolean
-}
-
-function toAgentHistory(messages: ChatMessage[]) {
-  return messages
-    .filter(
-      (m) =>
-        m.role === "user" ||
-        (m.role === "assistant" &&
-          !m.isStreaming &&
-          m.content.trim().length > 0)
-    )
-    .map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }))
+  onDiskMessagesReload?: (messages: ReturnType<typeof useAppStore.getState>["conversationHistory"]) => void
+  /** 磁盘会话 id 失效后主进程新建会话时回写 UI */
+  onDiskSessionIdRebound?: (newId: string) => void
 }
 
 function extractAgentFailure(
@@ -48,8 +58,10 @@ function extractAgentFailure(
 
 export function usePiAgentChat({
   systemPrompt,
-  messages,
+  diskSessionId,
   enabled,
+  onDiskMessagesReload,
+  onDiskSessionIdRebound,
 }: UsePiAgentChatOptions) {
   const agentSessionId = useRef<string | null>(null)
   const sessionOp = useRef<Promise<void>>(Promise.resolve())
@@ -58,18 +70,34 @@ export function usePiAgentChat({
   const onStreamRef = useRef<
     ((patch: { thinking: string; content: string }) => void) | null
   >(null)
-  const onToolCallRef = useRef<
+  const onToolStartRef = useRef<((item: ChatToolCall) => void) | null>(null)
+  const onToolUpdateRef = useRef<
+    ((toolCallId: string, partialResult: string) => void) | null
+  >(null)
+  const onToolEndRef = useRef<
     | ((
-        name: string,
-        args: Record<string, unknown>,
-        result: string
+        item: ChatToolCall
       ) => void)
     | null
   >(null)
+  const onUsageRef = useRef<((summary: string) => void) | null>(null)
+  const onWorkflowRef = useRef<((steps: AgentStep[]) => void) | null>(null)
+  const agentStepsRef = useRef<AgentStep[]>(createInitialAgentSteps())
+  const pendingToolArgsRef = useRef(
+    new Map<string, { name: string; args: Record<string, unknown> }>()
+  )
   const agentEndResolve = useRef<(() => void) | null>(null)
   const agentErrorRef = useRef<string | null>(null)
   const abortedRef = useRef(false)
-  const promptInFlightRef = useRef(false)
+  const diskSessionIdRef = useRef(diskSessionId)
+  const systemPromptRef = useRef(systemPrompt)
+  const onDiskMessagesReloadRef = useRef(onDiskMessagesReload)
+  const onDiskSessionIdReboundRef = useRef(onDiskSessionIdRebound)
+
+  diskSessionIdRef.current = diskSessionId
+  systemPromptRef.current = systemPrompt
+  onDiskMessagesReloadRef.current = onDiskMessagesReload
+  onDiskSessionIdReboundRef.current = onDiskSessionIdRebound
 
   const withSessionLock = useCallback(
     async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -83,73 +111,224 @@ export function usePiAgentChat({
     []
   )
 
-  const applyAgentConfigure = useCallback(
-    async (sid: string, history: { role: "user" | "assistant"; content: string }[]) => {
-      try {
-        await configureAgentSession(sid, { systemPrompt, messages: history })
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
-        if (!msg.includes("session not found")) throw error
-        const fresh = await createAgentSession()
-        agentSessionId.current = fresh
-        await configureAgentSession(fresh, { systemPrompt, messages: history })
+  const applySystemPrompt = useCallback(async (sid: string) => {
+    await configureAgentSession(sid, { systemPrompt: systemPromptRef.current })
+  }, [])
+
+  const openAgentForDisk = useCallback(
+    async (diskId: string) => {
+      const running = agentSessionId.current
+      const sessions = await listPiChatSessions()
+      const diskOnFile = sessions.some((s) => s.id === diskId)
+      const runningOnFile = running
+        ? sessions.some((s) => s.id === running)
+        : false
+
+      // 父组件仍是陈旧 kv id，但 Agent 已绑定到恢复后的磁盘会话：不要销毁再建
+      if (running && runningOnFile && !diskOnFile) {
+        diskSessionIdRef.current = running
+        onDiskSessionIdReboundRef.current?.(running)
+        await applySystemPrompt(running)
+        return running
       }
+
+      if (running && running !== diskId) {
+        await destroyAgentSession(running)
+        agentSessionId.current = null
+      }
+
+      if (agentSessionId.current === diskId) {
+        await applySystemPrompt(diskId)
+        return diskId
+      }
+
+      const sid = await createAgentSession({ diskSessionId: diskId })
+      agentSessionId.current = sid
+      if (sid !== diskId) {
+        diskSessionIdRef.current = sid
+        onDiskSessionIdReboundRef.current?.(sid)
+      }
+      await applySystemPrompt(sid)
+      return sid
     },
-    [systemPrompt]
+    [applySystemPrompt]
   )
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !diskSessionId) return
 
     let cancelled = false
+    const pushWorkflow = () => {
+      onWorkflowRef.current?.([...agentStepsRef.current])
+    }
+
     const unsubscribeEvents = subscribeAgentEvents((payload) => {
       if (payload.sessionId !== agentSessionId.current) return
+      const ev = payload.event
 
-      if (payload.event.type === "agent_end") {
-        const msgs = payload.event.messages as
-          | { role?: string; stopReason?: string; errorMessage?: string }[]
-          | undefined
-        const last = Array.isArray(msgs)
-          ? [...msgs].reverse().find((m) => m.role === "assistant")
-          : undefined
-        const failure = extractAgentFailure(last)
+      if (ev.type === "agent_start") {
+        agentStepsRef.current = createInitialAgentSteps()
+        pushWorkflow()
+      }
+
+      if (ev.type === "turn_start") {
+        agentStepsRef.current = setTurnPlanning(agentStepsRef.current)
+        pushWorkflow()
+      }
+
+      if (ev.type === "message_update") {
+        const inner = ev.assistantMessageEvent
+        if (inner.type === "thinking_delta" && inner.delta) {
+          agentStepsRef.current = setTurnThinking(agentStepsRef.current)
+          pushWorkflow()
+        }
+        if (inner.type === "text_delta" && inner.delta) {
+          agentStepsRef.current = setTurnResponding(agentStepsRef.current)
+          pushWorkflow()
+        }
+      }
+
+      if (ev.type === "compaction_start") {
+        agentStepsRef.current = setCompactionStep(
+          agentStepsRef.current,
+          "start",
+          ev.reason
+        )
+        pushWorkflow()
+      }
+
+      if (ev.type === "compaction_end") {
+        agentStepsRef.current = setCompactionStep(
+          agentStepsRef.current,
+          "end",
+          ev.reason
+        )
+        pushWorkflow()
+      }
+
+      if (ev.type === "auto_retry_start") {
+        agentStepsRef.current = setRetryStep(agentStepsRef.current, "start", {
+          attempt: ev.attempt,
+          maxAttempts: ev.maxAttempts,
+          errorMessage: ev.errorMessage,
+        })
+        pushWorkflow()
+      }
+
+      if (ev.type === "auto_retry_end") {
+        agentStepsRef.current = setRetryStep(agentStepsRef.current, "end", {
+          attempt: ev.attempt,
+          maxAttempts: ev.attempt,
+          success: ev.success,
+          errorMessage: ev.finalError,
+        })
+        pushWorkflow()
+      }
+
+      if (ev.type === "tool_execution_start") {
+        const args = (ev.args as Record<string, unknown>) ?? {}
+        pendingToolArgsRef.current.set(ev.toolCallId, {
+          name: ev.toolName,
+          args,
+        })
+        const argsDetail = formatToolArgsSummary(ev.toolName, args)
+        agentStepsRef.current = startToolStep(
+          agentStepsRef.current,
+          ev.toolCallId,
+          ev.toolName,
+          argsDetail
+        )
+        pushWorkflow()
+        onToolStartRef.current?.({
+          toolCallId: ev.toolCallId,
+          name: ev.toolName,
+          args,
+          status: "running",
+          result: "",
+        })
+      }
+
+      if (ev.type === "tool_execution_update") {
+        const preview = formatToolPartialPreview(ev.partialResult)
+        if (preview) {
+          agentStepsRef.current = updateToolStep(
+            agentStepsRef.current,
+            ev.toolCallId,
+            preview
+          )
+          pushWorkflow()
+        }
+        onToolUpdateRef.current?.(ev.toolCallId, preview)
+      }
+
+      if (ev.type === "agent_end") {
+        const msgs = ev.messages
+        const last = [...msgs].reverse().find((m) => m.role === "assistant")
+        const failure = extractAgentFailure(
+          last && last.role === "assistant" ? last : undefined
+        )
         if (failure) agentErrorRef.current = failure
         agentEndResolve.current?.()
         agentEndResolve.current = null
+        const reloadId = diskSessionIdRef.current
+        agentStepsRef.current = markAllDone(agentStepsRef.current)
+        pushWorkflow()
+        pendingToolArgsRef.current.clear()
+        if (reloadId && onDiskMessagesReloadRef.current) {
+          void loadPiChatMessages(reloadId)
+            .then(onDiskMessagesReloadRef.current)
+            .catch((err) => console.warn("[pi-agent] reload messages:", err))
+        }
         return
       }
 
-      if (payload.event.type === "message_end") {
+      if (ev.type === "message_end") {
         const failure = extractAgentFailure(
-          payload.event.message as { stopReason?: string; errorMessage?: string }
+          ev.message.role === "assistant" ? ev.message : undefined
         )
         if (failure) agentErrorRef.current = failure
+        if (ev.message.role === "assistant") {
+          if ("usage" in ev.message && ev.message.usage) {
+            onUsageRef.current?.(formatUsageSummary(ev.message.usage))
+          }
+          if (activeAssistantId.current) {
+            agentStepsRef.current = setTurnResponding(agentStepsRef.current)
+            pushWorkflow()
+          }
+        }
       }
 
-      if (
-        payload.event.type === "tool_execution_end" &&
-        activeAssistantId.current &&
-        onToolCallRef.current
-      ) {
-        const ev = payload.event as unknown as {
-          toolName: string
-          args: unknown
-          result: unknown
-        }
-        const resultText =
-          typeof ev.result === "string"
-            ? ev.result
-            : JSON.stringify(ev.result ?? "")
-        onToolCallRef.current(
+      if (ev.type === "tool_execution_end") {
+        const pending = pendingToolArgsRef.current.get(ev.toolCallId)
+        pendingToolArgsRef.current.delete(ev.toolCallId)
+        const args = pending?.args ?? {}
+        const resultPreview = formatToolResultPreview(ev.result, ev.isError)
+        agentStepsRef.current = completeToolStep(
+          agentStepsRef.current,
+          ev.toolCallId,
           ev.toolName,
-          (ev.args as Record<string, unknown>) ?? {},
-          resultText
+          resultPreview,
+          ev.isError
         )
+        pushWorkflow()
+        if (activeAssistantId.current) {
+          const resultText =
+            typeof ev.result === "string"
+              ? ev.result
+              : JSON.stringify(ev.result ?? "")
+          onToolEndRef.current?.({
+            toolCallId: ev.toolCallId,
+            name: ev.toolName,
+            args,
+            status: ev.isError ? "error" : "done",
+            result: resultText,
+          })
+        }
       }
 
       if (!activeAssistantId.current || !onStreamRef.current) return
 
-      streamState.current = reduceAgentEvent(payload.event, streamState.current)
+      streamState.current = reduceAgentEvent(ev, streamState.current)
       const display = mergeStreamThinking(
         streamState.current.thinking,
         streamState.current.content
@@ -162,16 +341,12 @@ export function usePiAgentChat({
 
     void withSessionLock(async () => {
       try {
-        const sid = await createAgentSession()
+        await openAgentForDisk(diskSessionId)
         if (cancelled) {
-          await destroyAgentSession(sid)
-          return
+          const sid = agentSessionId.current
+          if (sid) await destroyAgentSession(sid)
+          agentSessionId.current = null
         }
-        agentSessionId.current = sid
-        const history = toAgentHistory(
-          useAppStore.getState().conversationHistory
-        )
-        await applyAgentConfigure(sid, history)
       } catch (err) {
         console.warn("[pi-agent] init failed:", err)
       }
@@ -180,62 +355,64 @@ export function usePiAgentChat({
     return () => {
       cancelled = true
       unsubscribeEvents()
+    }
+  }, [enabled, diskSessionId, openAgentForDisk, withSessionLock])
+
+  useEffect(() => {
+    const sid = agentSessionId.current
+    if (!sid || !enabled) return
+    void applySystemPrompt(sid).catch((err) =>
+      console.warn("[pi-agent] system prompt sync:", err)
+    )
+  }, [systemPrompt, enabled, applySystemPrompt])
+
+  useEffect(() => {
+    return () => {
       const sid = agentSessionId.current
       agentSessionId.current = null
-      if (sid) {
-        void withSessionLock(() => destroyAgentSession(sid))
-      }
+      if (sid) void destroyAgentSession(sid)
     }
-  }, [enabled, applyAgentConfigure, withSessionLock])
+  }, [])
 
   const runPrompt = useCallback(
     async (params: {
       userMessage: string
       assistantId: string
       onStream: (patch: { thinking: string; content: string }) => void
-      onToolCall: (
-        name: string,
-        args: Record<string, unknown>,
-        result: string
-      ) => void
+      onToolStart?: (item: ChatToolCall) => void
+      onToolUpdate?: (toolCallId: string, partialResult: string) => void
+      onToolEnd?: (item: ChatToolCall) => void
+      onUsage?: (summary: string) => void
+      onWorkflow?: (steps: AgentStep[]) => void
     }): Promise<{ content: string; thinking: string }> => {
       return withSessionLock(async () => {
-        const sid = agentSessionId.current
-        if (!sid) throw new Error("Agent 未就绪，请稍后重试")
+        const diskId = diskSessionIdRef.current
+        if (!diskId) throw new Error("请先选择或创建对话")
+        if (!agentSessionId.current) {
+          await openAgentForDisk(diskId)
+        }
+        const agentId = agentSessionId.current
+        if (!agentId) throw new Error("Agent 未就绪，请稍后重试")
 
         onStreamRef.current = params.onStream
-        onToolCallRef.current = params.onToolCall
+        onToolStartRef.current = params.onToolStart ?? null
+        onToolUpdateRef.current = params.onToolUpdate ?? null
+        onToolEndRef.current = params.onToolEnd ?? null
+        onUsageRef.current = params.onUsage ?? null
+        onWorkflowRef.current = params.onWorkflow ?? null
         activeAssistantId.current = params.assistantId
         streamState.current = { content: "", thinking: "" }
+        agentStepsRef.current = createInitialAgentSteps()
+        pendingToolArgsRef.current.clear()
+        params.onWorkflow?.(agentStepsRef.current)
         agentErrorRef.current = null
         abortedRef.current = false
 
-        const withoutAssistant = messages.filter(
-          (m) => m.id !== params.assistantId && m.role !== "error"
-        )
-        const forAgent = withoutAssistant.filter(
-          (m) =>
-            m.role === "user" ||
-            (m.role === "assistant" && m.content.trim().length > 0)
-        )
-        const last = forAgent[forAgent.length - 1]
-        const history =
-          last?.role === "user"
-            ? forAgent.slice(0, -1).map((m) => ({
-                role: m.role as "user" | "assistant",
-                content: m.content,
-              }))
-            : forAgent.map((m) => ({
-                role: m.role as "user" | "assistant",
-                content: m.content,
-              }))
-
         let timeoutId: ReturnType<typeof setTimeout> | undefined
-        promptInFlightRef.current = true
 
         try {
           await pushRuntimeSettingsToMain()
-          await applyAgentConfigure(sid, history)
+          await applySystemPrompt(agentId)
 
           const idle = new Promise<void>((resolve, reject) => {
             agentEndResolve.current = () => {
@@ -259,7 +436,7 @@ export function usePiAgentChat({
           }, AGENT_PROMPT_TIMEOUT_MS)
 
           try {
-            await promptAgent(sid, params.userMessage)
+            await promptAgent(agentId, params.userMessage)
           } catch (error) {
             agentEndResolve.current = null
             throw error
@@ -273,16 +450,19 @@ export function usePiAgentChat({
           )
           return { content: display.visible, thinking: display.thinking }
         } finally {
-          promptInFlightRef.current = false
           if (timeoutId) clearTimeout(timeoutId)
           activeAssistantId.current = null
           onStreamRef.current = null
-          onToolCallRef.current = null
+          onToolStartRef.current = null
+          onToolUpdateRef.current = null
+          onToolEndRef.current = null
+          onUsageRef.current = null
+          onWorkflowRef.current = null
           agentEndResolve.current = null
         }
       })
     },
-    [systemPrompt, messages, applyAgentConfigure, withSessionLock]
+    [applySystemPrompt, withSessionLock, openAgentForDisk]
   )
 
   const abort = useCallback(() => {
@@ -293,21 +473,26 @@ export function usePiAgentChat({
     agentEndResolve.current = null
     activeAssistantId.current = null
     onStreamRef.current = null
-    onToolCallRef.current = null
+    onToolStartRef.current = null
+    onToolUpdateRef.current = null
+    onToolEndRef.current = null
+    onUsageRef.current = null
+    onWorkflowRef.current = null
     streamState.current = { content: "", thinking: "" }
   }, [])
 
   const resetAgent = useCallback(
-    async (history: ChatMessage[] = []) => {
-      await withSessionLock(async () => {
-        const sid = agentSessionId.current
-        if (sid) await destroyAgentSession(sid)
-        const fresh = await createAgentSession()
-        agentSessionId.current = fresh
-        await applyAgentConfigure(fresh, toAgentHistory(history))
-      })
+    async (_history = [], overrideDiskId?: string) => {
+      const diskId = overrideDiskId ?? diskSessionIdRef.current
+      if (!diskId) {
+        const prev = agentSessionId.current
+        if (prev) await destroyAgentSession(prev)
+        agentSessionId.current = null
+        return
+      }
+      await withSessionLock(() => openAgentForDisk(diskId))
     },
-    [applyAgentConfigure, withSessionLock]
+    [openAgentForDisk, withSessionLock]
   )
 
   return { runPrompt, abort, resetAgent }

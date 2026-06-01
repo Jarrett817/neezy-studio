@@ -11,8 +11,17 @@ import {
   configureAgentSession,
   createAgentSession,
   destroyAgentSession,
+  getPiSessionsDirectory,
   promptAgent,
 } from "./pi-agent"
+import {
+  createPiChatSession,
+  deletePiChatSession,
+  listPiChatSessions,
+  listPiChatSessionsWithMessages,
+  loadPiChatMessages,
+  pruneEmptyPiChatSessions,
+} from "./pi-disk-sessions"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
@@ -321,12 +330,46 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   )
 
-  // agent:create - 创建新 Agent 会话
-  ipcMain.handle("agent:create", async (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) throw new Error("no window")
-    return createAgentSession(window)
+  ipcMain.handle("pi-sessions:get-dir", () => getPiSessionsDirectory())
+  ipcMain.handle("pi-sessions:list", () => listPiChatSessions(app))
+  ipcMain.handle("pi-sessions:list-with-messages", () =>
+    listPiChatSessionsWithMessages(app)
+  )
+  ipcMain.handle("pi-sessions:create", () => createPiChatSession(app))
+  ipcMain.handle("pi-sessions:load-messages", (_event, sessionId: string) => {
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new Error("无效会话 id")
+    }
+    return loadPiChatMessages(app, sessionId.trim())
   })
+  ipcMain.handle("pi-sessions:delete", async (_event, sessionId: string) => {
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new Error("无效会话 id")
+    }
+    const id = sessionId.trim()
+    if (agentSessionExists(id)) {
+      await destroyAgentSession(id)
+    }
+    await deletePiChatSession(app, id)
+    return { ok: true }
+  })
+  ipcMain.handle(
+    "pi-sessions:prune-empty",
+    (_event, keepSessionId?: string | null) =>
+      pruneEmptyPiChatSessions(app, keepSessionId ?? null)
+  )
+
+  ipcMain.handle(
+    "agent:create",
+    async (
+      event,
+      options?: { diskSessionId?: string; createNew?: boolean }
+    ) => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) throw new Error("no window")
+      return createAgentSession(window, options ?? {})
+    }
+  )
 
   // agent:prompt - 发送消息给 Agent
   ipcMain.handle("agent:prompt", async (_event, { sessionId, message }: { sessionId: string; message: string }) => {
@@ -348,17 +391,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(
     "agent:configure",
-    (
-      _event,
-      payload: {
-        sessionId: string
-        systemPrompt: string
-        messages?: { role: "user" | "assistant"; content: string }[]
-      }
-    ) => {
+    (_event, payload: { sessionId: string; systemPrompt: string }) => {
       configureAgentSession(payload.sessionId, {
         systemPrompt: payload.systemPrompt,
-        messages: payload.messages,
       })
       return { ok: true }
     }

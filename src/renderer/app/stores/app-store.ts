@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-import type { AgentStep } from "~/lib/agent-steps"
+import type { AgentStep, ChatToolCall } from "~/lib/agent-steps"
 
 export type ChatMessage = {
   id: string
@@ -10,7 +10,8 @@ export type ChatMessage = {
   agentSteps?: AgentStep[]
   isStreaming?: boolean
   failed?: boolean
-  toolCalls?: { name: string; args: Record<string, unknown>; result: string }[]
+  toolCalls?: ChatToolCall[]
+  usageSummary?: string
   timestamp: number
 }
 

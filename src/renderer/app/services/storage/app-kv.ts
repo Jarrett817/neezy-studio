@@ -49,6 +49,10 @@ export async function setActiveChatSessionId(sessionId: string): Promise<void> {
   await setKv(KV_ACTIVE_CHAT_SESSION_ID, sessionId)
 }
 
+export async function clearActiveChatSessionId(): Promise<void> {
+  await setKv(KV_ACTIVE_CHAT_SESSION_ID, "")
+}
+
 export async function getUserPortraitFromDb(): Promise<StoredUserPortrait | null> {
   const raw = await getKv(KV_USER_PORTRAIT_V1)
   if (!raw) return null

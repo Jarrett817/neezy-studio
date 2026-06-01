@@ -6,11 +6,13 @@ import { Button } from "~/components/ui/button"
 import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import {
-  ensureActiveChatSession,
-  listChatSessionsWithMessages,
-  removeChatSession,
-  startNewChatSession,
-} from "~/services/storage/chat-history"
+  ensureActivePiChatSession,
+  listPiChatSessions,
+  removePiChatSession,
+  sessionListPreview,
+  sessionListTitle,
+  startNewPiChatSession,
+} from "~/services/pi-chat-sessions"
 
 export function ChatSessionSidebar({
   activeSessionId,
@@ -25,11 +27,11 @@ export function ChatSessionSidebar({
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["chat-sessions", "sidebar"],
-    queryFn: listChatSessionsWithMessages,
+    queryFn: listPiChatSessions,
   })
 
   const newSessionMutation = useMutation({
-    mutationFn: () => startNewChatSession(),
+    mutationFn: () => startNewPiChatSession(),
     onSuccess: (session) => {
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
@@ -42,14 +44,14 @@ export function ChatSessionSidebar({
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (sessionId: string) => removeChatSession(sessionId),
+    mutationFn: (sessionId: string) => removePiChatSession(sessionId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       await queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
       await queryClient.invalidateQueries({
         queryKey: ["chat-sessions", "with-messages"],
       })
-      const session = await ensureActiveChatSession()
+      const session = await ensureActivePiChatSession()
       onSelectSession(session.id)
     },
     onError: (error) => {
@@ -79,7 +81,7 @@ export function ChatSessionSidebar({
           <ul className="space-y-1">
             {sessions.map((session) => {
               const active = session.id === activeSessionId
-              const timeLabel = formatSessionTime(session.updated_at)
+              const timeLabel = formatSessionTime(session.modified)
               return (
                 <li key={session.id}>
                   <div
@@ -95,9 +97,11 @@ export function ChatSessionSidebar({
                       className="min-w-0 flex-1 text-left"
                       onClick={() => onSelectSession(session.id)}
                     >
-                      <p className="truncate text-sm font-medium">{session.title}</p>
+                      <p className="truncate text-sm font-medium">
+                        {sessionListTitle(session)}
+                      </p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {session.last_message_preview?.trim() || timeLabel || "—"}
+                        {sessionListPreview(session) || timeLabel || "—"}
                       </p>
                     </button>
                     <Button

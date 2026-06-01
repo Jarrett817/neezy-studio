@@ -1,23 +1,25 @@
+import type { AgentSessionEvent } from "../../../shared/pi-sdk"
 import { getElectronApi } from "./electron-client"
 
 export type AgentEventPayload = {
   sessionId: string
-  event: {
-    type: string
-    [key: string]: unknown
-  }
+  event: AgentSessionEvent
 }
 
-export async function createAgentSession(): Promise<string> {
-  return getElectronApi().invoke<string>("agent:create", null)
+export interface CreateAgentSessionOptions {
+  diskSessionId?: string
+  createNew?: boolean
+}
+
+export async function createAgentSession(
+  options: CreateAgentSessionOptions = {}
+): Promise<string> {
+  return getElectronApi().invoke<string>("agent:create", options)
 }
 
 export async function configureAgentSession(
   sessionId: string,
-  config: {
-    systemPrompt: string
-    messages?: { role: "user" | "assistant"; content: string }[]
-  }
+  config: { systemPrompt: string }
 ): Promise<{ ok: boolean }> {
   return getElectronApi().invoke("agent:configure", {
     sessionId,
@@ -45,7 +47,7 @@ export async function destroyAgentSession(
 export function subscribeAgentEvents(
   callback: (payload: AgentEventPayload) => void
 ): () => void {
-  return getElectronApi().on("agent:event", (event: unknown, payload: AgentEventPayload) => {
+  return getElectronApi().on("agent:event", (_event: unknown, payload: AgentEventPayload) => {
     callback(payload)
   })
 }

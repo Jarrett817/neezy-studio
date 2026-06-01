@@ -258,18 +258,13 @@ export async function chat(
     onChunk?: (content: string) => void
   }
 ): Promise<string> {
+  if (!isElectronLlmAvailable()) {
+    throw new Error("请在 Electron 桌面应用中运行")
+  }
   await ensureChatModelLoaded()
   touchLastUsed()
-  const settings = await getRuntimeSettings()
-  const entry = resolveChatModelEntry(settings)
-  const content =
-    entry?.transport === "openai-compatible"
-      ? await chatViaGatewayMessages(messages, options)
-      : await chatPromptFromMain(formatPrompt(messages), {
-          temperature: options?.temperature,
-          topK: 10,
-          maxTokens: options?.maxTokens,
-        })
+  const { agentChat } = await import("~/services/agent-prompt")
+  const content = await agentChat(messages)
   options?.onChunk?.(content)
   return content
 }

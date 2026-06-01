@@ -1,4 +1,4 @@
-import { chat, type ChatMessage } from "~/services/llm"
+import { promptAgentOnce } from "~/services/agent-prompt"
 import { searchMemories } from "~/services/memories"
 import { listSkills } from "~/services/storage/skills"
 import { getUserPortrait } from "~/services/user-portrait"
@@ -149,10 +149,11 @@ export async function runPlaybook(
   })
 
   stages.push("llm")
-  const messages: ChatMessage[] = buildLlmMessages(compiled, skillBlock)
+  const messages = buildLlmMessages(compiled, skillBlock)
   let rawText = ""
   try {
-    rawText = await chat(messages, { temperature: 0.7 })
+    const result = await promptAgentOnce(messages)
+    rawText = result.content
   } catch (e) {
     const message = e instanceof Error ? e.message : "模型调用失败"
     return {
@@ -210,11 +211,15 @@ export async function designPlaybookFromIntent(
   await ensurePlaybookDirs()
   const skills = await listSkills()
   const skillBlock = resolveSkillBlock(skills, "playbook-designer")
-  const messages: ChatMessage[] = [
-    { role: "system", content: skillBlock },
-    ...turns.map((t) => ({ role: t.role, content: t.content })),
+  const messages = [
+    { role: "system" as const, content: skillBlock },
+    ...turns.map((t) => ({
+      role: t.role,
+      content: t.content,
+    })),
   ]
-  const rawText = await chat(messages, { temperature: 0.4 })
+  const result = await promptAgentOnce(messages)
+  const rawText = result.content
   try {
     return { rawText, parsed: parseJsonFromLlm(rawText) }
   } catch {

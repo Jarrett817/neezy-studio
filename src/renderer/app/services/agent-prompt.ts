@@ -7,10 +7,7 @@ import {
   promptAgent,
   subscribeAgentEvents,
 } from "~/services/pi-agent-client"
-import {
-  createPiChatSessionRecord,
-  deletePiChatSession,
-} from "~/services/pi-chat-sessions"
+import { deletePiChatSession } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
 
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -105,15 +102,15 @@ export async function promptAgentOnce(
 ): Promise<{ content: string; thinking: string }> {
   const { systemPrompt, userMessage } = messagesToAgentRequest(messages)
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const disk = await createPiChatSessionRecord()
-  const diskId = disk.id
 
+  let agentSessionId: string | null = null
   let disposeAgentListener: (() => void) | undefined
 
   try {
     await pushRuntimeSettingsToMain()
-    await createAgentSession({ diskSessionId: diskId })
-    await configureAgentSession(diskId, { systemPrompt })
+    const sessionId = await createAgentSession({ createNew: true })
+    agentSessionId = sessionId
+    await configureAgentSession(sessionId, { systemPrompt })
 
     const result = await new Promise<{ content: string; thinking: string }>(
       (resolve, reject) => {
@@ -131,7 +128,7 @@ export async function promptAgentOnce(
         }, timeoutMs)
 
         disposeAgentListener = subscribeAgentEvents((payload) => {
-          if (payload.sessionId !== diskId) return
+          if (payload.sessionId !== sessionId) return
           const ev = payload.event
           if (ev.type !== "agent_end") return
           const failure = ev.messages
@@ -155,7 +152,7 @@ export async function promptAgentOnce(
           finish(() => resolve(extractFromAgentEnd(ev.messages)))
         })
 
-        void promptAgent(diskId, userMessage).catch((err) => {
+        void promptAgent(sessionId, userMessage).catch((err) => {
           finish(() => reject(err instanceof Error ? err : new Error(String(err))))
         })
       }
@@ -164,8 +161,10 @@ export async function promptAgentOnce(
     return result
   } finally {
     disposeAgentListener?.()
-    await destroyAgentSession(diskId).catch(() => {})
-    await deletePiChatSession(diskId).catch(() => {})
+    if (agentSessionId) {
+      await destroyAgentSession(agentSessionId).catch(() => {})
+      await deletePiChatSession(agentSessionId).catch(() => {})
+    }
   }
 }
 

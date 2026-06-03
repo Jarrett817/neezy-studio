@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getBuildInfo: () => ipcRenderer.invoke("app:get-build-info"),
+  getPlaywrightBrowserStatus: () => ipcRenderer.invoke("app:get-playwright-browser-status"),
+  ensurePlaywrightBrowser: () => ipcRenderer.invoke("app:ensure-playwright-browser"),
   configureOllamaHost: (host: string) =>
     ipcRenderer.invoke("app:configure-ollama-host", host),
   syncRuntimeSettings: (settings: unknown) =>
@@ -117,6 +119,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     memoryType?: string | null
   ) =>
     ipcRenderer.invoke("sqlite:vector-search-slices", dbPath, embedding, limit, memoryType),
+  getAgentPermissionSettings: () =>
+    ipcRenderer.invoke("app:get-agent-permission-settings"),
+  saveAgentPermissionSettings: (input: unknown) =>
+    ipcRenderer.invoke("app:save-agent-permission-settings", input),
+  resetAgentPermissionSettings: () =>
+    ipcRenderer.invoke("app:reset-agent-permission-settings"),
   invoke: <T = unknown>(channel: string, data?: unknown): Promise<T> =>
     ipcRenderer.invoke(channel, data),
   on: <T = unknown>(

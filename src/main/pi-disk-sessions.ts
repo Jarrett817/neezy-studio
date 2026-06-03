@@ -1,5 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent"
 import type { App } from "electron"
+import fsSync from "node:fs"
 import fs from "node:fs/promises"
 
 import type { AgentMessage } from "../shared/pi-sdk"
@@ -15,7 +16,31 @@ import path from "node:path"
 
 export const PI_SESSIONS_DIR_NAME = "pi-sessions"
 
+/** 与 @earendil-works/pi-coding-agent CURRENT_SESSION_VERSION 一致 */
+const PI_SESSION_FILE_VERSION = 3
+
 export type { SessionInfoDto }
+
+/** Pi SDK 新建会话在首条 assistant 前不落盘；须先写 header 供 list/find 使用。 */
+function flushPiSessionHeaderFile(sm: SessionManager): void {
+  const file = sm.getSessionFile()
+  if (!file) {
+    throw new Error("Pi 会话文件路径未初始化")
+  }
+  if (fsSync.existsSync(file)) return
+  const dir = path.dirname(file)
+  if (!fsSync.existsSync(dir)) {
+    fsSync.mkdirSync(dir, { recursive: true })
+  }
+  const header = {
+    type: "session",
+    version: PI_SESSION_FILE_VERSION,
+    id: sm.getSessionId(),
+    timestamp: new Date().toISOString(),
+    cwd: sm.getCwd(),
+  }
+  fsSync.writeFileSync(file, `${JSON.stringify(header)}\n`, { flag: "wx" })
+}
 
 export function getPiSessionsDir(app: App): string {
   const { dataRoot } = resolveStoragePaths(app)
@@ -71,7 +96,48 @@ export function openPiSessionManager(app: App, sessionFile: string): SessionMana
 
 export function createPiSessionManager(app: App): SessionManager {
   const { dataRoot, sessionDir } = piSessionDirs(app)
-  return SessionManager.create(dataRoot, sessionDir)
+  const sm = SessionManager.create(dataRoot, sessionDir)
+  const file = sm.getSessionFile()
+  if (!file) {
+    throw new Error("Pi 会话文件路径未初始化")
+  }
+  flushPiSessionHeaderFile(sm)
+  return SessionManager.open(file, sessionDir, dataRoot)
+}
+
+function extractToolCallsFromAssistantContent(content: unknown): ChatWireToolCall[] {
+  if (!Array.isArray(content)) return []
+  const out: ChatWireToolCall[] = []
+  for (const block of content) {
+    if (
+      !block ||
+      typeof block !== "object" ||
+      !("type" in block) ||
+      block.type !== "toolCall"
+    ) {
+      continue
+    }
+    const record = block as {
+      id?: string
+      name?: string
+      arguments?: Record<string, unknown>
+    }
+    const toolCallId = typeof record.id === "string" ? record.id.trim() : ""
+    const name = typeof record.name === "string" ? record.name.trim() : ""
+    if (!toolCallId || !name) continue
+    const args =
+      record.arguments && typeof record.arguments === "object"
+        ? record.arguments
+        : {}
+    out.push({
+      toolCallId,
+      name,
+      args,
+      status: "running",
+      result: "",
+    })
+  }
+  return out
 }
 
 function textFromContent(content: unknown): { text: string; thinking: string } {
@@ -122,13 +188,20 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
                 .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
                 .join("")
             : ""
-      pendingTools.push({
-        toolCallId,
-        name,
-        args: {},
-        status: "done",
-        result,
-      })
+      const isError = "isError" in msg && msg.isError === true
+      const existing = pendingTools.find((t) => t.toolCallId === toolCallId)
+      if (existing) {
+        existing.result = result
+        existing.status = isError ? "error" : "done"
+      } else {
+        pendingTools.push({
+          toolCallId,
+          name,
+          args: {},
+          status: isError ? "error" : "done",
+          result,
+        })
+      }
       continue
     }
     if (msg.role === "user" && "timestamp" in msg) {
@@ -145,6 +218,16 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
     }
     if (msg.role === "assistant" && "timestamp" in msg) {
       const { text, thinking } = textFromContent(msg.content)
+      const fromContent = extractToolCallsFromAssistantContent(msg.content)
+      for (const call of fromContent) {
+        const existing = pendingTools.find((t) => t.toolCallId === call.toolCallId)
+        if (existing) {
+          existing.name = call.name
+          existing.args = call.args
+        } else {
+          pendingTools.push(call)
+        }
+      }
       const toolCalls = pendingTools.length > 0 ? [...pendingTools] : undefined
       pendingTools.length = 0
       if (!text.trim() && !thinking.trim() && !toolCalls) continue

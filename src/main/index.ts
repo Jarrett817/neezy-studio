@@ -2,6 +2,11 @@ import "./core-ipc"
 
 import type { BrowserWindow } from "electron"
 import { app, BrowserWindow as BrowserWindowCtor, dialog, ipcMain } from "electron"
+
+import {
+  applyPlaywrightBrowsersPath,
+  ensurePlaywrightChromium,
+} from "./playwright-browser-setup"
 import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import os from "node:os"
@@ -335,6 +340,7 @@ app.whenReady().then(async () => {
     await storagePaths.ensureStorageDirs(paths)
     const appConfig = loadAppConfig(app)
     applyAppConfig(app, appConfig)
+    applyPlaywrightBrowsersPath()
     void initBundledEmbedding().catch((error) => {
       log.warn(
         "[main] 内置 Embedding 预加载失败:",
@@ -349,6 +355,13 @@ app.whenReady().then(async () => {
     )
 
     await createWindow()
+
+    void ensurePlaywrightChromium().catch((error) => {
+      log.warn(
+        "[main] Chromium 后台下载失败（使用 browser_* 时会重试）:",
+        error instanceof Error ? error.message : error
+      )
+    })
 
     console.info("[main] 正在准备 Ollama…")
     void ensureOllama().catch((error) => {

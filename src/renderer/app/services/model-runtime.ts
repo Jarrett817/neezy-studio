@@ -49,20 +49,18 @@ export async function startChatModel(
   const settings = await getRuntimeSettings()
   const tier = item.tier as "light" | "balanced" | "performance"
   const withoutOllama = settings.chatModels.filter((m) => m.transport !== "ollama")
-  const chatModels = enforceChatModelRules([
-    ...withoutOllama,
-    createChatModelEntry({
-      label: item.title ?? item.fileName,
-      tier,
-      transport: "ollama",
-      model: ref,
-      enabled: true,
-    }),
-  ])
+  const ollamaEntry = createChatModelEntry({
+    label: item.title ?? item.fileName,
+    tier,
+    transport: "ollama",
+    model: ref,
+    enabled: true,
+  })
+  const chatModels = enforceChatModelRules([...withoutOllama, ollamaEntry])
   await saveRuntimeSettings({
     ...settings,
-    chatTier: item.tier,
     chatModels,
+    activeChatModelId: ollamaEntry.id,
   })
   return loadInfo
 }

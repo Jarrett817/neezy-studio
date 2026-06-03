@@ -25,6 +25,19 @@ export const TOOL_LABELS: Record<string, string> = {
   grep: "搜索内容",
   find: "查找文件",
   ls: "列出目录",
+  browser_navigate: "打开网页",
+  browser_read: "读取页面",
+  browser_click: "页面点击",
+  browser_type: "填写表单",
+  browser_scroll: "页面滚动",
+  browser_screenshot: "页面截图",
+  browser_evaluate: "页面脚本",
+  chrome_navigate: "Chrome 打开页面",
+  chrome_snapshot: "Chrome 页面结构",
+  chrome_click: "Chrome 点击",
+  chrome_tab: "Chrome 标签页",
+  chrome_screenshot: "Chrome 截图",
+  chrome_evaluate: "Chrome 脚本",
 }
 
 export function toolLabel(name: string) {
@@ -42,6 +55,9 @@ const TOOL_ARG_KEYS: Record<string, string[]> = {
   memory_search: ["query", "q"],
   memory_add: ["title"],
   memory_event: ["text", "content"],
+  browser_navigate: ["url"],
+  browser_click: ["selector", "text"],
+  browser_type: ["selector", "text", "value"],
 }
 
 function pickArgString(args: Record<string, unknown>, keys: string[]): string {

@@ -4,7 +4,6 @@ import { Cloud, Cpu, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Link } from "react-router"
 import { toast } from "sonner"
 
-import { MODEL_TIER_META, MODEL_TIERS } from "~/config/model-tiers"
 import {
   createChatModelEntry,
   entryDisplayName,
@@ -32,7 +31,6 @@ import {
 } from "~/services/electron-client"
 import { cn } from "~/lib/utils"
 import { loadModelRegistry, saveChatModels } from "~/services/model-registry"
-import type { ChatTierMode, ModelTier } from "~/services/settings"
 
 export function ModelListPanel() {
   const queryClient = useQueryClient()
@@ -60,26 +58,27 @@ export function ModelListPanel() {
   )
 
   const [models, setModels] = useState<ChatModelEntry[]>([])
-  const [tierMode, setTierMode] = useState<ChatTierMode>("auto")
-  const [fixedTier, setFixedTier] = useState<ModelTier>("balanced")
+  const [activeChatModelId, setActiveChatModelId] = useState("")
   const [ollamaHost, setOllamaHost] = useState("http://127.0.0.1:11434")
 
   useEffect(() => {
     if (!registry) return
     setModels(enforceChatModelRules(registry.chatModels))
-    setTierMode(registry.chatTierMode)
-    setFixedTier(registry.activeTier || "balanced")
+    setActiveChatModelId(registry.activeChatModelId)
     setOllamaHost(registry.ollamaHost)
   }, [registry])
 
   const ollamaEntry = findOllamaChatEntry(models)
   const apiModels = models.filter((m) => m.transport === "openai-compatible")
 
+  const setActiveModel = (id: string) => {
+    setActiveChatModelId(id)
+  }
+
   const saveMutation = useMutation({
     mutationFn: () =>
       saveChatModels(models, {
-        chatTierMode: tierMode,
-        activeTier: tierMode === "fixed" ? fixedTier : "",
+        activeChatModelId,
         ollamaHost: ollamaHost.trim(),
       }),
     onSuccess: (next) => {
@@ -114,18 +113,17 @@ export function ModelListPanel() {
   }
 
   const addApiModel = () => {
-    setModelsSafe([
-      ...models,
-      createChatModelEntry({
-        label: "",
-        tier: "balanced",
-        transport: "openai-compatible",
-        model: "",
-        preset: "custom",
-        baseUrl: "",
-        apiKey: "",
-      }),
-    ])
+    const entry = createChatModelEntry({
+      label: "",
+      tier: "balanced",
+      transport: "openai-compatible",
+      model: "",
+      preset: "custom",
+      baseUrl: "",
+      apiKey: "",
+    })
+    setModelsSafe([...models, entry])
+    if (!activeChatModelId) setActiveModel(entry.id)
   }
 
   const fetchModelsForEntry = async (entry: ChatModelEntry) => {
@@ -185,7 +183,7 @@ export function ModelListPanel() {
         拉取，仅用于填充 <strong className="text-foreground">Base URL</strong>；
         <strong className="text-foreground">模型名</strong>以你填写或「从接口拉取」为准（目录里的
         modelHints 只是示例，可能过时）。
-        本机 Ollama 同时只保留一个对话模型。各 API / Ollama 条目可单独启用或关闭，关闭后不参与档位路由。
+        本机 Ollama 同时只保留一个对话模型。在已启用的条目中指定一个「当前对话模型」即可，不再按档位自动切换。
       </p>
 
       <section className="space-y-3 rounded-2xl border border-border/60 bg-muted/15 p-4">
@@ -227,19 +225,25 @@ export function ModelListPanel() {
             pull。
           </p>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-1 sm:col-span-2">
+          <div className="space-y-2">
+            <div className="space-y-1">
               <Label className="text-xs">已安装模型</Label>
               <Select
                 value={ollamaEntry?.model || ""}
-                onValueChange={(name) =>
+                onValueChange={(name) => {
+                  const entry = ollamaEntry ?? createChatModelEntry({
+                    label: "",
+                    tier: "balanced",
+                    transport: "ollama",
+                    model: "",
+                  })
                   upsertOllama({
                     model: name,
                     label: installedOllama.find((m) => m.fileName === name)?.title ?? name,
-                    tier: ollamaEntry?.tier ?? "balanced",
                     enabled: true,
                   })
-                }
+                  if (!activeChatModelId) setActiveModel(entry.id)
+                }}
               >
                 <SelectTrigger className="h-9 rounded-xl font-mono text-xs">
                   <SelectValue placeholder="选择模型" />
@@ -255,26 +259,11 @@ export function ModelListPanel() {
               </Select>
             </div>
             {ollamaEntry?.model ? (
-              <div className="space-y-1">
-                <Label className="text-xs">档位</Label>
-                <Select
-                  value={ollamaEntry.tier}
-                  onValueChange={(v) =>
-                    upsertOllama({ model: ollamaEntry.model, tier: v as ModelTier })
-                  }
-                >
-                  <SelectTrigger className="h-9 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODEL_TIERS.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {MODEL_TIER_META[t].label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <ActiveModelButton
+                entryId={ollamaEntry.id}
+                activeId={activeChatModelId}
+                onSelect={setActiveModel}
+              />
             ) : null}
           </div>
         )}
@@ -298,47 +287,9 @@ export function ModelListPanel() {
           </Button>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label className="text-xs">选档</Label>
-            <Select
-              value={tierMode}
-              onValueChange={(v) => setTierMode(v as ChatTierMode)}
-            >
-              <SelectTrigger className="h-9 rounded-xl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">自动（按任务）</SelectItem>
-                <SelectItem value="fixed">固定档位</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {tierMode === "fixed" ? (
-            <div className="space-y-1">
-              <Label className="text-xs">固定档位</Label>
-              <Select
-                value={fixedTier}
-                onValueChange={(v) => setFixedTier(v as ModelTier)}
-              >
-                <SelectTrigger className="h-9 rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_TIERS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {MODEL_TIER_META[t].label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-        </div>
-
         {apiModels.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/70 py-6 text-center text-xs text-muted-foreground">
-            可添加多条（不同套餐 / 档位）
+            可添加多条 API 配置，并指定其中一条为当前对话模型
           </p>
         ) : (
           <ul className="space-y-3">
@@ -415,26 +366,6 @@ export function ModelListPanel() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">档位</Label>
-                      <Select
-                        value={entry.tier}
-                        onValueChange={(v) =>
-                          updateApi(entry.id, { tier: v as ModelTier })
-                        }
-                      >
-                        <SelectTrigger className="h-9 rounded-xl">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MODEL_TIERS.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {MODEL_TIER_META[t].label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="space-y-1 sm:col-span-2">
                       <Label className="text-xs">Base URL</Label>
                       <Input
@@ -489,6 +420,14 @@ export function ModelListPanel() {
                         ))}
                       </datalist>
                     </div>
+                    <div className="sm:col-span-2">
+                      <ActiveModelButton
+                        entryId={entry.id}
+                        activeId={activeChatModelId}
+                        disabled={!entry.enabled}
+                        onSelect={setActiveModel}
+                      />
+                    </div>
                   </div>
                 </li>
               )
@@ -516,5 +455,31 @@ export function ModelListPanel() {
         {saveMutation.isPending ? "保存中…" : "保存模型方案"}
       </Button>
     </div>
+  )
+}
+
+function ActiveModelButton({
+  entryId,
+  activeId,
+  disabled,
+  onSelect,
+}: {
+  entryId: string
+  activeId: string
+  disabled?: boolean
+  onSelect: (id: string) => void
+}) {
+  const isActive = activeId === entryId
+  return (
+    <Button
+      type="button"
+      variant={isActive ? "default" : "outline"}
+      size="sm"
+      className="h-8 rounded-xl text-xs"
+      disabled={disabled}
+      onClick={() => onSelect(entryId)}
+    >
+      {isActive ? "当前对话模型" : "设为对话模型"}
+    </Button>
   )
 }

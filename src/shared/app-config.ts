@@ -1,7 +1,5 @@
 /** 应用配置（仅 userData/app-config.json；聊天与画像在 dataRoot/memories.db） */
 
-export type AppConfigChatTierMode = "fixed" | "auto"
-
 export interface AppConfigChatModel {
   id: string
   label: string
@@ -21,8 +19,8 @@ export interface AppConfig {
   preferLowPower: boolean
   maxCpuPercent: number
   ollamaHost: string
-  chatTier: "" | "light" | "balanced" | "performance"
-  chatTierMode: AppConfigChatTierMode
+  /** 当前用于对话的 chatModels[].id */
+  activeChatModelId: string
   chatModels: AppConfigChatModel[]
 }
 
@@ -34,7 +32,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   preferLowPower: true,
   maxCpuPercent: 95,
   ollamaHost: "http://127.0.0.1:11434",
-  chatTier: "",
-  chatTierMode: "auto",
+  activeChatModelId: "",
   chatModels: [],
 }

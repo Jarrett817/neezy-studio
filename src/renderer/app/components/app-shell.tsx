@@ -34,17 +34,21 @@ const pageTitles: Record<string, string> = {
   "/settings": "设置",
 }
 
-function resolveHeaderTitle(pathname: string): string {
+function resolveHeaderTitle(pathname: string, search: string): string {
+  const base = pathname.split("?")[0]
+  if (base === "/chat") {
+    const playbook = new URLSearchParams(search).get("playbook")?.trim()
+    if (playbook) return "场景对话"
+  }
   if (pathname.startsWith("/create/")) return "场景任务"
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "高级工作室"
   if (pathname.startsWith("/knowledge")) return "知识"
-  const base = pathname.split("?")[0]
   return pageTitles[base] ?? "Neezy"
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { pathname } = useLocation()
-  const headerTitle = resolveHeaderTitle(pathname)
+  const { pathname, search } = useLocation()
+  const headerTitle = resolveHeaderTitle(pathname, search)
 
   React.useEffect(() => {
     void (async () => {

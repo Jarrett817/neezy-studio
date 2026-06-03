@@ -8,7 +8,10 @@ import { getElectronApi } from "./electron-client"
 import {
   clearActiveChatSessionId,
   getActiveChatSessionId,
+  getChatSessionPlaybookId,
   setActiveChatSessionId,
+  setChatSessionPlaybookId,
+  clearChatSessionPlaybookId,
 } from "./storage/app-kv"
 
 export type { SessionInfoDto }
@@ -127,7 +130,26 @@ export async function ensurePiChatSessionForSend(): Promise<SessionInfoDto> {
 export async function startNewPiChatSession(): Promise<SessionInfoDto> {
   const session = await createPiChatSessionRecord()
   await setActiveSessionId(session.id)
+  await clearChatSessionPlaybookId(session.id)
+  await pruneEmptyPiChatSessions(session.id)
   return session
+}
+
+export async function getChatSessionPlaybook(
+  sessionId: string
+): Promise<string | null> {
+  return getChatSessionPlaybookId(sessionId)
+}
+
+export async function bindChatSessionPlaybook(
+  sessionId: string,
+  playbookId: string
+): Promise<void> {
+  await setChatSessionPlaybookId(sessionId, playbookId)
+}
+
+export async function clearChatSessionPlaybook(sessionId: string): Promise<void> {
+  await clearChatSessionPlaybookId(sessionId)
 }
 
 export async function ensureActivePiChatSession(): Promise<SessionInfoDto> {

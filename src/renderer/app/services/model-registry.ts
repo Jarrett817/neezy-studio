@@ -1,18 +1,17 @@
 import {
   enforceChatModelRules,
+  isEntryConfigured,
   type ChatModelEntry,
 } from "~/config/chat-models"
 import {
   getRuntimeSettings,
+  listConfiguredChatModels,
   saveRuntimeSettings,
-  type ChatTierMode,
-  type ModelTier,
   type RuntimeSettings,
 } from "~/services/settings"
 
 export interface ModelRegistrySnapshot {
-  activeTier: ModelTier | ""
-  chatTierMode: ChatTierMode
+  activeChatModelId: string
   chatModels: ChatModelEntry[]
   ollamaHost: string
   apiModel: string
@@ -21,11 +20,23 @@ export interface ModelRegistrySnapshot {
   apiKey: string
 }
 
+function resolveActiveId(
+  models: ChatModelEntry[],
+  llmProvider: RuntimeSettings["llmProvider"],
+  preferredId: string
+): string {
+  const configured = models.filter(
+    (e) => e.enabled && e.model.trim() && isEntryConfigured(e, llmProvider)
+  )
+  const id = preferredId.trim()
+  if (id && configured.some((e) => e.id === id)) return id
+  return configured[0]?.id ?? ""
+}
+
 export async function loadModelRegistry(): Promise<ModelRegistrySnapshot> {
   const s = await getRuntimeSettings()
   return {
-    activeTier: s.chatTier,
-    chatTierMode: s.chatTierMode,
+    activeChatModelId: s.activeChatModelId,
     chatModels: s.chatModels,
     ollamaHost: s.ollamaHost,
     apiModel: s.llmProvider.model,
@@ -38,17 +49,21 @@ export async function loadModelRegistry(): Promise<ModelRegistrySnapshot> {
 export async function saveChatModels(
   models: ChatModelEntry[],
   patch?: {
-    chatTierMode?: ChatTierMode
-    activeTier?: ModelTier | ""
+    activeChatModelId?: string
     ollamaHost?: string
   }
 ): Promise<RuntimeSettings> {
   const prev = await getRuntimeSettings()
+  const chatModels = enforceChatModelRules(models)
+  const activeChatModelId = resolveActiveId(
+    chatModels,
+    prev.llmProvider,
+    patch?.activeChatModelId ?? prev.activeChatModelId
+  )
   return saveRuntimeSettings({
     ...prev,
-    chatModels: enforceChatModelRules(models),
-    chatTierMode: patch?.chatTierMode ?? prev.chatTierMode,
-    chatTier: patch?.activeTier !== undefined ? patch.activeTier : prev.chatTier,
+    chatModels,
+    activeChatModelId,
     ollamaHost: patch?.ollamaHost ?? prev.ollamaHost,
   })
 }
@@ -61,8 +76,11 @@ export async function applyModelRegistry(
   return saveRuntimeSettings({
     ...prev,
     chatModels: models,
-    chatTierMode: patch.chatTierMode ?? prev.chatTierMode,
-    chatTier: patch.activeTier !== undefined ? patch.activeTier : prev.chatTier,
+    activeChatModelId: resolveActiveId(
+      models,
+      prev.llmProvider,
+      patch.activeChatModelId ?? prev.activeChatModelId
+    ),
     ollamaHost: patch.ollamaHost ?? prev.ollamaHost,
     llmProvider: {
       ...prev.llmProvider,
@@ -72,4 +90,8 @@ export async function applyModelRegistry(
       model: patch.apiModel ?? prev.llmProvider.model,
     },
   })
+}
+
+export function pickDefaultActiveModelId(settings: RuntimeSettings): string {
+  return listConfiguredChatModels(settings)[0]?.id ?? ""
 }

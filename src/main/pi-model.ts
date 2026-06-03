@@ -69,7 +69,7 @@ function buildApiModel(
 /** 从统一模型条目解析 pi-ai Model（优先使用 pi-ai 内置目录） */
 export function resolvePiChatModel(userMessage?: string): Model<Api> {
   const settings = getSyncedRuntimeSettings()
-  const route = resolveActiveChatRoute(userMessage)
+  const route = resolveActiveChatRoute()
   const entry = route.entry
   const modelId = route.modelId || "qwen2.5:7b"
 

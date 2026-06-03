@@ -1,4 +1,4 @@
-import type { InputProfile, PlaybookSlots } from "./types"
+import type { InputProfile, Playbook, PlaybookSlots } from "./types"
 
 export type CompilePromptContext = {
   slots: PlaybookSlots
@@ -29,6 +29,19 @@ export function compilePrompt(
   return profile.promptTemplate.replace(SLOT_RE, (_, key: string) => {
     return vars[key] ?? ""
   })
+}
+
+export function buildSceneAgentSystemPrompt(
+  basePrompt: string,
+  playbook: Playbook
+): string {
+  return [
+    basePrompt,
+    "",
+    `【当前场景】${playbook.name}`,
+    playbook.description,
+    "用户右侧面板中的参数为任务主输入；聊天框可写补充说明。请产出可直接使用的结果，语气清晰自然。",
+  ].join("\n")
 }
 
 export function buildLlmMessages(

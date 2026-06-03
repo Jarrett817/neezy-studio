@@ -1,15 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { Cloud, Cpu, Link2, Unplug } from "lucide-react"
 
-import { MODEL_TIER_META } from "~/config/model-tiers"
 import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
 import { cn } from "~/lib/utils"
 import { getOllamaStatus } from "~/services/electron-client"
-import {
-  getRuntimeSettings,
-  resolveChatModelEntry,
-  resolveTierForChat,
-} from "~/services/settings"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 
 export function ConnectStatusHero() {
   const { data: settings } = useQuery({
@@ -35,15 +30,12 @@ export function ConnectStatusHero() {
     ) ?? false
   const ollamaReady = ollama?.connected === true
 
+  const activeEntry = settings ? resolveChatModelEntry(settings) : null
   const preview =
     settings && enabledCount > 0
-      ? (() => {
-          const tier = resolveTierForChat(settings, "预览")
-          const entry = resolveChatModelEntry(settings, "预览")
-          return entry
-            ? `${settings.chatTierMode === "auto" ? "自动选档" : "固定"} · ${MODEL_TIER_META[tier].label} · ${entryDisplayName(entry)}`
-            : "请为各档位至少配置一条完整模型"
-        })()
+      ? activeEntry
+        ? entryDisplayName(activeEntry)
+        : "请指定一条已启用的完整模型"
       : "尚未添加模型"
 
   return (

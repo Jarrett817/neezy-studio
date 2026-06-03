@@ -123,7 +123,7 @@ export default function WorkbenchRoute() {
                   to={
                     continueTarget.type === "chat"
                       ? `/chat?session=${encodeURIComponent(continueTarget.id)}`
-                      : `/create/${continueTarget.id}`
+                      : `/chat?playbook=${encodeURIComponent(continueTarget.id)}`
                   }
                 >
                   继续
@@ -159,7 +159,9 @@ export default function WorkbenchRoute() {
                   {playbook.description}
                 </p>
                 <Button asChild className="h-12 w-full rounded-2xl">
-                  <Link to={`/create/${playbook.id}`}>开始创作</Link>
+                  <Link to={`/chat?playbook=${encodeURIComponent(playbook.id)}`}>
+                    开始创作
+                  </Link>
                 </Button>
               </CardContent>
             </Card>

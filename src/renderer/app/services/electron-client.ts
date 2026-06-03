@@ -297,6 +297,13 @@ type ElectronApi = {
     limit?: number,
     memoryType?: string | null
   ) => Promise<{ mode: "libsql"; rows: Record<string, unknown>[] }>
+  getAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
+  saveAgentPermissionSettings: (input: {
+    policy: import("../../../shared/agent-permissions").AgentPermissionPolicy
+    extension: import("../../../shared/agent-permissions").PermissionExtensionConfig
+    sandbox: import("../../../shared/agent-permissions").SandboxPolicyConfig
+  }) => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
+  resetAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
 }
 
 declare global {

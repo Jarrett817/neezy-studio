@@ -19,7 +19,7 @@ export function getPiAuthStorage(): AuthStorage {
 export function syncPiAuthForRoute(userMessage?: string): void {
   const storage = getPiAuthStorage()
   const settings = getSyncedRuntimeSettings()
-  const route = resolveActiveChatRoute(userMessage)
+  const route = resolveActiveChatRoute()
   const model = resolvePiChatModel(userMessage)
 
   if (route.entry?.transport === "openai-compatible") {

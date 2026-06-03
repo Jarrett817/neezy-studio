@@ -15,15 +15,19 @@ import type { Plugin } from "vite"
  * - renderer：tailwind、svgr、~ 别名、holdUntilCrawlEnd（依赖多，防 ERR_ABORTED）
  */
 
-const BUNDLE_MAIN_DEPS = [
+/** 主进程直接 import、且需打进 bundle 的 ESM 依赖 */
+const BUNDLE_MAIN_DEPS = ["ollama"] as const
+
+/**
+ * 须保持为 node_modules 实体路径：pi-coding-agent 的 jiti loader 用
+ * import.meta.url 推算 @earendil-works/pi-coding-agent 别名；打进 out/main 后会指到仓库根 index.js。
+ */
+const MAIN_PI_EXTERNALS = [
   "@earendil-works/pi-coding-agent",
   "@earendil-works/pi-agent-core",
   "@earendil-works/pi-ai",
+  "@earendil-works/pi-tui",
   "typebox",
-  "ollama",
-  "ai",
-  "@ai-sdk/openai",
-  "@ai-sdk/provider",
 ] as const
 
 /** 含平台可选依赖，禁止打进 main bundle */
@@ -33,8 +37,18 @@ const MAIN_NATIVE_EXTERNALS = [
   "@libsql/client",
   /^@libsql\//,
   "libsql",
+  ...MAIN_PI_EXTERNALS,
   /** jiti 运行时从 node_modules 加载 extension 源码 */
   "pi-web-access",
+  "pi-textbrowser",
+  "pi-chrome",
+  "pi-permission-system",
+  "pi-sandbox",
+  "@carderne/sandbox-runtime",
+  "playwright",
+  "playwright-core",
+  /^playwright\//,
+  "tesseract.js",
 ] as const
 
 function mainProcessBundlePlugin(): Plugin {

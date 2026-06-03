@@ -11,6 +11,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent"
 import type { Api, Model } from "@earendil-works/pi-ai"
 import type { BrowserWindow } from "electron"
 import { app } from "electron"
+import fs from "node:fs"
 import path from "node:path"
 
 import { ensureOllamaReady } from "./ollama/lifecycle"
@@ -25,17 +26,25 @@ import {
 import { getPiAuthStorage, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
+import { applyPlaywrightBrowsersPath } from "./playwright-browser-setup"
 import { getNeezyCustomTools } from "./pi-tool-registry"
 import {
   getBundledPiExtensionPaths,
   getBundledPiSkillPaths,
 } from "./pi-bundled-extensions"
+import { ensurePiAgentEnvironment, getPiAgentDir } from "./pi-agent-env"
+import {
+  clearPermissionPromptsForSession,
+  createElectronPermissionUi,
+} from "./pi-permission-ui"
 import { resolveStoragePaths } from "./storage-paths"
 import { log } from "./logger"
 
 export interface CreateDiskAgentOptions {
   diskSessionId?: string
   createNew?: boolean
+  /** 非空时仅加载对应 skills/*.md，不扫描整个 skills 目录 */
+  sceneSkillIds?: string[]
 }
 
 interface IpcAgentSession {
@@ -43,6 +52,7 @@ interface IpcAgentSession {
   session: AgentSession
   unsubscribe: () => void
   window: BrowserWindow
+  sceneSkillIds?: string[]
 }
 
 const ipcSessions = new Map<string, IpcAgentSession>()
@@ -50,8 +60,15 @@ const ipcSessions = new Map<string, IpcAgentSession>()
 /** 同一陈旧 id 多次 agent:create 时复用已恢复的磁盘会话，避免疯狂新建 */
 const staleDiskSessionRecovery = new Map<string, string>()
 
+/** 每个磁盘会话在本进程内仅尝试一次 /chrome authorize 引导 */
+const chromeAuthorizePrompted = new Set<string>()
+
 let resourceLoaderCache: { key: string; loader: ResourceLoader } | null = null
 let bundledExtensionsLogged = false
+
+export function invalidatePiResourceLoaderCache(): void {
+  resourceLoaderCache = null
+}
 
 let modelRegistry: ModelRegistry | null = null
 
@@ -64,7 +81,7 @@ function getModelRegistry(): ModelRegistry {
 
 function getPiDirs() {
   const paths = resolveStoragePaths(app)
-  return { cwd: paths.dataRoot, agentDir: path.join(app.getPath("userData"), "pi-agent") }
+  return { cwd: paths.dataRoot, agentDir: ensurePiAgentEnvironment(app) }
 }
 
 function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
@@ -77,38 +94,105 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   return sm
 }
 
+function resolveAdditionalSkillPaths(
+  cwd: string,
+  sceneSkillIds?: string[]
+): string[] {
+  const skillsDir = path.join(cwd, "skills")
+  if (sceneSkillIds?.length) {
+    const files = sceneSkillIds
+      .map((id) => path.join(skillsDir, `${id}.md`))
+      .filter((file) => fs.existsSync(file))
+    if (files.length > 0) return files
+    log.warn("[pi-agent] 场景 Skill 文件未找到，回退全量 skills 目录:", sceneSkillIds)
+  }
+  return [skillsDir, ...getBundledPiSkillPaths()]
+}
+
 async function getResourceLoader(
   cwd: string,
   agentDir: string,
-  settingsManager: SettingsManager
+  settingsManager: SettingsManager,
+  sceneSkillIds?: string[]
 ): Promise<ResourceLoader> {
-  const key = `${cwd}\0${agentDir}`
+  const sceneKey = sceneSkillIds?.length ? sceneSkillIds.slice().sort().join(",") : ""
+  const key = `${cwd}\0${agentDir}\0${sceneKey}`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader
   }
 
-  const skillsDir = path.join(cwd, "skills")
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
     additionalExtensionPaths: getBundledPiExtensionPaths(),
-    additionalSkillPaths: [skillsDir, ...getBundledPiSkillPaths()],
+    additionalSkillPaths: resolveAdditionalSkillPaths(cwd, sceneSkillIds),
   })
   await loader.reload()
   const ext = loader.getExtensions()
-  if (ext.errors.length > 0) {
-    log.warn("[pi-agent] bundled extension errors:", ext.errors)
+  for (const err of ext.errors) {
+    log.warn("[pi-agent] extension load failed:", err.path, err.error)
   }
-  if (!bundledExtensionsLogged && ext.extensions.length > 0) {
-    bundledExtensionsLogged = true
-    log.info(
-      "[pi-agent] bundled extensions:",
-      ext.extensions.map((e) => e.path).join(", ")
+  const loaded = ext.extensions.map((e) => e.path)
+  const hasPermissionSystem = loaded.some((p) => p.includes("pi-permission-system"))
+  const hasWebAccess = loaded.some((p) => p.includes("pi-web-access"))
+  const hasTextBrowser = loaded.some((p) => p.includes("pi-textbrowser"))
+  const hasPiChrome = loaded.some((p) => p.includes("pi-chrome"))
+  if (!hasPermissionSystem) {
+    log.error(
+      "[pi-agent] pi-permission-system 未加载，文件读写/bash 不会出现确认框。请查看上方 extension load failed 日志。"
     )
+  }
+  if (!hasWebAccess) {
+    log.error(
+      "[pi-agent] pi-web-access 未加载，web_search / fetch_content 等不可用。请查看上方 extension load failed 日志。"
+    )
+  }
+  if (!hasTextBrowser) {
+    log.error(
+      "[pi-agent] pi-textbrowser 未加载，browser_navigate 等不可用。请查看上方 extension load failed 日志。"
+    )
+  }
+  if (!hasPiChrome) {
+    log.error(
+      "[pi-agent] pi-chrome 未加载，chrome_* 不可用。请查看上方 extension load failed 日志。"
+    )
+  }
+  if (!bundledExtensionsLogged && loaded.length > 0) {
+    bundledExtensionsLogged = true
+    log.info("[pi-agent] bundled extensions:", loaded.join(", "))
   }
   resourceLoaderCache = { key, loader }
   return loader
+}
+
+async function bindAgentSessionUi(
+  session: AgentSession,
+  window: BrowserWindow,
+  diskSessionId: string
+): Promise<void> {
+  await session.bindExtensions({
+    uiContext: createElectronPermissionUi(window, diskSessionId),
+  })
+  // 勿传 createAgentSession({ tools })：该字段是 allowlist，会屏蔽扩展工具。
+  // 不传时 SDK 仅默认激活 read/bash/edit/write；此处把 registry 内工具全部设为 active。
+  session.setActiveToolsByName(session.getAllTools().map((t) => t.name))
+}
+
+async function maybePromptChromeAuthorize(
+  session: AgentSession,
+  diskSessionId: string
+): Promise<void> {
+  if (chromeAuthorizePrompted.has(diskSessionId)) return
+  chromeAuthorizePrompted.add(diskSessionId)
+  try {
+    await session.prompt("/chrome authorize indefinite")
+  } catch (error) {
+    log.warn(
+      "[pi-agent] Chrome 授权引导未完成:",
+      error instanceof Error ? error.message : error
+    )
+  }
 }
 
 function syncSessionChatRoute(session: AgentSession, userMessage?: string): void {
@@ -142,16 +226,20 @@ async function resolveSessionManager(
       staleDiskSessionRecovery.delete(options.diskSessionId)
     }
 
-    log.warn("[pi-agent] 磁盘会话缺失，已恢复新建:", options.diskSessionId)
     const sm = createPiSessionManager(app)
     const newId = sm.getSessionId()
     staleDiskSessionRecovery.set(options.diskSessionId, newId)
+    log.warn("[pi-agent] 磁盘会话缺失，已恢复新建:", options.diskSessionId, "→", newId)
     return { sm, diskSessionId: newId }
   }
   throw new Error("缺少 diskSessionId，请先创建或选择 Pi 磁盘会话")
 }
 
-async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
+async function createPiSession(
+  sessionManager: SessionManager,
+  sceneSkillIds?: string[]
+): Promise<AgentSession> {
+  applyPlaywrightBrowsersPath()
   const { cwd, agentDir } = getPiDirs()
   const model = resolvePiChatModel()
   syncPiAuthForRoute()
@@ -165,9 +253,10 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
     model: model as Model<Api>,
     thinkingLevel: resolveAgentThinkingLevel(model),
     settingsManager,
+    // 勿传 tools 白名单：SDK 规定传入后仅启用列出的工具，会屏蔽 pi-web-access 等扩展工具
     customTools: getNeezyCustomTools(),
     sessionManager,
-    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
+    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager, sceneSkillIds),
   })
 
   session.agent.toolExecution = "sequential"
@@ -178,9 +267,14 @@ export async function createAgentSession(
   window: BrowserWindow,
   options: CreateDiskAgentOptions = {}
 ): Promise<string> {
+  if (options.sceneSkillIds?.length) {
+    invalidatePiResourceLoaderCache()
+  }
   const { sm, diskSessionId } = await resolveSessionManager(options)
   const existing = ipcSessions.get(diskSessionId)
   if (existing && !existing.window.isDestroyed()) {
+    existing.window = window
+    await bindAgentSessionUi(existing.session, window, diskSessionId)
     return diskSessionId
   }
   if (existing) {
@@ -188,14 +282,25 @@ export async function createAgentSession(
     ipcSessions.delete(diskSessionId)
   }
 
-  const session = await createPiSession(sm)
+  const session = await createPiSession(sm, options.sceneSkillIds)
   syncSessionChatRoute(session)
+  await bindAgentSessionUi(session, window, diskSessionId)
+  void maybePromptChromeAuthorize(session, diskSessionId)
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     window.webContents.send("agent:event", { sessionId: diskSessionId, event })
   })
 
-  ipcSessions.set(diskSessionId, { diskSessionId, session, unsubscribe, window })
+  ipcSessions.set(diskSessionId, {
+    diskSessionId,
+    session,
+    unsubscribe,
+    window,
+    sceneSkillIds: options.sceneSkillIds,
+  })
+  if (options.sceneSkillIds?.length) {
+    log.info("[pi-agent] 场景 Skill:", options.sceneSkillIds.join(", "))
+  }
   return diskSessionId
 }
 
@@ -215,12 +320,12 @@ export function configureAgentSession(
 
 async function ensureAgentChatReady(userMessage?: string): Promise<void> {
   const settings = getSyncedRuntimeSettings()
-  const route = resolveActiveChatRoute(userMessage)
+  const route = resolveActiveChatRoute()
   if (!route.entry?.model.trim()) {
     const configured = normalizeMainChatModels(settings).length
     if (configured > 0) {
       throw new Error(
-        "当前消息档位下没有可用模型。请在「模型与连接」为各档位添加模型，或改为固定档位。"
+        "未配置对话模型。请在「模型与连接」添加并指定当前使用的模型。"
       )
     }
     throw new Error("请先在「模型与连接」添加至少一个已启用的对话模型")
@@ -266,6 +371,7 @@ export function abortAgentSession(diskSessionId: string): void {
 export async function destroyAgentSession(diskSessionId: string): Promise<void> {
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) return
+  clearPermissionPromptsForSession(diskSessionId)
   entry.session.agent.abort()
   entry.unsubscribe()
   ipcSessions.delete(diskSessionId)
@@ -278,3 +384,6 @@ export function agentSessionExists(diskSessionId: string): boolean {
 export function getPiSessionsDirectory(): string {
   return getPiSessionsDir(app)
 }
+
+export { getPiAgentDir } from "./pi-agent-env"
+export { resolvePermissionPrompt } from "./pi-permission-ui"

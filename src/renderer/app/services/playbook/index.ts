@@ -2,7 +2,11 @@ export {
   BUILTIN_PLAYBOOKS,
   BUILTIN_INPUT_PROFILES,
 } from "./builtin-manifest"
-export { compilePrompt, buildLlmMessages } from "./compile-prompt"
+export {
+  compilePrompt,
+  buildLlmMessages,
+  buildSceneAgentSystemPrompt,
+} from "./compile-prompt"
 export {
   normalizeSlots,
   buildMemoryQuery,

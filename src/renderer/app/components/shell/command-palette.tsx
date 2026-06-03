@@ -90,7 +90,9 @@ export function CommandPalette() {
                   <Command.Item
                     key={pb.id}
                     value={`${pb.name} ${pb.description ?? ""} ${pb.id} 场景 playbook`}
-                    onSelect={() => go(`/create/${pb.id}`)}
+                    onSelect={() =>
+                      go(`/chat?playbook=${encodeURIComponent(pb.id)}`)
+                    }
                     className={cn(
                       "flex cursor-pointer flex-col items-start gap-0.5 rounded-xl px-3 py-2.5 text-sm",
                       "aria-selected:bg-primary/10 aria-selected:text-primary"

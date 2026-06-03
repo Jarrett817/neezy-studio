@@ -12,8 +12,15 @@ import {
   createAgentSession,
   destroyAgentSession,
   getPiSessionsDirectory,
+  invalidatePiResourceLoaderCache,
   promptAgent,
+  resolvePermissionPrompt,
 } from "./pi-agent"
+import {
+  takePendingPermissionGrant,
+  type PermissionDialogAction,
+  type PermissionRespondPayload,
+} from "./pi-permission-ui"
 import {
   createPiChatSession,
   deletePiChatSession,
@@ -22,18 +29,31 @@ import {
   loadPiChatMessages,
   pruneEmptyPiChatSessions,
 } from "./pi-disk-sessions"
+import {
+  applyPermissionGrantToGlobalPolicy,
+  loadAgentPermissionSettings,
+  resetAgentPermissionSettings,
+  saveAgentPermissionSettings,
+  type SaveAgentPermissionInput,
+} from "./agent-permissions-store"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
 import { ingestDocumentFile, INGEST_FILE_EXTENSIONS } from "./knowledge/document-ingest"
 import { log } from "./logger"
 import { getOllamaStatus, testOllamaModel } from "./ollama/ops"
+import {
+  ensurePlaywrightChromium,
+  getPlaywrightBrowserStatus,
+} from "./playwright-browser-setup"
 import type { IpcContext, ModelKind } from "./types"
 
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
 export function registerIpcHandlers(ctx: IpcContext): void {
   const { ipcMain, app, dialog, storagePaths } = ctx
 
+  ipcMain.handle("app:get-playwright-browser-status", () => getPlaywrightBrowserStatus())
+  ipcMain.handle("app:ensure-playwright-browser", () => ensurePlaywrightChromium())
   ipcMain.handle("app:test-llm-connection", () => testPiConnection())
   ipcMain.handle("app:get-ollama-status", () => getOllamaStatus())
   ipcMain.handle("app:test-ollama-model", (_event, payload: unknown) => {
@@ -363,7 +383,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     "agent:create",
     async (
       event,
-      options?: { diskSessionId?: string; createNew?: boolean }
+      options?: {
+        diskSessionId?: string
+        createNew?: boolean
+        sceneSkillIds?: string[]
+      }
     ) => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (!window) throw new Error("no window")
@@ -402,5 +426,60 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("agent:abort", (_event, { sessionId }: { sessionId: string }) => {
     abortAgentSession(sessionId)
     return { ok: true }
+  })
+
+  ipcMain.handle(
+    "agent:permission-respond",
+    (_event, payload: PermissionRespondPayload) => {
+      const sessionId = payload.sessionId?.trim()
+      const requestId = payload.requestId?.trim()
+      if (!sessionId || !requestId) {
+        return { ok: false }
+      }
+
+      const PI_YES = "Yes"
+      const PI_NO = "No"
+      const PI_DENY_REASON = "No, provide reason"
+
+      let value = payload.value
+      const action = payload.action as PermissionDialogAction | undefined
+
+      if (action === "allow-once") {
+        value = PI_YES
+      } else if (action === "allow-always") {
+        const grantTarget = takePendingPermissionGrant(sessionId, requestId)
+        if (grantTarget) {
+          applyPermissionGrantToGlobalPolicy(app, grantTarget)
+          invalidatePiResourceLoaderCache()
+        }
+        value = PI_YES
+      } else if (action === "deny") {
+        value = PI_NO
+      } else if (action === "deny-reason") {
+        value = PI_DENY_REASON
+      }
+
+      const ok = resolvePermissionPrompt(sessionId, requestId, value)
+      return { ok }
+    }
+  )
+
+  ipcMain.handle("app:get-agent-permission-settings", () =>
+    loadAgentPermissionSettings(app)
+  )
+
+  ipcMain.handle(
+    "app:save-agent-permission-settings",
+    (_event, input: SaveAgentPermissionInput) => {
+      const saved = saveAgentPermissionSettings(app, input)
+      invalidatePiResourceLoaderCache()
+      return saved
+    }
+  )
+
+  ipcMain.handle("app:reset-agent-permission-settings", () => {
+    const saved = resetAgentPermissionSettings(app)
+    invalidatePiResourceLoaderCache()
+    return saved
   })
 }

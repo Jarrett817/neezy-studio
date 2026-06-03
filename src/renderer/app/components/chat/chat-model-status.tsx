@@ -5,12 +5,7 @@ import { Link } from "react-router"
 import { entryDisplayName } from "~/config/chat-models"
 import { useActiveModels } from "~/hooks/use-active-models"
 import { cn } from "~/lib/utils"
-import { MODEL_TIER_META } from "~/config/model-tiers"
-import {
-  getRuntimeSettings,
-  resolveChatModelEntry,
-  resolveTierForChat,
-} from "~/services/settings"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 
 export function ChatModelStatus({ className }: { className?: string }) {
   const { data: settings } = useQuery({
@@ -20,8 +15,6 @@ export function ChatModelStatus({ className }: { className?: string }) {
   })
   const { chat } = useActiveModels()
   const entry = settings ? resolveChatModelEntry(settings) : null
-  const tier = settings ? resolveTierForChat(settings) : null
-  const tierLabel = tier ? MODEL_TIER_META[tier].label : null
   const isApi = entry?.transport === "openai-compatible"
 
   if (isApi && entry) {
@@ -33,8 +26,7 @@ export function ChatModelStatus({ className }: { className?: string }) {
         )}
       >
         <span className="truncate">
-          对话 · {tierLabel ? `${tierLabel} · ` : null}
-          <span className="font-medium text-foreground">{entryDisplayName(entry)}</span>
+          对话 · <span className="font-medium text-foreground">{entryDisplayName(entry)}</span>
         </span>
         <Link
           to="/connect"

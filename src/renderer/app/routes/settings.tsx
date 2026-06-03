@@ -17,6 +17,7 @@ import { type RuntimeSettings } from "~/services/settings"
 import { isModelLoaded, getCurrentModel } from "~/services/llm"
 import { resetDbCache } from "~/services/db"
 import { resetMigrateDbCache } from "~/services/db/migrate"
+import { AgentPermissionsSection } from "~/components/settings/agent-permissions-section"
 import {
   getStoragePaths,
   pickStorageDirectory,
@@ -68,6 +69,7 @@ export default function SettingsRoute() {
   return (
     <div className="space-y-8 pt-4">
       <StoragePathsSection />
+      <AgentPermissionsSection />
       <RuntimeSection
         metrics={metrics}
         modelReady={modelLoaded}

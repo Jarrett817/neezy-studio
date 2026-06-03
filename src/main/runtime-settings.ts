@@ -13,16 +13,13 @@ export interface LlmProviderConfig {
 
 export type ModelTier = "light" | "balanced" | "performance"
 
-export type ChatTierMode = "fixed" | "auto"
-
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
-  chatTier: string
+  activeChatModelId: string
   ollamaHost: string
   llmProvider: LlmProviderConfig
   chatModels?: ChatModelEntry[]
-  chatTierMode?: ChatTierMode
 }
 
 const DEFAULT_PROVIDER: LlmProviderConfig = {
@@ -36,10 +33,9 @@ const DEFAULT_PROVIDER: LlmProviderConfig = {
 const DEFAULT: RuntimeSettings = {
   preferLowPower: true,
   maxCpuPercent: 95,
-  chatTier: "",
+  activeChatModelId: "",
   ollamaHost: "http://127.0.0.1:11434",
   llmProvider: DEFAULT_PROVIDER,
-  chatTierMode: "auto",
 }
 
 let cache: RuntimeSettings = { ...DEFAULT, llmProvider: { ...DEFAULT_PROVIDER } }
@@ -50,10 +46,7 @@ export function syncRuntimeSettings(input: RuntimeSettings): void {
     ...DEFAULT,
     ...input,
     chatModels: input.chatModels,
-    chatTierMode:
-      input.chatTierMode === "fixed" || input.chatTierMode === "auto"
-        ? input.chatTierMode
-        : cache.chatTierMode ?? "auto",
+    activeChatModelId: input.activeChatModelId?.trim() ?? "",
     llmProvider: {
       kind: "openai-compatible",
       preset: provider.preset || DEFAULT_PROVIDER.preset,

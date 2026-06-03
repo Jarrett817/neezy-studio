@@ -35,7 +35,7 @@ function resolvePiReasoningOption(
 export const OLLAMA_PI_API_KEY = "ollama"
 
 export function resolveRouteApiKey(userMessage?: string): string | undefined {
-  const route = resolveActiveChatRoute(userMessage)
+  const route = resolveActiveChatRoute()
   const entry = route.entry
   const provider = getSyncedRuntimeSettings().llmProvider
   if (entry?.transport === "openai-compatible") {
@@ -112,11 +112,11 @@ function buildContext(
 }
 
 async function ensureChatReady(userMessage?: string): Promise<void> {
-  const route = resolveActiveChatRoute(userMessage)
+  const route = resolveActiveChatRoute()
   if (!route.modelId) {
     throw new Error("请先在「模型与连接」添加至少一个已启用的对话模型")
   }
-  if (resolvedChatUsesApi(userMessage)) {
+  if (resolvedChatUsesApi()) {
     activeModelId = route.modelId
     return
   }

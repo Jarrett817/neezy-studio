@@ -4,6 +4,11 @@ import { ensureDbReady, getDb, schema } from "../db"
 
 const KV_ACTIVE_CHAT_SESSION_ID = "active_chat_session_id"
 const KV_USER_PORTRAIT_V1 = "user_portrait_v1"
+const KV_CHAT_SCENE_PREFIX = "chat_scene_playbook:"
+
+function chatSceneKey(sessionId: string): string {
+  return `${KV_CHAT_SCENE_PREFIX}${sessionId}`
+}
 
 export type StoredUserPortrait = {
   summary: string
@@ -51,6 +56,31 @@ export async function setActiveChatSessionId(sessionId: string): Promise<void> {
 
 export async function clearActiveChatSessionId(): Promise<void> {
   await setKv(KV_ACTIVE_CHAT_SESSION_ID, "")
+}
+
+export async function getChatSessionPlaybookId(
+  sessionId: string
+): Promise<string | null> {
+  const id = sessionId.trim()
+  if (!id) return null
+  const raw = (await getKv(chatSceneKey(id)))?.trim()
+  return raw || null
+}
+
+export async function setChatSessionPlaybookId(
+  sessionId: string,
+  playbookId: string
+): Promise<void> {
+  const sid = sessionId.trim()
+  const pid = playbookId.trim()
+  if (!sid || !pid) return
+  await setKv(chatSceneKey(sid), pid)
+}
+
+export async function clearChatSessionPlaybookId(sessionId: string): Promise<void> {
+  const sid = sessionId.trim()
+  if (!sid) return
+  await setKv(chatSceneKey(sid), "")
 }
 
 export async function getUserPortraitFromDb(): Promise<StoredUserPortrait | null> {

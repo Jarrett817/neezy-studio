@@ -29,10 +29,7 @@ import {
   promptAgent,
   subscribeAgentEvents,
 } from "~/services/pi-agent-client"
-import {
-  listPiChatSessions,
-  loadPiChatMessages,
-} from "~/services/pi-chat-sessions"
+import { loadPiChatMessages } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
 
 const AGENT_PROMPT_TIMEOUT_MS = 120_000
@@ -41,9 +38,15 @@ type UsePiAgentChatOptions = {
   systemPrompt: string
   diskSessionId: string | null
   enabled: boolean
+  /** 场景对话：仅加载指定 Skill 文件 */
+  sceneSkillIds?: string[]
   onDiskMessagesReload?: (messages: ReturnType<typeof useAppStore.getState>["conversationHistory"]) => void
   /** 磁盘会话 id 失效后主进程新建会话时回写 UI */
   onDiskSessionIdRebound?: (newId: string) => void
+}
+
+function sceneSkillKey(ids?: string[]): string {
+  return ids?.length ? ids.slice().sort().join(",") : ""
 }
 
 function extractAgentFailure(
@@ -60,6 +63,7 @@ export function usePiAgentChat({
   systemPrompt,
   diskSessionId,
   enabled,
+  sceneSkillIds,
   onDiskMessagesReload,
   onDiskSessionIdRebound,
 }: UsePiAgentChatOptions) {
@@ -93,11 +97,17 @@ export function usePiAgentChat({
   const systemPromptRef = useRef(systemPrompt)
   const onDiskMessagesReloadRef = useRef(onDiskMessagesReload)
   const onDiskSessionIdReboundRef = useRef(onDiskSessionIdRebound)
+  const sceneSkillIdsRef = useRef(sceneSkillIds)
+  const loadedSceneKeyRef = useRef("")
 
-  diskSessionIdRef.current = diskSessionId
   systemPromptRef.current = systemPrompt
+  sceneSkillIdsRef.current = sceneSkillIds
   onDiskMessagesReloadRef.current = onDiskMessagesReload
   onDiskSessionIdReboundRef.current = onDiskSessionIdRebound
+
+  useEffect(() => {
+    diskSessionIdRef.current = diskSessionId
+  }, [diskSessionId])
 
   const withSessionLock = useCallback(
     async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -118,23 +128,12 @@ export function usePiAgentChat({
   const openAgentForDisk = useCallback(
     async (diskId: string) => {
       const running = agentSessionId.current
-      const sessions = await listPiChatSessions()
-      const diskOnFile = sessions.some((s) => s.id === diskId)
-      const runningOnFile = running
-        ? sessions.some((s) => s.id === running)
-        : false
+      const nextSceneKey = sceneSkillKey(sceneSkillIdsRef.current)
 
-      // 父组件仍是陈旧 kv id，但 Agent 已绑定到恢复后的磁盘会话：不要销毁再建
-      if (running && runningOnFile && !diskOnFile) {
-        diskSessionIdRef.current = running
-        onDiskSessionIdReboundRef.current?.(running)
-        await applySystemPrompt(running)
-        return running
-      }
-
-      if (running && running !== diskId) {
+      if (running && (running !== diskId || loadedSceneKeyRef.current !== nextSceneKey)) {
         await destroyAgentSession(running)
         agentSessionId.current = null
+        loadedSceneKeyRef.current = ""
       }
 
       if (agentSessionId.current === diskId) {
@@ -142,10 +141,13 @@ export function usePiAgentChat({
         return diskId
       }
 
-      const sid = await createAgentSession({ diskSessionId: diskId })
+      const sid = await createAgentSession({
+        diskSessionId: diskId,
+        sceneSkillIds: sceneSkillIdsRef.current,
+      })
       agentSessionId.current = sid
-      if (sid !== diskId) {
-        diskSessionIdRef.current = sid
+      loadedSceneKeyRef.current = nextSceneKey
+      if (sid !== diskId && diskSessionIdRef.current === diskId) {
         onDiskSessionIdReboundRef.current?.(sid)
       }
       await applySystemPrompt(sid)
@@ -270,7 +272,7 @@ export function usePiAgentChat({
         if (failure) agentErrorRef.current = failure
         agentEndResolve.current?.()
         agentEndResolve.current = null
-        const reloadId = diskSessionIdRef.current
+        const reloadId = agentSessionId.current ?? diskSessionIdRef.current
         agentStepsRef.current = markAllDone(agentStepsRef.current)
         pushWorkflow()
         pendingToolArgsRef.current.clear()
@@ -341,7 +343,13 @@ export function usePiAgentChat({
 
     void withSessionLock(async () => {
       try {
-        await openAgentForDisk(diskSessionId)
+        const sceneKey = sceneSkillKey(sceneSkillIdsRef.current)
+        if (
+          agentSessionId.current !== diskSessionId ||
+          loadedSceneKeyRef.current !== sceneKey
+        ) {
+          await openAgentForDisk(diskSessionId)
+        }
         if (cancelled) {
           const sid = agentSessionId.current
           if (sid) await destroyAgentSession(sid)
@@ -356,15 +364,22 @@ export function usePiAgentChat({
       cancelled = true
       unsubscribeEvents()
     }
-  }, [enabled, diskSessionId, openAgentForDisk, withSessionLock])
+  }, [
+    enabled,
+    diskSessionId,
+    sceneSkillIds,
+    openAgentForDisk,
+    withSessionLock,
+  ])
 
   useEffect(() => {
-    const sid = agentSessionId.current
-    if (!sid || !enabled) return
-    void applySystemPrompt(sid).catch((err) =>
-      console.warn("[pi-agent] system prompt sync:", err)
-    )
-  }, [systemPrompt, enabled, applySystemPrompt])
+    if (!enabled) return
+    void withSessionLock(async () => {
+      const sid = agentSessionId.current
+      if (!sid) return
+      await applySystemPrompt(sid)
+    }).catch((err) => console.warn("[pi-agent] system prompt sync:", err))
+  }, [systemPrompt, enabled, applySystemPrompt, withSessionLock])
 
   useEffect(() => {
     return () => {
@@ -388,7 +403,7 @@ export function usePiAgentChat({
       return withSessionLock(async () => {
         const diskId = diskSessionIdRef.current
         if (!diskId) throw new Error("请先选择或创建对话")
-        if (!agentSessionId.current) {
+        if (agentSessionId.current !== diskId) {
           await openAgentForDisk(diskId)
         }
         const agentId = agentSessionId.current
@@ -484,13 +499,20 @@ export function usePiAgentChat({
   const resetAgent = useCallback(
     async (_history = [], overrideDiskId?: string) => {
       const diskId = overrideDiskId ?? diskSessionIdRef.current
-      if (!diskId) {
+      await withSessionLock(async () => {
+        if (!diskId) {
+          const prev = agentSessionId.current
+          if (prev) await destroyAgentSession(prev)
+          agentSessionId.current = null
+          return
+        }
         const prev = agentSessionId.current
-        if (prev) await destroyAgentSession(prev)
-        agentSessionId.current = null
-        return
-      }
-      await withSessionLock(() => openAgentForDisk(diskId))
+        if (prev && prev !== diskId) {
+          await destroyAgentSession(prev)
+          agentSessionId.current = null
+        }
+        await openAgentForDisk(diskId)
+      })
     },
     [openAgentForDisk, withSessionLock]
   )

@@ -54,7 +54,9 @@ export default function CreateRoute() {
                   {playbook.description}
                 </p>
                 <Button asChild className="h-12 w-full rounded-2xl text-base">
-                  <Link to={`/create/${playbook.id}`}>开始创作</Link>
+                  <Link to={`/chat?playbook=${encodeURIComponent(playbook.id)}`}>
+                    开始创作
+                  </Link>
                 </Button>
               </CardContent>
             </Card>

@@ -1,24 +1,13 @@
 import { Loader2 } from "lucide-react"
 
-import { ModelThinkingBlock } from "~/components/chat/model-thinking-block"
-import { MarkdownContent } from "~/components/markdown-content"
+import { AgentActivityTimeline } from "~/components/chat/agent-activity-timeline"
 import type { ModelTransport } from "~/config/chat-models"
-import { cn } from "~/lib/utils"
 import type { ChatMessage } from "~/stores/app-store"
-
-function StreamCursor() {
-  return (
-    <span
-      className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[2px] animate-pulse rounded-full bg-foreground/70"
-      aria-hidden
-    />
-  )
-}
 
 export function ChatMessageBubble({
   message,
   modelName,
-  transport,
+  transport: _transport,
 }: {
   message: ChatMessage
   modelName: string
@@ -26,16 +15,6 @@ export function ChatMessageBubble({
 }) {
   const isUser = message.role === "user"
   const isError = message.role === "error" || Boolean(message.failed)
-  const hasAnswer = Boolean(message.content?.trim())
-  const hasThinkingText = Boolean(message.thinking?.trim())
-  const hasActivityRecord =
-    (message.agentSteps?.length ?? 0) > 0 ||
-    (message.toolCalls?.length ?? 0) > 0 ||
-    hasThinkingText ||
-    Boolean(message.usageSummary?.trim())
-  const showActivity =
-    message.role === "assistant" &&
-    (hasActivityRecord || Boolean(message.isStreaming))
 
   if (isUser) {
     return (
@@ -62,43 +41,36 @@ export function ChatMessageBubble({
     )
   }
 
+  const hasActivity =
+    Boolean(message.isStreaming) ||
+    Boolean(message.content?.trim()) ||
+    Boolean(message.thinking?.trim()) ||
+    (message.agentSteps?.length ?? 0) > 0 ||
+    (message.toolCalls?.length ?? 0) > 0 ||
+    Boolean(message.usageSummary?.trim())
+
   return (
     <article className="group/msg py-4 first:pt-2">
-      <div className="mb-1 flex items-center gap-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         <span className="size-1.5 rounded-full bg-primary/60" aria-hidden />
         <span>{modelName}</span>
       </div>
 
-      {showActivity ? (
-        <ModelThinkingBlock
-          modelName={modelName}
-          thinking={message.thinking ?? ""}
-          isStreaming={Boolean(message.isStreaming)}
-          hasAnswerContent={hasAnswer}
-          toolCalls={message.toolCalls}
+      {hasActivity ? (
+        <AgentActivityTimeline
           agentSteps={message.agentSteps}
+          toolCalls={message.toolCalls}
+          thinking={message.thinking}
+          content={message.content}
           usageSummary={message.usageSummary}
-          transport={transport}
+          isStreaming={message.isStreaming}
         />
-      ) : null}
-
-      {hasAnswer ? (
-        <div
-          className={cn(
-            "min-w-0 text-[15px] text-foreground",
-            message.isStreaming && "streaming-reply"
-          )}
-        >
-          <MarkdownContent content={message.content} variant="chat" />
-          {message.isStreaming ? <StreamCursor /> : null}
-        </div>
-      ) : message.isStreaming && !showActivity ? (
+      ) : (
         <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 shrink-0 animate-spin" />
           <span>正在生成</span>
-          <StreamCursor />
         </div>
-      ) : null}
+      )}
     </article>
   )
 }

@@ -35,10 +35,7 @@ function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
       enabled: e.enabled !== false,
       model: e.model?.trim() ?? "",
     })),
-    chatTierMode:
-      stored?.chatTierMode === "fixed" || stored?.chatTierMode === "auto"
-        ? stored.chatTierMode
-        : DEFAULT_APP_CONFIG.chatTierMode,
+    activeChatModelId: stored?.activeChatModelId?.trim() ?? "",
   }
 }
 

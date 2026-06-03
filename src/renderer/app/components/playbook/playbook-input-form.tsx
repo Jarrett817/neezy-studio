@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -24,6 +24,7 @@ type PlaybookInputFormProps = {
   hideSubmitButton?: boolean
   submitLabel?: string
   onSubmit: (values: Record<string, unknown>) => void
+  onValuesChange?: (values: Record<string, unknown>) => void
 }
 
 export function PlaybookInputForm({
@@ -34,6 +35,7 @@ export function PlaybookInputForm({
   hideSubmitButton = false,
   submitLabel = "开始生成",
   onSubmit,
+  onValuesChange,
 }: PlaybookInputFormProps) {
   const capture = profile.capture ?? ["form"]
   const showSingleLine = capture.includes("singleLineExtract")
@@ -57,6 +59,10 @@ export function PlaybookInputForm({
   const [singleLine, setSingleLine] = useState("")
   const [extracting, setExtracting] = useState(false)
 
+  useEffect(() => {
+    onValuesChange?.(values)
+  }, [values, onValuesChange])
+
   const useWizard = profile.fields.length > 2
 
   if (useWizard) {
@@ -67,6 +73,7 @@ export function PlaybookInputForm({
         disabled={disabled}
         formId={formId}
         onSubmit={onSubmit}
+        onValuesChange={onValuesChange}
       />
     )
   }

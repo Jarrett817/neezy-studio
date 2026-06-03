@@ -24,7 +24,7 @@ export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
   return {
     preferLowPower: config.preferLowPower,
     maxCpuPercent: config.maxCpuPercent,
-    chatTier: config.chatTier,
+    activeChatModelId: config.activeChatModelId?.trim() ?? "",
     ollamaHost: config.ollamaHost,
     llmProvider: {
       kind: "openai-compatible",
@@ -34,7 +34,6 @@ export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
       model: "",
     },
     chatModels,
-    chatTierMode: config.chatTierMode,
   }
 }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -22,6 +22,7 @@ type PlaybookWizardFormProps = {
   disabled?: boolean
   formId?: string
   onSubmit: (values: Record<string, unknown>) => void
+  onValuesChange?: (values: Record<string, unknown>) => void
 }
 
 export function PlaybookWizardForm({
@@ -30,6 +31,7 @@ export function PlaybookWizardForm({
   disabled,
   formId = "playbook-run-form",
   onSubmit,
+  onValuesChange,
 }: PlaybookWizardFormProps) {
   const fields = profile.fields
   const capture = profile.capture ?? ["form"]
@@ -54,6 +56,10 @@ export function PlaybookWizardForm({
   const [values, setValues] = useState(initial)
   const [singleLine, setSingleLine] = useState("")
   const [extracting, setExtracting] = useState(false)
+
+  useEffect(() => {
+    onValuesChange?.(values)
+  }, [values, onValuesChange])
 
   const totalSteps = fields.length
   const field = fields[step]

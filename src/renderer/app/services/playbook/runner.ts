@@ -1,11 +1,10 @@
 import { promptAgentOnce } from "~/services/agent-prompt"
 import { searchMemories } from "~/services/memories"
-import { listSkills } from "~/services/storage/skills"
 import { getUserPortrait } from "~/services/user-portrait"
 
 import { buildLlmMessages, compilePrompt } from "./compile-prompt"
 import { buildMemoryQuery, normalizeSlots } from "./extract-slots"
-import { parseJsonFromLlm } from "./parse-llm-json"
+import { parseJsonFromLlm, validateOutputSchema } from "./parse-llm-json"
 import { getInputProfile, getPlaybook } from "./storage"
 import { ensurePlaybookDirs } from "./seed"
 import type { PlaybookRunResult, PlaybookSlots } from "./types"
@@ -28,17 +27,6 @@ function formatMemories(
   if (items.length === 0) return ""
   return items
     .map((m, i) => `${i + 1}. [${m.category}] ${m.title}\n${m.content.slice(0, 400)}`)
-    .join("\n\n")
-}
-
-function resolveSkillBlock(
-  skills: Awaited<ReturnType<typeof listSkills>>,
-  skillId: string
-): string {
-  const skill = skills.find((s) => s.id === skillId)
-  if (!skill) return ""
-  return [`## ${skill.name}`, skill.instructions, skill.prompt]
-    .filter(Boolean)
     .join("\n\n")
 }
 
@@ -122,7 +110,7 @@ export async function runPlaybook(
     }
   }
 
-  const steps = playbook.steps ?? ["retrieve", "skill", "llm"]
+  const steps = playbook.steps ?? ["retrieve", "llm"]
   let retrievedMemories = ""
   let memoriesUsed = 0
 
@@ -136,20 +124,15 @@ export async function runPlaybook(
     retrievedMemories = formatMemories(scoped)
   }
 
-  stages.push("skill")
-  const skills = await listSkills()
-  const skillBlock = resolveSkillBlock(skills, skillId)
-
   const portrait = await getUserPortrait()
   const compiled = compilePrompt(profile, {
     slots,
     persona: portrait.summary,
     retrievedMemories,
-    skillBlock,
   })
 
   stages.push("llm")
-  const messages = buildLlmMessages(compiled, skillBlock)
+  const messages = buildLlmMessages(compiled)
   let rawText = ""
   try {
     const result = await promptAgentOnce(messages)
@@ -175,8 +158,17 @@ export async function runPlaybook(
   if (steps.includes("parse:output") || steps.includes("persist:draft")) {
     try {
       const parsed = parseJsonFromLlm(rawText)
-      const items = (Array.isArray(parsed) ? parsed : [parsed]) as OutputLlmItem[]
-      output = { items }
+      const validated = validateOutputSchema(
+        parsed,
+        playbook.outputSchema?.properties
+      )
+      if (validated) {
+        output = validated
+      } else {
+        // Schema 未定义或校验失败，尝试包装为 items（兼容旧行为）
+        const items = (Array.isArray(parsed) ? parsed : [parsed]) as OutputLlmItem[]
+        output = { items }
+      }
       stages.push("parse:output")
     } catch {
       output = { text: rawText, parseError: true }
@@ -209,10 +201,9 @@ export async function designPlaybookFromIntent(
     throw new Error("请至少发送一条场景描述")
   }
   await ensurePlaybookDirs()
-  const skills = await listSkills()
-  const skillBlock = resolveSkillBlock(skills, "playbook-designer")
+  // 通用 Agent 自己决定使用哪个 skill（包括 playbook-designer），
+  // 通过 pi-agent 内置的 skill 机制加载，无需手动注入。
   const messages = [
-    { role: "system" as const, content: skillBlock },
     ...turns.map((t) => ({
       role: t.role,
       content: t.content,

@@ -203,7 +203,7 @@ function SceneCard({
         </p>
         <div className="flex gap-2">
           <Button asChild className="h-10 flex-1 rounded-xl text-sm">
-            <Link to={`/chat?playbook=${encodeURIComponent(id)}`}>开始创作</Link>
+            <Link to={`/create/${encodeURIComponent(id)}`}>开始创作</Link>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-10 rounded-xl">
             <Link to={`/scenes/${encodeURIComponent(id)}`} aria-label="查看配置">

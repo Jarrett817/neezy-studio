@@ -17,7 +17,6 @@ export function previewCompilePrompt(
     slots: sampleSlots,
     persona: "（示例人设摘要）",
     retrievedMemories: "（示例记忆条目）",
-    skillBlock: "（示例 Skill 指令）",
   }
   return compilePrompt(profile, ctx)
 }

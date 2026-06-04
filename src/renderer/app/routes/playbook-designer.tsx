@@ -67,15 +67,10 @@ export default function PlaybookDesignerRoute() {
     const demoSlots = Object.fromEntries(
       structuredDraft.inputProfile.fields.map((f) => [f.key, `（${f.label} 示例）`])
     )
-    const skillBlock = structuredDraft.playbook.skillIds
-      .map((id) => enabledSkills.find((s) => s.id === id)?.instructions)
-      .filter(Boolean)
-      .join("\n\n")
     return compilePrompt(structuredDraft.inputProfile, {
       slots: demoSlots,
-      skillBlock,
     })
-  }, [structuredDraft, enabledSkills])
+  }, [structuredDraft])
 
   const designMutation = useMutation({
     mutationFn: (turns: DesignPlaybookTurn[]) => designPlaybookFromIntent(turns),

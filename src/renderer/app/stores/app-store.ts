@@ -1,3 +1,4 @@
+﻿import type { JSONContent } from "@tiptap/react"
 import { create } from "zustand"
 
 import type { AgentStep, ChatToolCall } from "~/lib/agent-steps"
@@ -5,7 +6,10 @@ import type { AgentStep, ChatToolCall } from "~/lib/agent-steps"
 export type ChatMessage = {
   id: string
   role: "user" | "assistant" | "error"
+  /** 纯文本：用于 LLM 上下文与向后兼容。 */
   content: string
+  /** Tiptap JSON 文档：可选，存在时使用 TiptapContent 渲染。 */
+  contentJson?: JSONContent
   thinking: string
   agentSteps?: AgentStep[]
   isStreaming?: boolean

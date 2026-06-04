@@ -1,4 +1,4 @@
-export {
+﻿export {
   BUILTIN_PLAYBOOKS,
   BUILTIN_INPUT_PROFILES,
 } from "./builtin-manifest"
@@ -6,7 +6,12 @@ export {
   compilePrompt,
   buildLlmMessages,
   buildSceneAgentSystemPrompt,
+  renderRichTextTemplate,
+  renderFieldValue,
+  extractTemplateTokens,
+  resolveTokenDefs,
 } from "./compile-prompt"
+export type { ResolvedTokenDef } from "./compile-prompt"
 export {
   normalizeSlots,
   buildMemoryQuery,
@@ -19,8 +24,11 @@ export { previewCompilePrompt, isBuiltinInputProfile } from "./profile-utils"
 export { ensurePlaybookDirs, seedBuiltinSkills } from "./seed"
 export {
   listPlaybooks,
+  listPlaybooksGrouped,
+  listUserPlaybooks,
   getPlaybook,
   saveUserPlaybook,
+  deleteUserPlaybook,
   listInputProfiles,
   getInputProfile,
   saveUserInputProfile,

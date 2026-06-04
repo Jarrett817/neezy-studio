@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+﻿import { useEffect, useMemo, useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -7,6 +7,7 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
 import { PlaybookWizardForm } from "~/components/playbook/playbook-wizard-form"
+import { RichTextField } from "~/components/playbook/RichTextField"
 import {
   extractSlotsFromSingleLine,
   loadLastPlaybookSlots,
@@ -63,7 +64,7 @@ export function PlaybookInputForm({
     onValuesChange?.(values)
   }, [values, onValuesChange])
 
-  const useWizard = profile.fields.length > 2
+  const useWizard = profile.fields.length > 2 && !profile.fields.some((f) => f.type === "rich-text")
 
   if (useWizard) {
     return (
@@ -102,7 +103,7 @@ export function PlaybookInputForm({
           ? e.message
           : e instanceof Error
             ? e.message
-            : "抽槽失败"
+            : "提取失败"
       toast.error(msg)
     } finally {
       setExtracting(false)
@@ -130,7 +131,7 @@ export function PlaybookInputForm({
               value={singleLine}
               disabled={disabled || extracting}
               className="rounded-xl"
-              placeholder="例如：围绕秋冬大衣写 3 条口语笔记，语气治愈"
+              placeholder="例如：更细笔触大写3句口播笔记，语气犀利"
               onChange={(e) => setSingleLine(e.target.value)}
             />
             <Button
@@ -187,6 +188,25 @@ function FieldBlock({
 }) {
   const chipOptions =
     field.chips?.map(String) ?? field.options ?? []
+
+  if (field.type === "rich-text") {
+    return (
+      <div className="space-y-2">
+        <Label>
+          {field.label}
+          {field.required ? (
+            <span className="text-destructive"> *</span>
+          ) : null}
+        </Label>
+        <RichTextField
+          field={field}
+          value={value}
+          disabled={disabled}
+          onChange={(rendered) => onChange(rendered)}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2">

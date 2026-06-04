@@ -1,6 +1,7 @@
-import { Loader2 } from "lucide-react"
+﻿import { Loader2 } from "lucide-react"
 
 import { AgentActivityTimeline } from "~/components/chat/agent-activity-timeline"
+import { TiptapContent } from "~/components/tiptap/TiptapContent"
 import type { ModelTransport } from "~/config/chat-models"
 import type { ChatMessage } from "~/stores/app-store"
 
@@ -17,10 +18,15 @@ export function ChatMessageBubble({
   const isError = message.role === "error" || Boolean(message.failed)
 
   if (isUser) {
+    const hasRich = Boolean(message.contentJson)
     return (
       <div className="flex justify-end py-3 first:pt-1">
         <div className="max-w-[min(100%,34rem)] rounded-[20px] bg-muted/90 px-4 py-2.5 text-[15px] leading-relaxed text-foreground shadow-sm ring-1 ring-border/30">
-          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          {hasRich ? (
+            <TiptapContent doc={message.contentJson ?? null} />
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )}
         </div>
       </div>
     )

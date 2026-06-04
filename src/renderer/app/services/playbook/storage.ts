@@ -1,9 +1,10 @@
-import {
+﻿import {
   exists,
   join,
   mkdir,
   readDir,
   readTextFile,
+  remove,
   writeTextFile,
 } from "~/services/electron-client"
 import { getStoragePaths } from "~/services/storage-paths"
@@ -100,4 +101,42 @@ export async function saveUserPlaybook(playbook: Playbook): Promise<Playbook> {
   const path = await join(dir, "playbook.json")
   await writeTextFile(path, JSON.stringify(parsed, null, 2))
   return parsed
+}
+
+/**
+ * 删除用户场景（含其 input profile 副本）。
+ * 内置场景不允许删除。
+ */
+export async function deleteUserPlaybook(id: string): Promise<void> {
+  if (BUILTIN_PLAYBOOKS.some((p) => p.id === id)) {
+    throw new Error("内置场景不可删除")
+  }
+  const root = await userPlaybooksRoot()
+  const dir = await join(root, id)
+  if (await exists(dir)) {
+    await remove(dir)
+  }
+}
+
+/**
+ * 列出「我的场景」（仅用户创建）。
+ */
+export async function listUserPlaybooks(): Promise<Playbook[]> {
+  const all = await listPlaybooks()
+  return all.filter((p) => !p.builtin)
+}
+
+/**
+ * 区分内置与用户场景，便于 UI 分类。
+ */
+export type PlaybookSource = "builtin" | "user"
+export async function listPlaybooksGrouped(): Promise<{
+  builtin: Playbook[]
+  user: Playbook[]
+}> {
+  const all = await listPlaybooks()
+  return {
+    builtin: all.filter((p) => p.builtin),
+    user: all.filter((p) => !p.builtin),
+  }
 }

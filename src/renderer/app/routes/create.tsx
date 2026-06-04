@@ -1,12 +1,31 @@
-import { useQuery } from "@tanstack/react-query"
-import { Plus, Wand2 } from "lucide-react"
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Plus, Settings2, Trash2, Wand2 } from "lucide-react"
+import { useState } from "react"
 import { Link } from "react-router"
+import { toast } from "sonner"
 
+import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
-import { ensurePlaybookDirs, listPlaybooks } from "~/services/playbook"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
+import {
+  deleteUserPlaybook,
+  ensurePlaybookDirs,
+  listPlaybooks,
+} from "~/services/playbook"
 
 export default function CreateRoute() {
+  const queryClient = useQueryClient()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+
   const { data: playbooks = [], isLoading, isError, error } = useQuery({
     queryKey: ["playbooks"],
     queryFn: async () => {
@@ -16,7 +35,21 @@ export default function CreateRoute() {
   })
 
   const runnable = playbooks.filter((p) => p.id !== "playbook-designer")
+  const builtin = runnable.filter((p) => p.builtin)
+  const userScenes = runnable.filter((p) => !p.builtin)
   const designer = playbooks.find((p) => p.id === "playbook-designer")
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteUserPlaybook(id),
+    onSuccess: async () => {
+      toast.success("场景已删除")
+      await queryClient.invalidateQueries({ queryKey: ["playbooks"] })
+      setPendingDelete(null)
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "删除失败")
+    },
+  })
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 pt-4">
@@ -40,27 +73,54 @@ export default function CreateRoute() {
       ) : isLoading ? (
         <p className="text-sm text-muted-foreground">加载场景…</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {runnable.map((playbook) => (
-            <Card
-              key={playbook.id}
-              className="rounded-2xl border border-border/60 bg-card shadow-sm"
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold">{playbook.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {playbook.description}
-                </p>
-                <Button asChild className="h-12 w-full rounded-2xl text-base">
-                  <Link to={`/chat?playbook=${encodeURIComponent(playbook.id)}`}>
-                    开始创作
+        <div className="space-y-8">
+          {userScenes.length > 0 ? (
+            <section className="space-y-3">
+              <header className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  我的场景
+                </h2>
+                <Button asChild variant="ghost" size="sm" className="rounded-xl text-xs">
+                  <Link to="/studio/playbook-designer">
+                    <Plus className="size-3.5" />
+                    新建
                   </Link>
                 </Button>
-              </CardContent>
-            </Card>
-          ))}
+              </header>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {userScenes.map((playbook) => (
+                  <SceneCard
+                    key={playbook.id}
+                    id={playbook.id}
+                    name={playbook.name}
+                    description={playbook.description}
+                    onDelete={() => setPendingDelete(playbook.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {builtin.length > 0 ? (
+            <section className="space-y-3">
+              <header>
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  内置场景
+                </h2>
+              </header>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {builtin.map((playbook) => (
+                  <SceneCard
+                    key={playbook.id}
+                    id={playbook.id}
+                    name={playbook.name}
+                    description={playbook.description}
+                    builtin
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
 
@@ -85,6 +145,85 @@ export default function CreateRoute() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除场景？</DialogTitle>
+            <DialogDescription>该操作不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" className="rounded-xl">取消</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              className="rounded-xl"
+              disabled={deleteMutation.isPending}
+              onClick={() => pendingDelete && deleteMutation.mutate(pendingDelete)}
+            >
+              {deleteMutation.isPending ? "删除中…" : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function SceneCard({
+  id,
+  name,
+  description,
+  builtin,
+  onDelete,
+}: {
+  id: string
+  name: string
+  description: string
+  builtin?: boolean
+  onDelete?: () => void
+}) {
+  return (
+    <Card className="relative rounded-2xl border border-border/60 bg-card shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <span className="line-clamp-1">{name}</span>
+          {builtin ? (
+            <Badge variant="secondary" className="text-[10px]">内置</Badge>
+          ) : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
+          {description}
+        </p>
+        <div className="flex gap-2">
+          <Button asChild className="h-10 flex-1 rounded-xl text-sm">
+            <Link to={`/chat?playbook=${encodeURIComponent(id)}`}>开始创作</Link>
+          </Button>
+          <Button asChild variant="outline" size="icon" className="size-10 rounded-xl">
+            <Link to={`/scenes/${encodeURIComponent(id)}`} aria-label="查看配置">
+              <Settings2 className="size-4" />
+            </Link>
+          </Button>
+          {!builtin && onDelete ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-10 rounded-xl text-muted-foreground hover:text-destructive"
+              onClick={onDelete}
+              aria-label="删除场景"
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

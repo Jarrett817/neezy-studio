@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react"
+﻿import { Component, type ReactNode } from "react"
 import {
   BrowserRouter,
   Navigate,
@@ -22,6 +22,7 @@ import KnowledgeRoute from "~/routes/knowledge"
 import ModelsRoute from "~/routes/models"
 import PlaybookDesignerRoute from "~/routes/playbook-designer"
 import PlaybookRunRoute from "~/routes/playbook-run"
+import SceneDetailRoute from "~/routes/scene-detail"
 import SettingsRoute from "~/routes/settings"
 import SkillsRoute from "~/routes/skills"
 import StudioIndexRoute from "~/routes/studio/index"
@@ -51,7 +52,7 @@ class AppErrorBoundary extends Component<
     if (this.state.error) {
       return (
         <main className="container mx-auto p-4 pt-16">
-          <h1>出错了</h1>
+          <h1>出错啦</h1>
           <p className="text-sm text-muted-foreground">
             {this.state.error.message}
           </p>
@@ -72,6 +73,7 @@ export default function App() {
               <Route index element={<WorkbenchRoute />} />
               <Route path="create" element={<CreateRoute />} />
               <Route path="create/:playbookId" element={<PlaybookRunRoute />} />
+              <Route path="scenes/:playbookId" element={<SceneDetailRoute />} />
               <Route path="drafts" element={<Navigate to="/chat" replace />} />
               <Route path="knowledge" element={<KnowledgeRoute />} />
               <Route path="chat" element={<ChatRoute />} />
@@ -86,15 +88,24 @@ export default function App() {
                   path="input-profiles/:profileId"
                   element={<InputProfileEditRoute />}
                 />
-                <Route path="playbook-designer" element={<PlaybookDesignerRoute />} />
+                <Route
+                  path="playbook-designer"
+                  element={<PlaybookDesignerRoute />}
+                />
               </Route>
 
-              <Route path="playbooks" element={<Navigate to="/create" replace />} />
+              <Route
+                path="playbooks"
+                element={<Navigate to="/create" replace />}
+              />
               <Route
                 path="playbooks/designer"
                 element={<Navigate to="/studio/playbook-designer" replace />}
               />
-              <Route path="playbooks/:playbookId" element={<PlaybookIdRedirect />} />
+              <Route
+                path="playbooks/:playbookId"
+                element={<PlaybookIdRedirect />}
+              />
 
               <Route
                 path="knowledge-base"
@@ -104,7 +115,10 @@ export default function App() {
                 path="portrait"
                 element={<Navigate to="/knowledge?tab=persona" replace />}
               />
-              <Route path="skills" element={<Navigate to="/studio/skills" replace />} />
+              <Route
+                path="skills"
+                element={<Navigate to="/studio/skills" replace />}
+              />
               <Route
                 path="input-profiles"
                 element={<Navigate to="/studio/input-profiles" replace />}
@@ -130,7 +144,7 @@ export default function App() {
 
 function PlaybookIdRedirect() {
   const { playbookId = "" } = useParams()
-  return <Navigate to={`/create/${playbookId}`} replace />
+  return <Navigate to={`/scenes/${playbookId}`} replace />
 }
 
 function InputProfileIdRedirect() {

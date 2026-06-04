@@ -1,14 +1,37 @@
-import { z } from "zod"
+﻿import { z } from "zod"
 
 export const inputFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(["text", "textarea", "number", "enum"]).optional(),
+  type: z.enum(["text", "textarea", "number", "enum", "rich-text"]).optional(),
   required: z.boolean().optional(),
   default: z.union([z.string(), z.number()]).optional(),
   chips: z.array(z.union([z.string(), z.number()])).optional(),
   options: z.array(z.string()).optional(),
   chip: z.boolean().optional(),
+  /**
+   * 模板字符串（仅 rich-text）。
+   * 使用 {{tokenKey}} 标记占位符，编译时替换为用户填入的值。
+   */
+  template: z.string().optional(),
+  /**
+   * 模板中每个 token 的元数据。
+   * 若省略则从 template 自动解析（类型默认 text）。
+   */
+  tokenDefs: z
+    .array(
+      z.object({
+        key: z.string(),
+        label: z.string().optional(),
+        type: z.enum(["text", "number", "enum"]).optional(),
+        options: z.array(z.string()).optional(),
+        chips: z.array(z.union([z.string(), z.number()])).optional(),
+        required: z.boolean().optional(),
+        default: z.union([z.string(), z.number()]).optional(),
+        hint: z.string().optional(),
+      })
+    )
+    .optional(),
 })
 
 export const inputProfileSchema = z.object({
@@ -87,4 +110,3 @@ export type PlaybookRunResult = {
   trace: PlaybookRunTrace
   error?: string
 }
-

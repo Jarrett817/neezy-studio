@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+﻿import { useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -6,12 +6,12 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
+import { RichTextField } from "~/components/playbook/RichTextField"
 import { cn } from "~/lib/utils"
 import {
   extractSlotsFromSingleLine,
   loadLastPlaybookSlots,
   saveLastPlaybookSlots,
-  SlotValidationError,
   type InputField,
   type InputProfile,
 } from "~/services/playbook"
@@ -60,6 +60,12 @@ export function PlaybookWizardForm({
   useEffect(() => {
     onValuesChange?.(values)
   }, [values, onValuesChange])
+
+  // 富文本字段不分步：单步内联展示
+  const hasRichText = fields.some((f) => f.type === "rich-text")
+  if (hasRichText) {
+    return <InlineRichTextForm {...{ playbookId, profile, disabled, formId, onSubmit, onValuesChange, fields, values, setValues, showSingleLine, singleLine, setSingleLine, extracting, setExtracting }} />
+  }
 
   const totalSteps = fields.length
   const field = fields[step]
@@ -117,7 +123,7 @@ export function PlaybookWizardForm({
               value={singleLine}
               disabled={disabled || extracting}
               className="rounded-xl"
-              placeholder="描述你想创作的内容…"
+              placeholder="描述你想创作的内容"
               onChange={(e) => setSingleLine(e.target.value)}
             />
             <Button
@@ -207,6 +213,23 @@ function WizardField({
 }) {
   const chipOptions = field.chips?.map(String) ?? field.options ?? []
 
+  if (field.type === "rich-text") {
+    return (
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <Label className="text-base font-medium">
+          {field.label}
+          {field.required ? <span className="text-destructive"> *</span> : null}
+        </Label>
+        <RichTextField
+          field={field}
+          value={value}
+          disabled={disabled}
+          onChange={(rendered) => onChange(rendered)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
       <Label className="text-base font-medium">
@@ -257,6 +280,149 @@ function WizardField({
           onChange={(e) => onChange(e.target.value)}
         />
       )}
+    </div>
+  )
+}
+
+// 富文本字段的内联（不分步）表单
+function InlineRichTextForm({
+  playbookId,
+  profile,
+  disabled,
+  formId,
+  onSubmit,
+  onValuesChange,
+  fields,
+  values,
+  setValues,
+  showSingleLine,
+  singleLine,
+  setSingleLine,
+  extracting,
+  setExtracting,
+}: {
+  playbookId: string
+  profile: InputProfile
+  disabled?: boolean
+  formId: string
+  onSubmit: (values: Record<string, unknown>) => void
+  onValuesChange?: (values: Record<string, unknown>) => void
+  fields: InputField[]
+  values: Record<string, string | number>
+  setValues: React.Dispatch<React.SetStateAction<Record<string, string | number>>>
+  showSingleLine: boolean
+  singleLine: string
+  setSingleLine: (s: string) => void
+  extracting: boolean
+  setExtracting: (b: boolean) => void
+}) {
+  const handleExtract = async () => {
+    if (!singleLine.trim()) {
+      toast.error("请先输入一句话描述")
+      return
+    }
+    setExtracting(true)
+    try {
+      const slots = await extractSlotsFromSingleLine(profile, singleLine)
+      const next: Record<string, string | number> = { ...values }
+      for (const f of fields) {
+        const v = slots[f.key]
+        if (v !== undefined && v !== null && String(v).trim() !== "") {
+          next[f.key] = f.type === "number" ? Number(v) : String(v)
+        }
+      }
+      setValues(next)
+      toast.success("已填入识别到的字段")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "识别失败")
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  return (
+    <form
+      id={formId}
+      className="space-y-5"
+      onSubmit={(e) => {
+        e.preventDefault()
+        saveLastPlaybookSlots(playbookId, values)
+        onSubmit(values)
+      }}
+    >
+      {showSingleLine ? (
+        <div className="space-y-2 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
+          <Label className="flex items-center gap-2 text-sm">
+            <Sparkles className="size-4 text-primary" />
+            一句话填表（可选）
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              value={singleLine}
+              disabled={disabled || extracting}
+              className="rounded-xl"
+              placeholder="描述你想创作的内容"
+              onChange={(e) => setSingleLine(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              className="shrink-0 rounded-xl"
+              disabled={disabled || extracting || !singleLine.trim()}
+              onClick={() => void handleExtract()}
+            >
+              {extracting ? <Loader2 className="size-4 animate-spin" /> : "识别"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {fields.map((field) => (
+        <FieldBlockRichText
+          key={field.key}
+          field={field}
+          value={values[field.key]}
+          disabled={disabled}
+          onChange={(next) =>
+            setValues((prev) => ({ ...prev, [field.key]: next }))
+          }
+        />
+      ))}
+
+      <Button
+        type="submit"
+        className="h-12 w-full rounded-2xl text-base"
+        disabled={disabled}
+      >
+        开始生成
+      </Button>
+    </form>
+  )
+}
+
+function FieldBlockRichText({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: InputField
+  value: string | number | undefined
+  disabled?: boolean
+  onChange: (v: string | number) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>
+        {field.label}
+        {field.required ? <span className="text-destructive"> *</span> : null}
+      </Label>
+      <RichTextField
+        field={field}
+        value={value}
+        disabled={disabled}
+        onChange={(rendered) => onChange(rendered)}
+      />
     </div>
   )
 }

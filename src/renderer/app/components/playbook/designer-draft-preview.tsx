@@ -1,10 +1,11 @@
-import { Badge } from "~/components/ui/badge"
+﻿import { Badge } from "~/components/ui/badge"
 import {
   inputProfileSchema,
   playbookSchema,
   type InputProfile,
   type Playbook,
 } from "~/services/playbook"
+import { resolveTokenDefs } from "~/services/playbook/compile-prompt"
 
 export type DesignerDraft = {
   playbook: Playbook
@@ -39,28 +40,68 @@ export function DesignerDraftPreview({ draft }: { draft: DesignerDraft }) {
         <h3 className="text-sm font-semibold">场景</h3>
         <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
           <p className="font-medium">{playbook.name}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{playbook.description}</p>
-          <p className="mt-2 font-mono text-xs text-muted-foreground">id: {playbook.id}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {playbook.description}
+          </p>
+          <p className="mt-2 font-mono text-xs text-muted-foreground">
+            id: {playbook.id}
+          </p>
         </div>
       </section>
 
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">输入字段</h3>
         <ul className="space-y-2">
-          {inputProfile.fields.map((field) => (
-            <li
-              key={field.key}
-              className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2 text-sm"
-            >
-              <span>
-                {field.label}
-                {field.required ? <span className="text-destructive"> *</span> : null}
-              </span>
-              <Badge variant="secondary" className="font-mono text-xs">
-                {field.key}
-              </Badge>
-            </li>
-          ))}
+          {inputProfile.fields.map((field) => {
+            const isRich = field.type === "rich-text"
+            const tokens = isRich ? resolveTokenDefs(field) : []
+            return (
+              <li
+                key={field.key}
+                className="space-y-1.5 rounded-xl border border-border/60 px-3 py-2 text-sm"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    {field.label}
+                    {field.required ? (
+                      <span className="text-destructive"> *</span>
+                    ) : null}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {isRich ? (
+                      <Badge variant="default" className="font-mono text-xs">
+                        rich-text
+                      </Badge>
+                    ) : null}
+                    <Badge variant="secondary" className="font-mono text-xs">
+                      {field.key}
+                    </Badge>
+                  </div>
+                </div>
+                {isRich && field.template ? (
+                  <div className="rounded-lg border border-dashed border-border/60 bg-background/60 p-2 font-mono text-xs leading-relaxed">
+                    {field.template}
+                  </div>
+                ) : null}
+                {tokens.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {tokens.map((t) => (
+                      <Badge
+                        key={t.key}
+                        variant="outline"
+                        className="text-[10px]"
+                      >
+                        {t.key}:{t.type}
+                        {t.chips?.length || t.options?.length
+                          ? `[${(t.chips ?? t.options ?? []).length}]`
+                          : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
       </section>
 

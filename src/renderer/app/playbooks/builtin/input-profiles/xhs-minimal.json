@@ -1,36 +1,46 @@
-{
+﻿{
   "id": "xhs-minimal",
-  "version": 1,
+  "version": 2,
   "capture": ["chips", "singleLineExtract", "form", "inheritPersona"],
   "fields": [
     {
-      "key": "topic",
-      "label": "选题或商品卖点",
-      "type": "text",
-      "required": true
-    },
-    {
-      "key": "count",
-      "label": "生成条数",
-      "type": "number",
-      "default": 3,
-      "chips": [1, 3, 5],
-      "chip": true
-    },
-    {
-      "key": "tone",
-      "label": "语气",
-      "type": "enum",
-      "options": ["口语", "专业", "治愈"],
-      "default": "口语",
-      "chip": true
+      "key": "intent",
+      "label": "想生成什么？",
+      "type": "rich-text",
+      "required": true,
+      "template": "我想生成 {{count}} 条 {{tone}} 风格的小红书笔记，主题是 {{topic}}",
+      "tokenDefs": [
+        {
+          "key": "count",
+          "label": "条数",
+          "type": "number",
+          "chips": [1, 3, 5],
+          "default": 3,
+          "required": true
+        },
+        {
+          "key": "tone",
+          "label": "语气",
+          "type": "enum",
+          "options": ["诱惑", "专业", "犀利"],
+          "default": "诱惑",
+          "required": true
+        },
+        {
+          "key": "topic",
+          "label": "主题/卖点",
+          "type": "text",
+          "required": true,
+          "hint": "例如：油皮粉底液、露营装备、减脂早餐"
+        }
+      ]
     },
     {
       "key": "extra",
-      "label": "补充说明",
+      "label": "补充说明（可选）",
       "type": "textarea",
       "required": false
     }
   ],
-  "promptTemplate": "任务：围绕「{{topic}}」生成 {{count}} 条小红书笔记文案，语气：{{tone}}。\n\n账号人设摘要：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n用户补充：{{extra}}\n\n请输出 JSON 数组，每项含 title、body、tags（字符串数组）。不要输出其它文字。"
+  "promptTemplate": "任务：按以下用户意图，生成小红书种草笔记文稿。\n\n用户意图：{{intent}}\n补充：{{extra}}\n\n用户人设撮要：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n请输出 JSON 数组，每项含 title、body、tags（字符串数组）。不要输出其它文字。"
 }

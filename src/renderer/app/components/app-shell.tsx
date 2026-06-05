@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Settings,
+  SlidersHorizontal,
   Sparkles,
   Wand2,
 } from "lucide-react"
@@ -21,6 +22,7 @@ const mainNavItems = [
   { href: "/", label: "工作台", Icon: LayoutDashboard, end: true },
   { href: "/create", label: "创作", Icon: Wand2, end: false },
   { href: "/knowledge", label: "知识", Icon: BookOpen, end: false },
+  { href: "/skills", label: "Skill", Icon: SlidersHorizontal, end: false },
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
 ] as const
 
@@ -28,9 +30,9 @@ const pageTitles: Record<string, string> = {
   "/": "工作台",
   "/create": "创作",
   "/knowledge": "知识",
+  "/skills": "Skill",
   "/chat": "对话",
   "/connect": "模型与连接",
-  "/models": "本地模型",
   "/settings": "设置",
 }
 

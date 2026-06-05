@@ -1,19 +1,17 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { app } from "electron"
 
+import * as embeddingRuntime from "./embedding-runtime"
 import { log } from "./logger"
-import { ensureVectorSchema, getEntry, libsqlVector } from "./sqlite-runtime"
-
-export interface MemoryStoreDeps {
-  getPaths: () => { databaseFile: string; memoriesDir: string }
-  runSelect: (
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<Record<string, unknown>[]>
-  runExecute: (dbPath: string, sql: string, params?: unknown[]) => Promise<void>
-  embedTexts: (text: string, purpose?: "query" | "document") => Promise<number[]>
-}
+import { resolveStoragePaths } from "./storage-paths"
+import {
+  ensureVectorSchema,
+  getEntry,
+  libsqlVector,
+  runStatement,
+  selectStatement,
+} from "./sqlite-runtime"
 
 export interface MemoryItemRow {
   id: string
@@ -23,6 +21,11 @@ export interface MemoryItemRow {
   file_path: string
   created_at: number
   updated_at: number
+}
+
+function memoryPaths(): { databaseFile: string; memoriesDir: string } {
+  const p = resolveStoragePaths(app)
+  return { databaseFile: p.databaseFile, memoriesDir: p.memoriesDir }
 }
 
 function newMemoryId(): string {
@@ -42,7 +45,6 @@ function formatHit(row: Record<string, unknown>): string {
 }
 
 async function keywordSearch(
-  deps: MemoryStoreDeps,
   query: string,
   limit: number
 ): Promise<Record<string, unknown>[]> {
@@ -53,9 +55,9 @@ async function keywordSearch(
     .filter(Boolean)
   if (terms.length === 0) return []
 
-  const dbPath = deps.getPaths().databaseFile
-  const rows = await deps.runSelect(
-    dbPath,
+  const { databaseFile } = memoryPaths()
+  const rows = await selectStatement(
+    databaseFile,
     `SELECT id, title, category, content, file_path, created_at, updated_at
      FROM memory_items
      ORDER BY updated_at DESC
@@ -79,19 +81,18 @@ async function keywordSearch(
 }
 
 export async function searchMemoryItems(
-  deps: MemoryStoreDeps,
   query: string,
   limit = 8
 ): Promise<{ text: string; count: number }> {
   const q = query.trim()
   if (!q) return { text: "请提供搜索关键词", count: 0 }
 
-  const dbPath = deps.getPaths().databaseFile
-  await ensureVectorSchema(dbPath)
-  const { client } = getEntry(dbPath)
+  const { databaseFile } = memoryPaths()
+  await ensureVectorSchema(databaseFile)
+  const { client } = getEntry(databaseFile)
 
   try {
-    const embedding = await deps.embedTexts(q, "query")
+    const embedding = (await embeddingRuntime.embedTexts(q, "query")) as number[]
     if (embedding.length > 0) {
       const rows = await libsqlVector.searchMemories(client, embedding, limit)
       if (rows.length > 0) {
@@ -105,7 +106,7 @@ export async function searchMemoryItems(
     log.warn("[memory-store] vector search failed:", err)
   }
 
-  const fallback = await keywordSearch(deps, q, limit)
+  const fallback = await keywordSearch(q, limit)
   if (fallback.length === 0) {
     return { text: "记忆中未找到相关内容", count: 0 }
   }
@@ -115,23 +116,20 @@ export async function searchMemoryItems(
   }
 }
 
-export async function saveMemoryItem(
-  deps: MemoryStoreDeps,
-  item: {
-    title: string
-    content: string
-    category?: string
-    id?: string
-    fileName?: string
-  }
-): Promise<MemoryItemRow> {
+export async function saveMemoryItem(item: {
+  title: string
+  content: string
+  category?: string
+  id?: string
+  fileName?: string
+}): Promise<MemoryItemRow> {
   const title = item.title.trim()
   const content = item.content.trim()
   if (!title || !content) {
     throw new Error("记忆标题与内容不能为空")
   }
 
-  const { memoriesDir, databaseFile } = deps.getPaths()
+  const { memoriesDir, databaseFile } = memoryPaths()
   await fs.mkdir(memoriesDir, { recursive: true })
 
   const now = Date.now()
@@ -141,7 +139,7 @@ export async function saveMemoryItem(
   const filePath = path.join(memoriesDir, fileName)
 
   await fs.writeFile(filePath, `# ${title}\n\n${content}`, "utf8")
-  await deps.runExecute(
+  await runStatement(
     databaseFile,
     `INSERT INTO memory_items (id, title, category, content, file_path, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -156,7 +154,10 @@ export async function saveMemoryItem(
 
   await ensureVectorSchema(databaseFile)
   try {
-    const embedding = await deps.embedTexts(`${title} ${content}`, "document")
+    const embedding = (await embeddingRuntime.embedTexts(
+      `${title} ${content}`,
+      "document"
+    )) as number[]
     if (embedding.length > 0) {
       const { client } = getEntry(databaseFile)
       await libsqlVector.upsertMemoryEmbedding(client, id, embedding)

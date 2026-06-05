@@ -3,7 +3,7 @@ import {
   type AppConfig,
   type AppConfigChatModel,
 } from "../../../shared/app-config"
-import { configureOllamaHost, getAppConfig, saveAppConfig, syncRuntimeSettingsToMain } from "~/services/electron-client"
+import { getAppConfig, saveAppConfig, syncRuntimeSettingsToMain } from "~/services/electron-client"
 import {
   DEFAULT_LLM_PROVIDER,
   normalizeLlmProvider,
@@ -21,7 +21,6 @@ export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
   activeChatModelId: string
-  ollamaHost: string
   llmProvider: LlmProviderConfig
   chatModels: ChatModelEntry[]
 }
@@ -32,7 +31,6 @@ const DEFAULT_SETTINGS: RuntimeSettings = {
   preferLowPower: DEFAULT_APP_CONFIG.preferLowPower,
   maxCpuPercent: DEFAULT_APP_CONFIG.maxCpuPercent,
   activeChatModelId: "",
-  ollamaHost: DEFAULT_APP_CONFIG.ollamaHost,
   llmProvider: DEFAULT_LLM_PROVIDER,
   chatModels: [],
 }
@@ -42,7 +40,6 @@ function appConfigToRuntime(config: AppConfig): RuntimeSettings {
     preferLowPower: config.preferLowPower,
     maxCpuPercent: config.maxCpuPercent,
     activeChatModelId: config.activeChatModelId?.trim() ?? "",
-    ollamaHost: config.ollamaHost,
     llmProvider: { ...DEFAULT_LLM_PROVIDER },
     chatModels: enforceChatModelRules(config.chatModels as ChatModelEntry[]),
   }
@@ -56,7 +53,6 @@ function runtimeToAppConfig(
     id: e.id,
     label: e.label,
     tier: e.tier,
-    transport: e.transport,
     model: e.model,
     enabled: e.enabled,
     preset: e.preset,
@@ -68,7 +64,6 @@ function runtimeToAppConfig(
     dataRoot: current.dataRoot,
     preferLowPower: settings.preferLowPower,
     maxCpuPercent: settings.maxCpuPercent,
-    ollamaHost: settings.ollamaHost.trim() || DEFAULT_APP_CONFIG.ollamaHost,
     activeChatModelId: settings.activeChatModelId.trim(),
     chatModels,
   }
@@ -76,11 +71,7 @@ function runtimeToAppConfig(
 
 function mergeRuntimeSettings(stored: Partial<RuntimeSettings> | null): RuntimeSettings {
   const merged = { ...DEFAULT_SETTINGS, ...stored }
-  const llmProvider = normalizeLlmProvider({
-    ...DEFAULT_LLM_PROVIDER,
-    ...(stored?.llmProvider ?? {}),
-    kind: "openai-compatible",
-  })
+  const llmProvider = normalizeLlmProvider(stored?.llmProvider ?? merged.llmProvider)
   const chatModels = enforceChatModelRules(stored?.chatModels ?? [])
 
   return {
@@ -102,9 +93,6 @@ export async function saveRuntimeSettings(
   const current = await getAppConfig()
   const merged = mergeRuntimeSettings(settings)
   const saved = await saveAppConfig(runtimeToAppConfig(merged, current))
-  if (merged.ollamaHost.trim()) {
-    await configureOllamaHost(merged.ollamaHost.trim())
-  }
   return mergeRuntimeSettings(appConfigToRuntime(saved))
 }
 
@@ -114,7 +102,6 @@ export async function pushRuntimeSettingsToMain(): Promise<void> {
     preferLowPower: settings.preferLowPower,
     maxCpuPercent: settings.maxCpuPercent,
     activeChatModelId: settings.activeChatModelId,
-    ollamaHost: settings.ollamaHost,
     llmProvider: settings.llmProvider,
     chatModels: settings.chatModels,
   })

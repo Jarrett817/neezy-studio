@@ -2,7 +2,6 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent"
 
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"
-import { OLLAMA_PI_API_KEY } from "./pi-llm"
 import { resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 
@@ -21,16 +20,11 @@ export function syncPiAuthForRoute(userMessage?: string): void {
   const settings = getSyncedRuntimeSettings()
   const route = resolveActiveChatRoute()
   const model = resolvePiChatModel(userMessage)
+  const entry = route.entry
+  if (!entry) return
 
-  if (route.entry?.transport === "openai-compatible") {
-    const key = resolveEntryApiKey(route.entry, settings.llmProvider)
-    if (key) {
-      storage.setRuntimeApiKey(model.provider, key)
-    }
-    return
-  }
-
-  if (model.provider === "ollama") {
-    storage.setRuntimeApiKey("ollama", OLLAMA_PI_API_KEY)
+  const key = resolveEntryApiKey(entry, settings.llmProvider)
+  if (key) {
+    storage.setRuntimeApiKey(model.provider, key)
   }
 }

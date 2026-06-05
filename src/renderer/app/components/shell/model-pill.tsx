@@ -2,11 +2,10 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router"
 import { PlugZap } from "lucide-react"
 
-import { entryDisplayName } from "~/config/chat-models"
+import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
 import { getPresetLabel } from "~/config/llm-presets"
 import { useCodingPlanCatalog } from "~/hooks/use-coding-plan-catalog"
 import { cn } from "~/lib/utils"
-import { isModelLoaded } from "~/services/llm"
 import {
   getRuntimeSettings,
   resolveChatModelEntry,
@@ -21,20 +20,15 @@ export function ModelPill() {
   })
 
   const entry = settings ? resolveChatModelEntry(settings) : null
-  const isApi = entry?.transport === "openai-compatible"
-  const hasKey = Boolean(
-    (entry?.apiKey ?? settings?.llmProvider.apiKey)?.trim()
-  )
   const modelName = entry
     ? entryDisplayName(entry)
     : settings?.llmProvider.model.trim() || "未配置模型"
   const presetId = entry?.preset ?? settings?.llmProvider.preset ?? "custom"
-  const vendorLabel = isApi
-    ? vendors.find((v) => v.id === presetId)?.label ?? getPresetLabel(presetId)
-    : "Ollama"
-  const connected = isApi
-    ? hasKey && Boolean(entry?.model.trim())
-    : Boolean(entry?.model.trim()) || isModelLoaded()
+  const vendorLabel =
+    vendors.find((v) => v.id === presetId)?.label ?? getPresetLabel(presetId)
+  const connected = entry
+    ? isEntryConfigured(entry, settings!.llmProvider)
+    : false
   const label = `${modelName} · ${vendorLabel}`
 
   return (

@@ -2,17 +2,13 @@
 
 import { AgentActivityTimeline } from "~/components/chat/agent-activity-timeline"
 import { TiptapContent } from "~/components/tiptap/TiptapContent"
-import type { ModelTransport } from "~/config/chat-models"
 import type { ChatMessage } from "~/stores/app-store"
-
 export function ChatMessageBubble({
   message,
   modelName,
-  transport: _transport,
 }: {
   message: ChatMessage
   modelName: string
-  transport?: ModelTransport
 }) {
   const isUser = message.role === "user"
   const isError = message.role === "error" || Boolean(message.failed)

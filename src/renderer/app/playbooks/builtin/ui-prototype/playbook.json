@@ -11,9 +11,7 @@
     "topK": 5,
     "allowExpandSearch": true
   },
-  "skillIds": ["ui-prototype"],
-  "defaultSkillId": "ui-prototype",
-  "steps": ["retrieve", "skill", "llm", "parse:output"],
+  "steps": ["retrieve", "llm", "parse:output"],
   "outputSchema": {
     "type": "object",
     "properties": {

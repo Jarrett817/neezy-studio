@@ -8,15 +8,12 @@ import {
   type CodingPlanVendor,
 } from "~/config/llm-presets"
 
-export type LlmProviderKind = "ollama" | "openai-compatible"
-
 /** 内置目录 id 或 custom；亦兼容上游合并后的动态 id */
 export type CodingPlanPreset = CodingPlanPresetId | (string & {})
 
 export type { CodingPlanVendor }
 
 export interface LlmProviderConfig {
-  kind: LlmProviderKind
   preset: string
   baseUrl: string
   apiKey: string
@@ -44,7 +41,6 @@ CODING_PLAN_PRESETS.custom = {
 }
 
 export const DEFAULT_LLM_PROVIDER: LlmProviderConfig = {
-  kind: "openai-compatible",
   preset: "custom",
   baseUrl: "",
   apiKey: "",
@@ -52,7 +48,6 @@ export const DEFAULT_LLM_PROVIDER: LlmProviderConfig = {
 }
 
 export function resolveProviderBaseUrl(config: LlmProviderConfig): string {
-  if (config.kind === "ollama") return ""
   return resolveCatalogBaseUrl(config.preset, config.baseUrl)
 }
 
@@ -64,14 +59,11 @@ export function normalizeLlmProvider(
   const preset = partial?.preset ?? DEFAULT_LLM_PROVIDER.preset
   const baseFromPreset = resolveCatalogBaseUrl(preset, partial?.baseUrl ?? "")
   return {
-    kind: partial?.kind ?? DEFAULT_LLM_PROVIDER.kind,
     preset,
     baseUrl: (partial?.baseUrl?.trim() || baseFromPreset).replace(/\/$/, ""),
     apiKey: partial?.apiKey ?? "",
     model:
-      partial?.kind === "ollama"
-        ? (partial?.model?.trim() ?? "")
-        : partial?.model?.trim() ||
-          defaultModelForPreset(preset, DEFAULT_LLM_PROVIDER.model),
+      partial?.model?.trim() ||
+      defaultModelForPreset(preset, DEFAULT_LLM_PROVIDER.model),
   }
 }

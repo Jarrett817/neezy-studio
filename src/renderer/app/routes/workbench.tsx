@@ -10,14 +10,13 @@ import { Link } from "react-router"
 
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
-import { loadLastPlaybookSlots } from "~/services/playbook/extract-slots"
+import { loadInputSceneSlots } from "~/services/playbook/extract-slots"
 import { ensurePlaybookDirs, listPlaybooks } from "~/services/playbook"
 import {
   listPiChatSessionsWithMessages,
   sessionListTitle,
 } from "~/services/pi-chat-sessions"
 import { listMemories } from "~/services/memories"
-import { isModelLoaded } from "~/services/llm"
 import { isEntryConfigured } from "~/config/chat-models"
 import {
   getRuntimeSettings,
@@ -26,11 +25,7 @@ import {
 
 function isAiConnected(settings: Awaited<ReturnType<typeof getRuntimeSettings>>): boolean {
   const entry = resolveChatModelEntry(settings)
-  if (entry?.transport === "openai-compatible") {
-    return isEntryConfigured(entry, settings.llmProvider)
-  }
-  if (entry?.transport === "ollama") return Boolean(entry.model.trim())
-  return isModelLoaded()
+  return entry ? isEntryConfigured(entry, settings.llmProvider) : false
 }
 
 export default function WorkbenchRoute() {
@@ -47,6 +42,19 @@ export default function WorkbenchRoute() {
     },
   })
 
+  const { data: continuePlaybook } = useQuery({
+    queryKey: ["playbook-continue-draft", playbooks.map((p) => p.id).join(",")],
+    queryFn: async () => {
+      const runnable = playbooks.filter((p) => p.id !== "playbook-designer")
+      for (const playbook of runnable) {
+        const slots = await loadInputSceneSlots(playbook.inputProfileId)
+        if (slots) return playbook
+      }
+      return null
+    },
+    enabled: playbooks.length > 0,
+  })
+
   const { data: chatSessions = [] } = useQuery({
     queryKey: ["chat-sessions", "with-messages"],
     queryFn: listPiChatSessionsWithMessages,
@@ -60,7 +68,6 @@ export default function WorkbenchRoute() {
   const runnable = playbooks.filter((p) => p.id !== "playbook-designer")
   const recentChats = chatSessions.slice(0, 3)
 
-  const continuePlaybook = runnable.find((p) => loadLastPlaybookSlots(p.id) !== null)
   const latestChat = chatSessions[0]
   const continueTarget = continuePlaybook
     ? { type: "playbook" as const, id: continuePlaybook.id, label: continuePlaybook.name }
@@ -76,7 +83,7 @@ export default function WorkbenchRoute() {
   const showStats = chatSessions.length > 0 || memories.length > 0
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-8 pt-4">
+    <div className="w-full space-y-8 pt-4">
       <div>
         <div className="mb-2 flex items-center gap-2 text-primary">
           <Sparkles className="size-4" />
@@ -95,7 +102,7 @@ export default function WorkbenchRoute() {
             <div>
               <p className="font-medium text-amber-950 dark:text-amber-100">尚未连接 AI</p>
               <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">
-                配置 Coding Plan 或 Ollama 后即可开始生成。
+                配置 Coding Plan 或 API Key 后即可开始生成。
               </p>
             </div>
           </div>

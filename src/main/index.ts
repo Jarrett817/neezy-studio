@@ -1,3 +1,4 @@
+import "./chromium-fetch"
 import "./core-ipc"
 
 import type { BrowserWindow } from "electron"
@@ -17,27 +18,18 @@ import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { initBundledEmbedding } from "./bundled-embedding"
 import { initMainLogger, log } from "./logger"
-import { setAgentToolRuntimeContext } from "./ollama/agent-tools"
-import { initToolContext } from "./pi-tool-registry"
-import * as ollamaCatalog from "./ollama/catalog"
 import * as chatRouter from "./chat-router"
-import * as ollamaChat from "./ollama/chat-runtime"
 import * as embeddingRuntime from "./embedding-runtime"
-import { ensureOllama } from "./ollama/lifecycle"
-import { getOllamaRuntimeMetrics, getModelCatalogItems } from "./ollama/metrics"
+import { resolveEntryApiKey } from "./chat-model-entry"
+import { resolveChatModelEntry } from "./model-routing"
+import { getRuntimeMetrics } from "./runtime-metrics"
 import * as storagePaths from "./storage-paths"
 import { registerCoreIpcHandlers } from "./core-ipc"
 import { registerIpcHandlers } from "./ipc-handlers"
-import { resolvedChatUsesApi } from "./model-routing"
+import { warmSkillCatalog } from "./skill-install"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 import * as sqliteRuntime from "./sqlite-runtime"
-import type {
-  ChatLoadPayload,
-  ChatLoadResult,
-  ChatPromptOptions,
-  ModelKind,
-  StoragePaths,
-} from "./types"
+import type { ChatLoadPayload, ChatLoadResult, StoragePaths } from "./types"
 
 const mainDir =
   typeof import.meta.dirname === "string"
@@ -45,11 +37,6 @@ const mainDir =
     : path.dirname(fileURLToPath(import.meta.url))
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 let mainWindow: BrowserWindow | null = null
-
-const activeDownloads = new Map<
-  string,
-  { progress: number; ollamaName: string }
->()
 
 function getSqliteRuntime() {
   return sqliteRuntime
@@ -71,100 +58,6 @@ function closeAllSqliteHandles(): void {
   getSqliteRuntime().closeAll()
 }
 
-function broadcastModelCatalogUpdated(): void {
-  if (!mainWindow) return
-  mainWindow.webContents.send("model-catalog-updated")
-}
-
-async function sendModelProgress(modelId: string) {
-  const entry = ollamaCatalog.findCatalogEntry(modelId)
-  if (!entry || !mainWindow) return
-  const pull = activeDownloads.get(modelId)
-  const item = ollamaCatalog.modelToCatalogItem(entry, {
-    installed: ollamaCatalog.isModelInstalled(entry.fileName),
-    status: pull
-      ? "downloading"
-      : ollamaCatalog.isModelInstalled(entry.fileName)
-        ? "ready"
-        : "available",
-    progress: pull?.progress ?? null,
-    downloadedBytes: 0,
-    totalBytes: entry.sizeBytes,
-    cancellable: Boolean(pull),
-  })
-  mainWindow.webContents.send("model-download-progress", item)
-}
-
-async function refreshModelCatalog(): Promise<void> {
-  await ollamaCatalog.refreshModelCatalog()
-  broadcastModelCatalogUpdated()
-}
-
-async function getModelCatalog(kind?: ModelKind) {
-  await ollamaCatalog.ensureModelRegistry()
-  const items = await getModelCatalogItems(kind)
-  return items.map((model) => {
-    const pull = [...activeDownloads.entries()].find(([, v]) => {
-      const e = ollamaCatalog.findCatalogEntry(model.id)
-      return e && v.ollamaName === e.fileName
-    })
-    if (!pull) return model
-    const [, state] = pull
-    return {
-      ...model,
-      status: "downloading" as const,
-      progress: state.progress,
-      cancellable: true,
-    }
-  })
-}
-
-async function downloadModel(modelId: string) {
-  await ensureOllama()
-  const entry = ollamaCatalog.findCatalogEntry(modelId)
-  if (!entry) throw new Error("Unknown model")
-  if (activeDownloads.has(modelId)) {
-    return getModelCatalog(entry.kind).then((list) => list.find((m) => m.id === modelId))
-  }
-  activeDownloads.set(modelId, { progress: 0, ollamaName: entry.fileName })
-  sendModelProgress(modelId)
-  try {
-    await ollamaCatalog.pullModel(entry.fileName, (progress) => {
-      const state = activeDownloads.get(modelId)
-      if (state) state.progress = progress
-      sendModelProgress(modelId)
-    })
-    activeDownloads.delete(modelId)
-    await ollamaCatalog.refreshInstalledNames()
-    broadcastModelCatalogUpdated()
-    const items = await getModelCatalog(entry.kind)
-    return items.find((m) => m.id === modelId)
-  } catch (error) {
-    activeDownloads.delete(modelId)
-    sendModelProgress(modelId)
-    throw error
-  }
-}
-
-async function cancelModelDownload(modelId: string) {
-  const entry = ollamaCatalog.findCatalogEntry(modelId)
-  if (entry) ollamaCatalog.cancelPull(entry.fileName)
-  activeDownloads.delete(modelId)
-  const items = await getModelCatalog(entry?.kind)
-  return items.find((m) => m.id === modelId)
-}
-
-async function deleteModel(modelId: string) {
-  const entry = ollamaCatalog.findCatalogEntry(modelId)
-  if (!entry) throw new Error("Unknown model")
-  await ensureOllama()
-  await ollamaCatalog.deleteOllamaModel(entry.fileName)
-  activeDownloads.delete(modelId)
-  broadcastModelCatalogUpdated()
-  const items = await getModelCatalog(entry.kind)
-  return items.find((m) => m.id === modelId)
-}
-
 async function loadEmbeddingModel(_modelId?: string, _preferLowPower?: boolean) {
   return embeddingRuntime.loadEmbeddingModel()
 }
@@ -174,43 +67,25 @@ async function loadChatModel(payload: ChatLoadPayload): Promise<ChatLoadResult> 
 }
 
 async function getChatModelFileInfo(modelName: string) {
-  if (resolvedChatUsesApi()) {
-    const settings = getSyncedRuntimeSettings()
-    const name = modelName.trim() || settings.llmProvider.model.trim()
-    if (!settings.llmProvider.apiKey.trim()) {
-      return {
-        ok: false as const,
-        reason: "请先在设置 → 对话模型来源 中配置 API Key",
-      }
-    }
-    if (!name) {
-      return { ok: false as const, reason: "未配置模型名称" }
-    }
+  const settings = getSyncedRuntimeSettings()
+  const entry = resolveChatModelEntry(settings)
+  const name = modelName.trim() || entry?.model.trim() || settings.llmProvider.model.trim()
+  const key = entry
+    ? resolveEntryApiKey(entry, settings.llmProvider)
+    : settings.llmProvider.apiKey.trim()
+
+  if (!key) {
     return {
-      ok: true as const,
-      filePath: name,
-      reason: null,
+      ok: false as const,
+      reason: "请先在「模型与连接」配置 API Key",
     }
   }
-  await ensureOllama().catch(() => {})
-  const entry = ollamaCatalog.findCatalogEntryByName(modelName)
-  const requested = entry?.fileName ?? modelName
-  let resolved = ollamaCatalog.resolveInstalledModelRef(requested)
-  if (!resolved) {
-    await ollamaCatalog.refreshInstalledNames()
-    resolved = ollamaCatalog.resolveInstalledModelRef(requested)
-  }
-  if (!resolved) {
-    return {
-      ok: false,
-      reason: `模型 ${requested} 未在 Ollama 中安装，请先在模型页下载或使用 ollama pull。`,
-    }
+  if (!name) {
+    return { ok: false as const, reason: "未配置模型名称" }
   }
   return {
-    ok: true,
-    filePath: resolved,
-    sizeBytes: entry?.sizeBytes,
-    expectedBytes: entry?.sizeBytes ?? null,
+    ok: true as const,
+    filePath: name,
     reason: null,
   }
 }
@@ -231,17 +106,7 @@ const ipcCtx = {
   appDataDir,
   modelsDir,
   closeAllSqliteHandles,
-  runtimeMetrics: getOllamaRuntimeMetrics,
-  ensureModelRegistry: () => ollamaCatalog.ensureModelRegistry(),
-  getKnownModelFileNames: () =>
-    ollamaCatalog.getAllModelDefinitions().map((m) => m.fileName),
-  getModelsByKind: ollamaCatalog.getModelsByKind,
-  getModelCatalog,
-  refreshModelCatalog,
-  invalidateModelScanCache: () => {},
-  downloadModel,
-  cancelModelDownload,
-  deleteModel,
+  runtimeMetrics: getRuntimeMetrics,
   loadEmbeddingModel,
   unloadEmbeddingModel: embeddingRuntime.unloadEmbeddingModel,
   loadChatModel,
@@ -258,35 +123,6 @@ const ipcCtx = {
     return getSqliteRuntime()
   },
 }
-
-setAgentToolRuntimeContext({
-  getPaths,
-  runSelect: async (dbPath, sql, params) =>
-    (await getSqliteRuntime().selectStatement(dbPath, sql, params ?? [])) as Record<
-      string,
-      unknown
-    >[],
-  runExecute: async (dbPath, sql, params) => {
-    await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
-  },
-  embedTexts: async (text, purpose = "document") =>
-    (await embeddingRuntime.embedTexts(text, purpose)) as number[],
-})
-
-initToolContext({
-  getPaths,
-  runSelect: async (dbPath, sql, params) =>
-    (await getSqliteRuntime().selectStatement(
-      dbPath,
-      sql,
-      params ?? []
-    )) as Record<string, unknown>[],
-  runExecute: async (dbPath, sql, params) => {
-    await getSqliteRuntime().runStatement(dbPath, sql, params ?? [])
-  },
-  embedTexts: async (text, purpose = "document") =>
-    (await embeddingRuntime.embedTexts(text, purpose)) as number[],
-})
 
 registerCoreIpcHandlers()
 registerIpcHandlers(ipcCtx)
@@ -322,7 +158,6 @@ async function createWindow() {
     mainWindow?.show()
   })
 
-  // 与官方 react-ts 一致：开发 loadURL，生产 loadFile（renderer 侧 holdUntilCrawlEnd 避免首启 ERR_ABORTED）
   if (rendererUrl) {
     await mainWindow.loadURL(rendererUrl)
     if (!app.isPackaged) {
@@ -347,7 +182,6 @@ app.whenReady().then(async () => {
         error instanceof Error ? error.message : error
       )
     })
-    await ollamaCatalog.ensureModelRegistry()
     const vecStatus = getSqliteRuntime().getVecStatus(paths.databaseFile)
     console.log(
       `[main] SQLite @libsql/client · 向量 ${vecStatus.available ? "F32_BLOB" : "未就绪"}`,
@@ -356,17 +190,16 @@ app.whenReady().then(async () => {
 
     await createWindow()
 
-    void ensurePlaywrightChromium().catch((error) => {
+    void warmSkillCatalog().catch((error) => {
       log.warn(
-        "[main] Chromium 后台下载失败（使用 browser_* 时会重试）:",
+        "[main] Skill 目录预热失败:",
         error instanceof Error ? error.message : error
       )
     })
 
-    console.info("[main] 正在准备 Ollama…")
-    void ensureOllama().catch((error) => {
-      console.warn(
-        "[main] Ollama 未就绪:",
+    void ensurePlaywrightChromium().catch((error) => {
+      log.warn(
+        "[main] Chromium 后台下载失败（使用 browser_* 时会重试）:",
         error instanceof Error ? error.message : error
       )
     })
@@ -393,5 +226,5 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   sqliteRuntime.closeAll()
   embeddingRuntime.unloadEmbeddingModel().catch(() => {})
-  ollamaChat.unloadChatModel().catch(() => {})
+  chatRouter.unloadChatModel().catch(() => {})
 })

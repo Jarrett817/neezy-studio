@@ -181,15 +181,6 @@ export interface IpcContext {
   modelsDir: () => string
   closeAllSqliteHandles: () => void
   runtimeMetrics: () => Promise<Record<string, unknown>>
-  ensureModelRegistry: (modelsDir?: string) => Promise<void>
-  getKnownModelFileNames: () => string[]
-  getModelsByKind: (kind: ModelKind) => ModelDefinition[]
-  getModelCatalog: (kind?: ModelKind) => Promise<Record<string, unknown>[]>
-  refreshModelCatalog: () => Promise<void>
-  invalidateModelScanCache?: () => void
-  downloadModel: (modelId: string) => Promise<unknown>
-  cancelModelDownload: (modelId: string) => Promise<unknown>
-  deleteModel: (modelId: string) => Promise<unknown>
   loadEmbeddingModel: (
     modelId: string,
     preferLowPower?: boolean

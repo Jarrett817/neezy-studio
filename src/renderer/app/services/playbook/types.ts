@@ -3,7 +3,7 @@
 export const inputFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(["text", "textarea", "number", "enum", "rich-text"]).optional(),
+  type: z.enum(["text", "textarea", "number", "enum", "rich-text", "mindmap", "flowchart"]).optional(),
   required: z.boolean().optional(),
   default: z.union([z.string(), z.number()]).optional(),
   chips: z.array(z.union([z.string(), z.number()])).optional(),
@@ -57,6 +57,10 @@ export const inputProfileSchema = z.object({
     })
     .optional(),
   promptTemplate: z.string(),
+  /** 用户保存的输入场景名称（仅 user 目录） */
+  name: z.string().optional(),
+  description: z.string().optional(),
+  updatedAt: z.number().optional(),
 })
 
 export const memoryScopeSchema = z.object({
@@ -75,8 +79,6 @@ export const playbookSchema = z.object({
   builtin: z.boolean().optional(),
   inputProfileId: z.string(),
   memoryScope: memoryScopeSchema.optional(),
-  skillIds: z.array(z.string()).min(1),
-  defaultSkillId: z.string().optional(),
   steps: z.array(z.string()).optional(),
   outputSchema: z
     .object({
@@ -93,11 +95,13 @@ export type InputProfile = z.infer<typeof inputProfileSchema>
 export type MemoryScope = z.infer<typeof memoryScopeSchema>
 export type Playbook = z.infer<typeof playbookSchema>
 
-export type PlaybookSlots = Record<string, string | number | boolean | undefined>
+export type PlaybookSlots = Record<
+  string,
+  string | number | boolean | Record<string, unknown> | unknown[] | undefined
+>
 
 export type PlaybookRunTrace = {
   playbookId: string
-  skillId: string
   memoriesUsed: number
   elapsedMs: number
   stages: string[]
@@ -110,3 +114,10 @@ export type PlaybookRunResult = {
   trace: PlaybookRunTrace
   error?: string
 }
+
+export const sceneSchema = z.object({
+  playbook: playbookSchema,
+  inputProfile: inputProfileSchema,
+})
+
+export type Scene = z.infer<typeof sceneSchema>

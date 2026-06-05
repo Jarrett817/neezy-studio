@@ -10,6 +10,7 @@ import {
   PlugZap,
   Settings2,
   Brain,
+  SlidersHorizontal,
 } from "lucide-react"
 
 import {
@@ -26,15 +27,16 @@ const NAV_ITEMS = [
   { href: "/", label: "工作台", icon: Home, keywords: "home workbench" },
   { href: "/create", label: "创作", icon: PenLine, keywords: "create playbook 场景" },
   { href: "/knowledge", label: "知识", icon: Brain, keywords: "memory 记忆" },
+  { href: "/skills", label: "Skill", icon: SlidersHorizontal, keywords: "skill 技能" },
   { href: "/chat", label: "对话", icon: MessageSquare, keywords: "chat" },
   {
     href: "/connect",
     label: "AI 连接",
     icon: PlugZap,
-    keywords: "api key model ollama 本地模型 pull download",
+    keywords: "api key model coding plan 连接",
   },
   { href: "/settings", label: "设置", icon: Settings2, keywords: "settings" },
-  { href: "/studio", label: "高级工作室", icon: PenLine, keywords: "studio skill" },
+  { href: "/studio", label: "高级工作室", icon: PenLine, keywords: "studio 场景设计" },
   { href: "/studio/playbook-designer", label: "场景设计", icon: PenLine, keywords: "designer" },
 ] as const
 

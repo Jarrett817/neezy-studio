@@ -52,13 +52,13 @@ export default function CreateRoute() {
   })
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-8 pt-4">
+    <div className="w-full space-y-8 pt-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-medium text-muted-foreground">创作任务</p>
           <h1 className="text-2xl font-semibold tracking-tight">选择场景</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            组合 Skill、记忆与输入模板，一次生成可交付结果。
+            选择场景运行，或在工作室用 Agent 生成新场景。
           </p>
         </div>
         <Button asChild variant="outline" className="h-11 shrink-0 rounded-2xl px-5">
@@ -203,7 +203,7 @@ function SceneCard({
         </p>
         <div className="flex gap-2">
           <Button asChild className="h-10 flex-1 rounded-xl text-sm">
-            <Link to={`/create/${encodeURIComponent(id)}`}>开始创作</Link>
+            <Link to={`/chat?playbook=${encodeURIComponent(id)}`}>开始创作</Link>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-10 rounded-xl">
             <Link to={`/scenes/${encodeURIComponent(id)}`} aria-label="查看配置">

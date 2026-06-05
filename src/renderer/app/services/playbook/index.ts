@@ -16,22 +16,37 @@ export {
   normalizeSlots,
   buildMemoryQuery,
   extractSlotsFromSingleLine,
+  SlotValidationError,
+  loadInputSceneSlots,
+  saveInputSceneSlots,
   loadLastPlaybookSlots,
   saveLastPlaybookSlots,
-  SlotValidationError,
 } from "./extract-slots"
+export {
+  loadInputSceneSlots as loadInputSceneSlotsDirect,
+  saveInputSceneSlots as saveInputSceneSlotsDirect,
+} from "./input-scene-storage"
+export {
+  flowchartToText,
+  mindmapToJson,
+  defaultMindmapValue,
+  defaultFlowchartValue,
+} from "./graph-serializers"
+export type { MindmapNode, FlowchartValue } from "./graph-serializers"
 export { previewCompilePrompt, isBuiltinInputProfile } from "./profile-utils"
-export { ensurePlaybookDirs, seedBuiltinSkills } from "./seed"
+export { ensurePlaybookDirs } from "./seed"
 export {
   listPlaybooks,
   listPlaybooksGrouped,
   listUserPlaybooks,
   getPlaybook,
   saveUserPlaybook,
+  saveUserScene,
   deleteUserPlaybook,
-  listInputProfiles,
   getInputProfile,
-  saveUserInputProfile,
+  listScenes,
+  getScene,
+  saveScene,
 } from "./storage"
 export {
   runPlaybook,
@@ -49,4 +64,6 @@ export type {
   PlaybookRunResult,
   PlaybookRunTrace,
   PlaybookSlots,
+  Scene,
 } from "./types"
+export { sceneSchema } from "./types"

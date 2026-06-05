@@ -34,7 +34,7 @@ export default function ConnectRoute() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pt-2 pb-8">
+    <div className="w-full space-y-6 pt-2 pb-8">
       <header className="flex items-center gap-3">
         <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md">
           <PlugZap className="size-5" />

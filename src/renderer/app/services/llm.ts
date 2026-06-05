@@ -7,7 +7,6 @@ import {
   type ChatSyncMessage,
   getEmbeddingsFromMain,
   isElectronApp,
-  listLlmModels as listLocalLlmModels,
   loadChatModel as loadChatModelInMain,
   primeChatHistoryFromMain,
   onChatStreamFromMain,
@@ -66,7 +65,7 @@ function formatLlmLoadError(error: unknown, fileName: string): string {
   if (/Failed to load|InsufficientMemory|out of memory|显存|VRAM/i.test(nested)) {
     return [
       `无法加载 ${fileName}。`,
-      "请确认 Ollama 已运行、模型已 pull，并尝试更小模型或释放显存。",
+      "请尝试更小模型或释放显存后重试。",
     ].join(" ")
   }
   return nested || "模型加载失败"
@@ -96,7 +95,7 @@ function formatPrompt(messages: ChatMessage[]): string {
     .concat("\n\nAssistant:\n")
 }
 
-/** 增量对话：仅发送新消息，历史由主进程 Ollama 会话维护。 */
+/** 增量对话：仅发送新消息，历史由主进程会话维护。 */
 function resolveStreamInput(messages: ChatMessage[]): {
   prompt: string
   primeMessages?: ChatSyncMessage[]
@@ -134,7 +133,7 @@ export function getLoadingState(): LoadingState {
 }
 
 export async function getModelList(): Promise<LlmModel[]> {
-  return listLocalLlmModels()
+  return []
 }
 
 export async function loadModel(
@@ -145,7 +144,7 @@ export async function loadModel(
   if (!isElectronLlmAvailable()) return undefined
   if (currentModel === modelId) return undefined
 
-  const progress = { progress: 0, text: "正在连接 Ollama 模型…" }
+  const progress = { progress: 0, text: "正在连接模型…" }
   loadingState = {
     isLoading: true,
     loadingModelId: modelId,
@@ -156,16 +155,10 @@ export async function loadModel(
 
   try {
     const settings = await getRuntimeSettings()
-    const routeEntry = resolveChatModelEntry(settings)
-    const isRemote = routeEntry?.transport === "openai-compatible"
-    const fileInfo = isRemote
-      ? { ok: true as const, filePath: modelId }
-      : await getChatModelFileInfo(modelId)
+    const fileInfo = await getChatModelFileInfo(modelId)
     if (!fileInfo.ok || !fileInfo.filePath) {
       throw new Error(
-        !isRemote && "reason" in fileInfo
-          ? fileInfo.reason ?? "模型文件不可用"
-          : "模型不可用"
+        "reason" in fileInfo ? fileInfo.reason ?? "模型不可用" : "模型不可用"
       )
     }
     try {
@@ -215,16 +208,9 @@ async function ensureChatModelLoaded(): Promise<void> {
   if (!entry) {
     throw new Error("请先在「模型与连接」配置至少一个已启用的对话模型")
   }
-  if (entry.transport === "openai-compatible") {
-    const key = (entry.apiKey ?? settings.llmProvider.apiKey).trim()
-    if (!key) throw new Error("请配置 API Key")
-    if (!entry.model.trim()) throw new Error("请配置模型名")
-    await loadModel(entry.model.trim())
-    return
-  }
-  if (!entry.model.trim()) {
-    throw new Error("请在「模型与连接」选择本机已安装的 Ollama 模型")
-  }
+  const key = (entry.apiKey ?? settings.llmProvider.apiKey).trim()
+  if (!key) throw new Error("请配置 API Key")
+  if (!entry.model.trim()) throw new Error("请配置模型名")
   await loadModel(entry.model.trim())
 }
 

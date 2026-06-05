@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react"
+﻿import { useEffect, useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -8,17 +8,24 @@ import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
 import { PlaybookWizardForm } from "~/components/playbook/playbook-wizard-form"
 import { RichTextField } from "~/components/playbook/RichTextField"
+import { FlowchartField, FlowchartFieldLabel } from "~/components/playbook/flowchart-field"
+import { MindmapField, MindmapFieldLabel } from "~/components/playbook/mindmap-field"
+import {
+  defaultFlowchartValue,
+  defaultMindmapValue,
+} from "~/services/playbook/graph-serializers"
 import {
   extractSlotsFromSingleLine,
-  loadLastPlaybookSlots,
-  saveLastPlaybookSlots,
+  loadInputSceneSlots,
+  saveInputSceneSlots,
   SlotValidationError,
   type InputField,
   type InputProfile,
 } from "~/services/playbook"
 
 type PlaybookInputFormProps = {
-  playbookId: string
+  /** 用于持久化填表草稿（InputProfile id） */
+  profileId: string
   profile: InputProfile
   disabled?: boolean
   formId?: string
@@ -28,8 +35,35 @@ type PlaybookInputFormProps = {
   onValuesChange?: (values: Record<string, unknown>) => void
 }
 
+function buildDefaultValues(profile: InputProfile): Record<string, unknown> {
+  const v: Record<string, unknown> = {}
+  for (const field of profile.fields) {
+    if (field.type === "mindmap") {
+      v[field.key] = defaultMindmapValue()
+    } else if (field.type === "flowchart") {
+      v[field.key] = defaultFlowchartValue()
+    } else if (field.default !== undefined) {
+      v[field.key] = field.default
+    }
+  }
+  return v
+}
+
+function mergeDraftValues(
+  profile: InputProfile,
+  draft: Record<string, unknown> | null
+): Record<string, unknown> {
+  const v = buildDefaultValues(profile)
+  if (!draft) return v
+  for (const field of profile.fields) {
+    const prev = draft[field.key]
+    if (prev !== undefined) v[field.key] = prev
+  }
+  return v
+}
+
 export function PlaybookInputForm({
-  playbookId,
+  profileId,
   profile,
   disabled,
   formId = "playbook-run-form",
@@ -41,35 +75,41 @@ export function PlaybookInputForm({
   const capture = profile.capture ?? ["form"]
   const showSingleLine = capture.includes("singleLineExtract")
 
-  const initial = useMemo(() => {
-    const v: Record<string, string | number> = {}
-    for (const field of profile.fields) {
-      if (field.default !== undefined) v[field.key] = field.default
-    }
-    const last = loadLastPlaybookSlots(playbookId)
-    if (last) {
-      for (const field of profile.fields) {
-        const prev = last[field.key]
-        if (prev !== undefined) v[field.key] = prev
-      }
-    }
-    return v
-  }, [profile, playbookId])
-
-  const [values, setValues] = useState(initial)
+  const [values, setValues] = useState(() => buildDefaultValues(profile))
+  const [draftReady, setDraftReady] = useState(false)
   const [singleLine, setSingleLine] = useState("")
   const [extracting, setExtracting] = useState(false)
 
   useEffect(() => {
-    onValuesChange?.(values)
-  }, [values, onValuesChange])
+    let cancelled = false
+    setDraftReady(false)
+    void (async () => {
+      const last = await loadInputSceneSlots(profileId)
+      if (cancelled) return
+      setValues(mergeDraftValues(profile, last))
+      setDraftReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [profile, profileId])
 
-  const useWizard = profile.fields.length > 2 && !profile.fields.some((f) => f.type === "rich-text")
+  useEffect(() => {
+    if (!draftReady) return
+    onValuesChange?.(values)
+    void saveInputSceneSlots(profileId, values)
+  }, [values, onValuesChange, profileId, draftReady])
+
+  const useWizard =
+    profile.fields.length > 2 &&
+    !profile.fields.some((f) =>
+      ["rich-text", "mindmap", "flowchart"].includes(f.type ?? "")
+    )
 
   if (useWizard) {
     return (
       <PlaybookWizardForm
-        playbookId={playbookId}
+        profileId={profileId}
         profile={profile}
         disabled={disabled}
         formId={formId}
@@ -87,13 +127,12 @@ export function PlaybookInputForm({
     setExtracting(true)
     try {
       const slots = await extractSlotsFromSingleLine(profile, singleLine)
-      const next: Record<string, string | number> = { ...values }
+      const next: Record<string, unknown> = { ...values }
       for (const field of profile.fields) {
         const v = slots[field.key]
-        if (v !== undefined && v !== null && String(v).trim() !== "") {
-          next[field.key] =
-            field.type === "number" ? Number(v) : String(v)
-        }
+        if (v === undefined || v === null || String(v).trim() === "") continue
+        if (field.type === "number") next[field.key] = Number(v)
+        else next[field.key] = String(v)
       }
       setValues(next)
       toast.success("已填入识别到的字段")
@@ -116,7 +155,7 @@ export function PlaybookInputForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault()
-        saveLastPlaybookSlots(playbookId, values)
+        saveInputSceneSlots(profileId, values)
         onSubmit(values)
       }}
     >
@@ -182,12 +221,38 @@ function FieldBlock({
   onChange,
 }: {
   field: InputField
-  value: string | number | undefined
+  value: unknown
   disabled?: boolean
-  onChange: (v: string | number) => void
+  onChange: (v: unknown) => void
 }) {
   const chipOptions =
     field.chips?.map(String) ?? field.options ?? []
+
+  if (field.type === "mindmap") {
+    return (
+      <div className="space-y-2">
+        <MindmapFieldLabel label={field.label} required={field.required} />
+        <MindmapField
+          value={value}
+          disabled={disabled}
+          onChange={(next) => onChange(next)}
+        />
+      </div>
+    )
+  }
+
+  if (field.type === "flowchart") {
+    return (
+      <div className="space-y-2">
+        <FlowchartFieldLabel label={field.label} required={field.required} />
+        <FlowchartField
+          value={value}
+          disabled={disabled}
+          onChange={(next) => onChange(next)}
+        />
+      </div>
+    )
+  }
 
   if (field.type === "rich-text") {
     return (
@@ -200,13 +265,15 @@ function FieldBlock({
         </Label>
         <RichTextField
           field={field}
-          value={value}
+          value={value as string | number | undefined}
           disabled={disabled}
           onChange={(rendered) => onChange(rendered)}
         />
       </div>
     )
   }
+
+  const scalar = value as string | number | undefined
 
   return (
     <div className="space-y-2">
@@ -224,7 +291,7 @@ function FieldBlock({
               key={opt}
               type="button"
               size="sm"
-              variant={String(value) === opt ? "default" : "outline"}
+              variant={String(scalar) === opt ? "default" : "outline"}
               className="rounded-full"
               disabled={disabled}
               onClick={() =>
@@ -239,7 +306,7 @@ function FieldBlock({
 
       {field.type === "textarea" ? (
         <Textarea
-          value={value === undefined ? "" : String(value)}
+          value={scalar === undefined ? "" : String(scalar)}
           disabled={disabled}
           className="min-h-24 rounded-xl"
           onChange={(e) => onChange(e.target.value)}
@@ -247,14 +314,14 @@ function FieldBlock({
       ) : field.type === "number" ? (
         <Input
           type="number"
-          value={value === undefined ? "" : String(value)}
+          value={scalar === undefined ? "" : String(scalar)}
           disabled={disabled}
           className="rounded-xl"
           onChange={(e) => onChange(Number(e.target.value))}
         />
       ) : (
         <Input
-          value={value === undefined ? "" : String(value)}
+          value={scalar === undefined ? "" : String(scalar)}
           disabled={disabled}
           className="rounded-xl"
           onChange={(e) => onChange(e.target.value)}

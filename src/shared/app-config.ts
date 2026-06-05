@@ -4,7 +4,6 @@ export interface AppConfigChatModel {
   id: string
   label: string
   tier: "light" | "balanced" | "performance"
-  transport: "ollama" | "openai-compatible"
   model: string
   enabled: boolean
   preset?: string
@@ -18,7 +17,6 @@ export interface AppConfig {
   dataRoot: string
   preferLowPower: boolean
   maxCpuPercent: number
-  ollamaHost: string
   /** 当前用于对话的 chatModels[].id */
   activeChatModelId: string
   chatModels: AppConfigChatModel[]
@@ -31,7 +29,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   dataRoot: "",
   preferLowPower: true,
   maxCpuPercent: 95,
-  ollamaHost: "http://127.0.0.1:11434",
   activeChatModelId: "",
   chatModels: [],
 }

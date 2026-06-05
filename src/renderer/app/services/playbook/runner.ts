@@ -34,8 +34,7 @@ type OutputLlmItem = { title?: string; body?: string; tags?: unknown }
 
 export async function runPlaybook(
   playbookId: string,
-  rawInput: Record<string, unknown>,
-  options?: { skillId?: string }
+  rawInput: Record<string, unknown>
 ): Promise<PlaybookRunResult> {
   const started = Date.now()
   const stages: string[] = []
@@ -49,7 +48,6 @@ export async function runPlaybook(
       error: `未找到场景：${playbookId}`,
       trace: {
         playbookId,
-        skillId: "",
         memoriesUsed: 0,
         elapsedMs: 0,
         stages,
@@ -61,10 +59,9 @@ export async function runPlaybook(
   if (!profile) {
     return {
       ok: false,
-      error: `未找到输入模板：${playbook.inputProfileId}`,
+      error: `未找到场景输入配置：${playbook.inputProfileId}`,
       trace: {
         playbookId,
-        skillId: "",
         memoriesUsed: 0,
         elapsedMs: 0,
         stages,
@@ -82,27 +79,6 @@ export async function runPlaybook(
       error: message,
       trace: {
         playbookId,
-        skillId: "",
-        memoriesUsed: 0,
-        elapsedMs: Date.now() - started,
-        stages,
-      },
-    }
-  }
-
-  const skillId =
-    options?.skillId ??
-    playbook.defaultSkillId ??
-    playbook.skillIds[0] ??
-    ""
-
-  if (!playbook.skillIds.includes(skillId)) {
-    return {
-      ok: false,
-      error: "所选 Skill 不在本场景允许范围内",
-      trace: {
-        playbookId,
-        skillId,
         memoriesUsed: 0,
         elapsedMs: Date.now() - started,
         stages,
@@ -145,7 +121,6 @@ export async function runPlaybook(
       rawText,
       trace: {
         playbookId,
-        skillId,
         memoriesUsed,
         elapsedMs: Date.now() - started,
         stages,
@@ -181,7 +156,6 @@ export async function runPlaybook(
     rawText,
     trace: {
       playbookId,
-      skillId,
       memoriesUsed,
       elapsedMs: Date.now() - started,
       stages,

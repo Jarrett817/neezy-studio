@@ -14,7 +14,6 @@ import { app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 
-import { ensureOllamaReady } from "./ollama/lifecycle"
 import { normalizeMainChatModels, resolveEntryApiKey } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"
 import {
@@ -39,12 +38,11 @@ import {
 } from "./pi-permission-ui"
 import { resolveStoragePaths } from "./storage-paths"
 import { log } from "./logger"
+import { listAllInstalledSkillDirs } from "./skill-install"
 
 export interface CreateDiskAgentOptions {
   diskSessionId?: string
   createNew?: boolean
-  /** 非空时仅加载对应 skills/*.md，不扫描整个 skills 目录 */
-  sceneSkillIds?: string[]
 }
 
 interface IpcAgentSession {
@@ -52,7 +50,6 @@ interface IpcAgentSession {
   session: AgentSession
   unsubscribe: () => void
   window: BrowserWindow
-  sceneSkillIds?: string[]
 }
 
 const ipcSessions = new Map<string, IpcAgentSession>()
@@ -94,29 +91,17 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   return sm
 }
 
-function resolveAdditionalSkillPaths(
-  cwd: string,
-  sceneSkillIds?: string[]
-): string[] {
-  const skillsDir = path.join(cwd, "skills")
-  if (sceneSkillIds?.length) {
-    const files = sceneSkillIds
-      .map((id) => path.join(skillsDir, `${id}.md`))
-      .filter((file) => fs.existsSync(file))
-    if (files.length > 0) return files
-    log.warn("[pi-agent] 场景 Skill 文件未找到，回退全量 skills 目录:", sceneSkillIds)
-  }
-  return [skillsDir, ...getBundledPiSkillPaths()]
+function resolveAdditionalSkillPaths(cwd: string): string[] {
+  return [...listAllInstalledSkillDirs(cwd), ...getBundledPiSkillPaths()]
 }
 
 async function getResourceLoader(
   cwd: string,
   agentDir: string,
-  settingsManager: SettingsManager,
-  sceneSkillIds?: string[]
+  settingsManager: SettingsManager
 ): Promise<ResourceLoader> {
-  const sceneKey = sceneSkillIds?.length ? sceneSkillIds.slice().sort().join(",") : ""
-  const key = `${cwd}\0${agentDir}\0${sceneKey}`
+  const skillKey = listAllInstalledSkillDirs(cwd).sort().join(",")
+  const key = `${cwd}\0${agentDir}\0${skillKey}`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader
   }
@@ -126,7 +111,7 @@ async function getResourceLoader(
     agentDir,
     settingsManager,
     additionalExtensionPaths: getBundledPiExtensionPaths(),
-    additionalSkillPaths: resolveAdditionalSkillPaths(cwd, sceneSkillIds),
+    additionalSkillPaths: resolveAdditionalSkillPaths(cwd),
   })
   await loader.reload()
   const ext = loader.getExtensions()
@@ -235,10 +220,7 @@ async function resolveSessionManager(
   throw new Error("缺少 diskSessionId，请先创建或选择 Pi 磁盘会话")
 }
 
-async function createPiSession(
-  sessionManager: SessionManager,
-  sceneSkillIds?: string[]
-): Promise<AgentSession> {
+async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
   applyPlaywrightBrowsersPath()
   const { cwd, agentDir } = getPiDirs()
   const model = resolvePiChatModel()
@@ -256,7 +238,7 @@ async function createPiSession(
     // 勿传 tools 白名单：SDK 规定传入后仅启用列出的工具，会屏蔽 pi-web-access 等扩展工具
     customTools: getNeezyCustomTools(),
     sessionManager,
-    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager, sceneSkillIds),
+    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
   })
 
   session.agent.toolExecution = "sequential"
@@ -267,9 +249,6 @@ export async function createAgentSession(
   window: BrowserWindow,
   options: CreateDiskAgentOptions = {}
 ): Promise<string> {
-  if (options.sceneSkillIds?.length) {
-    invalidatePiResourceLoaderCache()
-  }
   const { sm, diskSessionId } = await resolveSessionManager(options)
   const existing = ipcSessions.get(diskSessionId)
   if (existing && !existing.window.isDestroyed()) {
@@ -282,7 +261,7 @@ export async function createAgentSession(
     ipcSessions.delete(diskSessionId)
   }
 
-  const session = await createPiSession(sm, options.sceneSkillIds)
+  const session = await createPiSession(sm)
   syncSessionChatRoute(session)
   await bindAgentSessionUi(session, window, diskSessionId)
   void maybePromptChromeAuthorize(session, diskSessionId)
@@ -296,11 +275,7 @@ export async function createAgentSession(
     session,
     unsubscribe,
     window,
-    sceneSkillIds: options.sceneSkillIds,
   })
-  if (options.sceneSkillIds?.length) {
-    log.info("[pi-agent] 场景 Skill:", options.sceneSkillIds.join(", "))
-  }
   return diskSessionId
 }
 
@@ -318,6 +293,15 @@ export function configureAgentSession(
   syncSessionChatRoute(entry.session)
 }
 
+function formatPromptError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  const cause = error.cause
+  if (cause instanceof Error && cause.message && cause.message !== error.message) {
+    return `${error.message} (${cause.message})`
+  }
+  return error.message
+}
+
 async function ensureAgentChatReady(userMessage?: string): Promise<void> {
   const settings = getSyncedRuntimeSettings()
   const route = resolveActiveChatRoute()
@@ -330,14 +314,10 @@ async function ensureAgentChatReady(userMessage?: string): Promise<void> {
     }
     throw new Error("请先在「模型与连接」添加至少一个已启用的对话模型")
   }
-  if (route.entry.transport === "openai-compatible") {
-    const key = resolveEntryApiKey(route.entry, settings.llmProvider)
-    if (!key) {
-      throw new Error("该 API 模型未配置 Key，请在模型卡片或 API 默认项中填写")
-    }
-    return
+  const key = resolveEntryApiKey(route.entry, settings.llmProvider)
+  if (!key) {
+    throw new Error("该 API 模型未配置 Key，请在模型卡片中填写")
   }
-  await ensureOllamaReady()
 }
 
 export async function promptAgent(diskSessionId: string, message: string): Promise<void> {
@@ -358,8 +338,8 @@ export async function promptAgent(diskSessionId: string, message: string): Promi
   try {
     await entry.session.prompt(message)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    log.error("[pi-agent] prompt failed:", msg)
+    const msg = formatPromptError(error)
+    log.error("[pi-agent] prompt failed:", msg, model.baseUrl, model.id)
     throw new Error(msg)
   }
 }

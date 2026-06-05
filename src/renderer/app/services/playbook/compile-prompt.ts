@@ -1,4 +1,5 @@
 ﻿import type { InputField, InputProfile, Playbook, PlaybookSlots } from "./types"
+import { flowchartToText, mindmapToJson } from "./graph-serializers"
 
 export type CompilePromptContext = {
   slots: PlaybookSlots
@@ -45,6 +46,13 @@ export function renderFieldValue(
       )
     }
     return ""
+  }
+  if (field.type === "mindmap") {
+    const json = mindmapToJson(v)
+    return json ? `\`\`\`json\n${json}\n\`\`\`` : ""
+  }
+  if (field.type === "flowchart") {
+    return flowchartToText(v)
   }
   if (v === undefined || v === null) return ""
   return String(v).trim()

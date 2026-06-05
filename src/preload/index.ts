@@ -1,19 +1,14 @@
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getBuildInfo: () => ipcRenderer.invoke("app:get-build-info"),
   getPlaywrightBrowserStatus: () => ipcRenderer.invoke("app:get-playwright-browser-status"),
   ensurePlaywrightBrowser: () => ipcRenderer.invoke("app:ensure-playwright-browser"),
-  configureOllamaHost: (host: string) =>
-    ipcRenderer.invoke("app:configure-ollama-host", host),
   syncRuntimeSettings: (settings: unknown) =>
     ipcRenderer.invoke("app:sync-runtime-settings", settings),
   getAppConfig: () => ipcRenderer.invoke("app:get-app-config"),
   saveAppConfig: (config: unknown) => ipcRenderer.invoke("app:save-app-config", config),
   getRuntimeMetrics: () => ipcRenderer.invoke("app:get-runtime-metrics"),
-  getModelCatalog: (kind?: string) => ipcRenderer.invoke("app:get-model-catalog", kind),
-  rebuildModelCatalog: () => ipcRenderer.invoke("app:rebuild-model-catalog"),
-  getModelRecommendations: () => ipcRenderer.invoke("app:get-model-recommendations"),
   loadEmbeddingModel: (modelId: string, preferLowPower?: boolean) =>
     ipcRenderer.invoke("app:load-embedding-model", modelId, preferLowPower),
   unloadEmbeddingModel: () => ipcRenderer.invoke("app:unload-embedding-model"),
@@ -26,9 +21,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   testLlmConnection: () => ipcRenderer.invoke("app:test-llm-connection"),
   listOpenAiModels: (payload: { baseUrl: string; apiKey: string }) =>
     ipcRenderer.invoke("app:list-openai-models", payload),
-  getOllamaStatus: () => ipcRenderer.invoke("app:get-ollama-status"),
-  testOllamaModel: (modelName: string, kind?: string) =>
-    ipcRenderer.invoke("app:test-ollama-model", { modelName, kind }),
   chatPrompt: (input: string, options?: unknown) =>
     ipcRenderer.invoke("app:chat-prompt", input, options),
   chatPromptStream: (payload: unknown) =>
@@ -43,25 +35,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getEmbeddings: (texts: string | string[], purpose?: "query" | "document") =>
     ipcRenderer.invoke("app:get-embeddings", texts, purpose),
   getEmbeddingStatus: () => ipcRenderer.invoke("app:get-embedding-status"),
-  listLlmModels: () => ipcRenderer.invoke("app:list-llm-models"),
-  downloadModel: (modelId: string) => ipcRenderer.invoke("app:download-model", modelId),
-  cancelModelDownload: (modelId: string) =>
-    ipcRenderer.invoke("app:cancel-model-download", modelId),
-  deleteModel: (modelId: string) => ipcRenderer.invoke("app:delete-model", modelId),
-  onModelCatalogUpdated: (handler: () => void) => {
-    const listener = () => handler()
-    ipcRenderer.on("model-catalog-updated", listener)
-    return () => ipcRenderer.removeListener("model-catalog-updated", listener)
-  },
-  onModelDownloadProgress: (handler: (item: unknown) => void) => {
-    const listener = (_event: unknown, payload: unknown) => handler(payload)
-    ipcRenderer.on("model-download-progress", listener as Parameters<typeof ipcRenderer.on>[1])
-    return () =>
-      ipcRenderer.removeListener(
-        "model-download-progress",
-        listener as Parameters<typeof ipcRenderer.on>[1]
-      )
-  },
   appDataDir: () => ipcRenderer.invoke("path:app-data-dir"),
   getStoragePaths: () => ipcRenderer.invoke("app:get-storage-paths"),
   saveStoragePaths: (input: { dataRoot: string }) =>
@@ -125,6 +98,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("app:save-agent-permission-settings", input),
   resetAgentPermissionSettings: () =>
     ipcRenderer.invoke("app:reset-agent-permission-settings"),
+  skillsCatalogSearch: (query?: string) =>
+    ipcRenderer.invoke("skills:catalog-search", { query }),
+  skillsListInstalled: () => ipcRenderer.invoke("skills:list-installed"),
+  skillsInstall: (installKey: string) =>
+    ipcRenderer.invoke("skills:install", { installKey }),
+  skillsUninstall: (installKey: string) =>
+    ipcRenderer.invoke("skills:uninstall", { installKey }),
+  skillsImportFromPath: (sourcePath: string) =>
+    ipcRenderer.invoke("skills:import-from-path", { sourcePath }),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   invoke: <T = unknown>(channel: string, data?: unknown): Promise<T> =>
     ipcRenderer.invoke(channel, data),
   on: <T = unknown>(

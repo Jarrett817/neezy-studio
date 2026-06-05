@@ -10,8 +10,7 @@ import {
 
 import type { ChatPromptOptions, ChatStreamDelta } from "./types"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
-import { resolveActiveChatRoute, resolvedChatUsesApi } from "./model-routing"
-import { ensureOllamaReady } from "./ollama/lifecycle"
+import { resolveActiveChatRoute } from "./model-routing"
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 
@@ -31,19 +30,12 @@ function resolvePiReasoningOption(
   return level === "off" ? undefined : level
 }
 
-/** pi-ai 的 openai-completions 路径要求非空 apiKey；Ollama 本地不校验，用占位即可 */
-export const OLLAMA_PI_API_KEY = "ollama"
-
 export function resolveRouteApiKey(userMessage?: string): string | undefined {
   const route = resolveActiveChatRoute()
   const entry = route.entry
+  if (!entry) return undefined
   const provider = getSyncedRuntimeSettings().llmProvider
-  if (entry?.transport === "openai-compatible") {
-    return resolveEntryApiKey(entry, provider) || undefined
-  }
-  const model = resolvePiChatModel(userMessage)
-  if (model.provider === "ollama") return OLLAMA_PI_API_KEY
-  return undefined
+  return resolveEntryApiKey(entry, provider) || undefined
 }
 
 function textFromBlocks(
@@ -116,18 +108,21 @@ async function ensureChatReady(userMessage?: string): Promise<void> {
   if (!route.modelId) {
     throw new Error("请先在「模型与连接」添加至少一个已启用的对话模型")
   }
-  if (resolvedChatUsesApi()) {
-    activeModelId = route.modelId
-    return
+  const settings = getSyncedRuntimeSettings()
+  const key = route.entry
+    ? resolveEntryApiKey(route.entry, settings.llmProvider)
+    : settings.llmProvider.apiKey.trim()
+  if (!key) {
+    throw new Error("请配置 API Key")
   }
-  await ensureOllamaReady()
   activeModelId = route.modelId
+  void userMessage
 }
 
 export function getChatModelStatus() {
   const model = resolvePiChatModel()
   return {
-    loaded: Boolean(activeModelId) || resolvedChatUsesApi(),
+    loaded: Boolean(activeModelId),
     modelPath: activeModelId ?? model.id,
     loadInfo: activeModelId
       ? {
@@ -174,9 +169,6 @@ export async function testPiConnection(): Promise<{
   latencyMs: number
   error?: string
 }> {
-  if (!resolvedChatUsesApi()) {
-    return { ok: false, latencyMs: 0, error: "当前路由为 Ollama，请在 API 默认区或模型列表中配置 API 模型后测试" }
-  }
   const started = Date.now()
   try {
     await piCompleteMessages(

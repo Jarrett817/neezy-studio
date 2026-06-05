@@ -169,25 +169,25 @@ export async function searchMemories(
   return []
 }
 
-// ==================== Skills (stubbed) ====================
+// ==================== Skills（多源目录安装） ====================
 
 export async function listSkills(): Promise<AgentSkill[]> {
-  const { listSkills: listStoredSkills } = await import("~/services/storage/skills")
-  const rows = await listStoredSkills()
+  const { listInstalledSkills } = await import("~/services/skills")
+  const rows = await listInstalledSkills()
   return rows.map((skill) => ({
-    id: skill.id,
+    id: skill.installKey,
     name: skill.name,
     description: skill.description.trim(),
     slug: skill.id,
-    sourceKind: "local",
-    instructions: skill.instructions.trim(),
-    prompt: skill.prompt.trim(),
-    enabled: skill.enabled,
+    sourceKind: skill.publisher,
+    instructions: "",
+    prompt: "",
+    enabled: true,
     fileCount: 1,
     hasScripts: false,
     hasReferences: false,
     hasAssets: false,
-    updatedAt: String(skill.updated_at),
+    updatedAt: String(skill.installedAt),
   }))
 }
 
@@ -199,24 +199,30 @@ export async function setSkillEnabled(
   id: string,
   _enabled: boolean
 ): Promise<AgentSkill> {
-  return { id } as AgentSkill
+  const skills = await listSkills()
+  const found = skills.find((s) => s.id === id)
+  if (!found) throw new Error(`未找到 skill: ${id}`)
+  return found
 }
 
 export async function importSkillArchive(_input: {
   archiveName: string
   archiveBase64: string
 }): Promise<AgentSkill> {
-  return {} as AgentSkill
+  throw new Error("请从 Skill 目录页安装（Anthropic / Cursor 官方）")
 }
 
 export async function importSkillFolder(_input: {
   folderName: string
   files: SkillImportFile[]
 }): Promise<AgentSkill> {
-  return {} as AgentSkill
+  throw new Error("请从 Skill 目录页安装（Anthropic / Cursor 官方）")
 }
 
-export async function deleteSkill(_id: string): Promise<void> {}
+export async function deleteSkill(installKey: string): Promise<void> {
+  const { uninstallSkill } = await import("~/services/skills")
+  await uninstallSkill(installKey)
+}
 
 // ==================== 内存事件 ====================
 

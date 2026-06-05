@@ -16,10 +16,7 @@ import { queryClient } from "~/lib/query-client"
 import ChatRoute from "~/routes/chat"
 import ConnectRoute from "~/routes/connect"
 import CreateRoute from "~/routes/create"
-import InputProfileEditRoute from "~/routes/input-profile-edit"
-import InputProfilesRoute from "~/routes/input-profiles"
 import KnowledgeRoute from "~/routes/knowledge"
-import ModelsRoute from "~/routes/models"
 import PlaybookDesignerRoute from "~/routes/playbook-designer"
 import PlaybookRunRoute from "~/routes/playbook-run"
 import SceneDetailRoute from "~/routes/scene-detail"
@@ -79,15 +76,10 @@ export default function App() {
               <Route path="chat" element={<ChatRoute />} />
               <Route path="connect" element={<ConnectRoute />} />
               <Route path="settings" element={<SettingsRoute />} />
+              <Route path="skills" element={<SkillsRoute />} />
 
               <Route path="studio" element={<StudioLayout />}>
                 <Route index element={<StudioIndexRoute />} />
-                <Route path="skills" element={<SkillsRoute />} />
-                <Route path="input-profiles" element={<InputProfilesRoute />} />
-                <Route
-                  path="input-profiles/:profileId"
-                  element={<InputProfileEditRoute />}
-                />
                 <Route
                   path="playbook-designer"
                   element={<PlaybookDesignerRoute />}
@@ -116,22 +108,30 @@ export default function App() {
                 element={<Navigate to="/knowledge?tab=persona" replace />}
               />
               <Route
-                path="skills"
-                element={<Navigate to="/studio/skills" replace />}
+                path="studio/skills"
+                element={<Navigate to="/skills" replace />}
               />
               <Route
                 path="input-profiles"
-                element={<Navigate to="/studio/input-profiles" replace />}
+                element={<Navigate to="/studio/playbook-designer" replace />}
               />
               <Route
                 path="input-profiles/:profileId"
-                element={<InputProfileIdRedirect />}
+                element={<Navigate to="/studio/playbook-designer" replace />}
+              />
+              <Route
+                path="studio/input-profiles"
+                element={<Navigate to="/studio/playbook-designer" replace />}
+              />
+              <Route
+                path="studio/input-profiles/:profileId"
+                element={<Navigate to="/studio/playbook-designer" replace />}
               />
 
-              <Route path="models" element={<ModelsRoute />} />
+              <Route path="models" element={<Navigate to="/connect" replace />} />
               <Route
                 path="connect/local-models"
-                element={<Navigate to="/models" replace />}
+                element={<Navigate to="/connect" replace />}
               />
             </Route>
           </Routes>
@@ -145,9 +145,4 @@ export default function App() {
 function PlaybookIdRedirect() {
   const { playbookId = "" } = useParams()
   return <Navigate to={`/scenes/${playbookId}`} replace />
-}
-
-function InputProfileIdRedirect() {
-  const { profileId = "" } = useParams()
-  return <Navigate to={`/studio/input-profiles/${profileId}`} replace />
 }

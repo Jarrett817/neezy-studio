@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation } from "@tanstack/react-query"
 import { ChevronDown, Loader2, Save, Send } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router"
@@ -15,31 +15,16 @@ import { cn } from "~/lib/utils"
 import {
   compilePrompt,
   designPlaybookFromIntent,
-  saveUserInputProfile,
-  saveUserPlaybook,
+  saveUserScene,
   type DesignPlaybookTurn,
 } from "~/services/playbook"
-import { listSkills } from "~/services/storage/skills"
 
 type PreviewTab = "structure" | "compile"
 
 type ThreadMessage = DesignPlaybookTurn & { id: string }
 
-function patchDraftSkillIds(json: string, skillIds: string[]): string | null {
-  const draft = parseDesignerDraft(json)
-  if (!draft) return null
-  return JSON.stringify(
-    {
-      playbook: { ...draft.playbook, skillIds },
-      inputProfile: draft.inputProfile,
-    },
-    null,
-    2
-  )
-}
-
 const ASSISTANT_OK =
-  "已根据你的描述更新右侧配置草案。可继续补充字段、语气或 Skill，满意后点击底部保存。"
+  "已根据你的描述更新右侧配置草案。可继续补充字段或语气，满意后点击底部保存。"
 
 export default function PlaybookDesignerRoute() {
   const navigate = useNavigate()
@@ -50,17 +35,10 @@ export default function PlaybookDesignerRoute() {
   const [previewTab, setPreviewTab] = useState<PreviewTab>("structure")
   const threadEndRef = useRef<HTMLDivElement>(null)
 
-  const { data: skills = [] } = useQuery({
-    queryKey: ["skills"],
-    queryFn: listSkills,
-  })
-
   const structuredDraft = useMemo(
     () => (draftJson ? parseDesignerDraft(draftJson) : null),
     [draftJson]
   )
-
-  const enabledSkills = skills.filter((s) => s.enabled)
 
   const compilePreview = useMemo(() => {
     if (!structuredDraft) return ""
@@ -108,13 +86,15 @@ export default function PlaybookDesignerRoute() {
 
   const saveMutation = useMutation({
     mutationFn: async (draft: DesignerDraft) => {
-      await saveUserInputProfile(draft.inputProfile)
-      await saveUserPlaybook(draft.playbook)
+      await saveUserScene({
+        playbook: draft.playbook,
+        inputProfile: draft.inputProfile,
+      })
       return draft.playbook.id
     },
     onSuccess: (id) => {
       toast.success("场景已保存")
-      navigate(`/create/${id}`)
+      navigate(`/chat?playbook=${encodeURIComponent(id)}`)
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "保存失败")
@@ -136,16 +116,6 @@ export default function PlaybookDesignerRoute() {
     setThread((prev) => [...prev, userMsg])
     setInput("")
     designMutation.mutate(turns)
-  }
-
-  const toggleSkill = (skillId: string) => {
-    if (!structuredDraft) return
-    const current = structuredDraft.playbook.skillIds
-    const next = current.includes(skillId)
-      ? current.filter((id) => id !== skillId)
-      : [...current, skillId]
-    const patched = patchDraftSkillIds(draftJson, next)
-    if (patched) setDraftJson(patched)
   }
 
   const saveFromJson = () => {
@@ -260,32 +230,6 @@ export default function PlaybookDesignerRoute() {
             </div>
           </div>
 
-          {structuredDraft && enabledSkills.length > 0 ? (
-            <div className="mb-4 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Skill 多选</p>
-              <div className="flex flex-wrap gap-1.5">
-                {enabledSkills.map((skill) => {
-                  const selected = structuredDraft.playbook.skillIds.includes(skill.id)
-                  return (
-                    <button
-                      key={skill.id}
-                      type="button"
-                      onClick={() => toggleSkill(skill.id)}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs transition-colors",
-                        selected
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border/60 text-muted-foreground hover:bg-muted/50"
-                      )}
-                    >
-                      {skill.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
-
           <div className="min-h-0 flex-1 overflow-y-auto">
             {previewTab === "compile" && structuredDraft ? (
               <pre className="whitespace-pre-wrap rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-relaxed">
@@ -299,7 +243,7 @@ export default function PlaybookDesignerRoute() {
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                在左侧发送描述后，将在此显示字段与 Skill 预览。
+                在左侧发送描述后，将在此显示字段预览。
               </p>
             )}
           </div>

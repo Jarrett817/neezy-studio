@@ -1,4 +1,5 @@
-﻿import { generateHTML, type JSONContent } from "@tiptap/html"
+﻿import { generateHTML } from "@tiptap/html"
+import type { JSONContent } from "@tiptap/react"
 import { useMemo } from "react"
 
 import { tiptapExtensions } from "~/lib/tiptap-extensions"

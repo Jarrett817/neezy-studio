@@ -29,12 +29,18 @@ function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
   return {
     ...base,
     version: APP_CONFIG_VERSION,
-    ollamaHost: base.ollamaHost?.trim() || DEFAULT_APP_CONFIG.ollamaHost,
-    chatModels: (stored?.chatModels ?? base.chatModels ?? []).map((e) => ({
-      ...e,
-      enabled: e.enabled !== false,
-      model: e.model?.trim() ?? "",
-    })),
+    chatModels: (stored?.chatModels ?? base.chatModels ?? [])
+      .filter((e) => (e as { transport?: string }).transport !== "ollama")
+      .map((e) => ({
+        id: e.id,
+        label: e.label,
+        tier: e.tier,
+        model: e.model?.trim() ?? "",
+        enabled: e.enabled !== false,
+        preset: e.preset,
+        baseUrl: e.baseUrl,
+        apiKey: e.apiKey,
+      })),
     activeChatModelId: stored?.activeChatModelId?.trim() ?? "",
   }
 }

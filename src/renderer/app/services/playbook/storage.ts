@@ -9,126 +9,126 @@
 } from "~/services/electron-client"
 import { getStoragePaths } from "~/services/storage-paths"
 
-import {
-  BUILTIN_INPUT_PROFILES,
-  BUILTIN_PLAYBOOKS,
-} from "./builtin-manifest"
+import { BUILTIN_SCENES } from "./builtin-manifest"
 import {
   inputProfileSchema,
   playbookSchema,
+  sceneSchema,
   type InputProfile,
   type Playbook,
+  type Scene,
 } from "./types"
 
-async function userPlaybooksRoot(): Promise<string> {
+async function scenesRoot(): Promise<string> {
   const { playbooksDir } = await getStoragePaths()
-  const root = await join(playbooksDir, "user")
+  const root = await join(playbooksDir, "scenes")
   if (!(await exists(root))) await mkdir(root, { recursive: true })
   return root
 }
 
-async function userProfilesRoot(): Promise<string> {
-  const { inputProfilesDir } = await getStoragePaths()
-  const root = await join(inputProfilesDir, "user")
-  if (!(await exists(root))) await mkdir(root, { recursive: true })
-  return root
+async function readSceneFile(path: string): Promise<Scene> {
+  const raw = JSON.parse(await readTextFile(path)) as unknown
+  return sceneSchema.parse(raw)
 }
 
-export async function listInputProfiles(): Promise<InputProfile[]> {
-  const byId = new Map<string, InputProfile>()
-  for (const p of BUILTIN_INPUT_PROFILES) byId.set(p.id, p)
+export async function listScenes(): Promise<Scene[]> {
+  const root = await scenesRoot()
+  if (!(await exists(root))) return []
 
-  const root = await userProfilesRoot()
-  if (await exists(root)) {
-    const entries = await readDir(root)
-    for (const entry of entries) {
-      if (!entry.name?.endsWith(".json")) continue
-      const path = await join(root, entry.name)
-      const raw = JSON.parse(await readTextFile(path)) as unknown
-      const profile = inputProfileSchema.parse(raw)
-      byId.set(profile.id, profile)
-    }
+  const entries = await readDir(root)
+  const scenes: Scene[] = []
+  for (const entry of entries) {
+    if (!entry.name?.endsWith(".json")) continue
+    scenes.push(await readSceneFile(await join(root, entry.name)))
   }
+  return scenes.sort((a, b) => a.playbook.name.localeCompare(b.playbook.name))
+}
 
-  return [...byId.values()]
+export async function getScene(playbookId: string): Promise<Scene | null> {
+  const root = await scenesRoot()
+  const path = await join(root, `${playbookId}.json`)
+  if (!(await exists(path))) return null
+  return readSceneFile(path)
+}
+
+export async function saveScene(scene: Scene): Promise<Scene> {
+  const parsed = sceneSchema.parse({
+    playbook: playbookSchema.parse({
+      ...scene.playbook,
+      builtin: scene.playbook.builtin ?? false,
+    }),
+    inputProfile: inputProfileSchema.parse({
+      ...scene.inputProfile,
+      updatedAt: Date.now(),
+    }),
+  })
+  parsed.inputProfile.id = parsed.playbook.inputProfileId
+
+  const root = await scenesRoot()
+  const path = await join(root, `${parsed.playbook.id}.json`)
+  await writeTextFile(path, JSON.stringify(parsed, null, 2))
+  return parsed
+}
+
+export async function deleteScene(playbookId: string): Promise<void> {
+  const scene = await getScene(playbookId)
+  if (scene?.playbook.builtin) {
+    throw new Error("内置场景不可删除")
+  }
+  const root = await scenesRoot()
+  const path = await join(root, `${playbookId}.json`)
+  if (await exists(path)) await remove(path)
 }
 
 export async function getInputProfile(id: string): Promise<InputProfile | null> {
-  const all = await listInputProfiles()
-  return all.find((p) => p.id === id) ?? null
-}
-
-export async function saveUserInputProfile(
-  profile: InputProfile
-): Promise<InputProfile> {
-  const parsed = inputProfileSchema.parse(profile)
-  const root = await userProfilesRoot()
-  const path = await join(root, `${parsed.id}.json`)
-  await writeTextFile(path, JSON.stringify(parsed, null, 2))
-  return parsed
+  for (const scene of await listScenes()) {
+    if (
+      scene.inputProfile.id === id ||
+      scene.playbook.inputProfileId === id
+    ) {
+      return scene.inputProfile
+    }
+  }
+  return null
 }
 
 export async function listPlaybooks(): Promise<Playbook[]> {
-  const byId = new Map<string, Playbook>()
-  for (const p of BUILTIN_PLAYBOOKS) byId.set(p.id, p)
-
-  const root = await userPlaybooksRoot()
-  if (await exists(root)) {
-    const entries = await readDir(root)
-    for (const entry of entries) {
-      if (!entry.isDirectory || !entry.name) continue
-      const path = await join(root, entry.name, "playbook.json")
-      if (!(await exists(path))) continue
-      const raw = JSON.parse(await readTextFile(path)) as Record<string, unknown>
-      const playbook = playbookSchema.parse({ ...raw, builtin: false })
-      byId.set(playbook.id, playbook)
-    }
-  }
-
-  return [...byId.values()]
+  return (await listScenes()).map((scene) => scene.playbook)
 }
 
 export async function getPlaybook(id: string): Promise<Playbook | null> {
-  const all = await listPlaybooks()
-  return all.find((p) => p.id === id) ?? null
+  const scene = await getScene(id)
+  return scene?.playbook ?? null
 }
 
 export async function saveUserPlaybook(playbook: Playbook): Promise<Playbook> {
-  const parsed = playbookSchema.parse({ ...playbook, builtin: false })
-  const root = await userPlaybooksRoot()
-  const dir = await join(root, parsed.id)
-  if (!(await exists(dir))) await mkdir(dir, { recursive: true })
-  const path = await join(dir, "playbook.json")
-  await writeTextFile(path, JSON.stringify(parsed, null, 2))
-  return parsed
+  const existing = await getScene(playbook.id)
+  if (!existing) {
+    throw new Error(`未找到场景: ${playbook.id}`)
+  }
+  const saved = await saveScene({
+    playbook: playbookSchema.parse({ ...playbook, builtin: false }),
+    inputProfile: existing.inputProfile,
+  })
+  return saved.playbook
 }
 
-/**
- * 删除用户场景（含其 input profile 副本）。
- * 内置场景不允许删除。
- */
+export async function saveUserScene(scene: Scene): Promise<Scene> {
+  return saveScene({
+    ...scene,
+    playbook: { ...scene.playbook, builtin: false },
+  })
+}
+
 export async function deleteUserPlaybook(id: string): Promise<void> {
-  if (BUILTIN_PLAYBOOKS.some((p) => p.id === id)) {
-    throw new Error("内置场景不可删除")
-  }
-  const root = await userPlaybooksRoot()
-  const dir = await join(root, id)
-  if (await exists(dir)) {
-    await remove(dir)
-  }
+  await deleteScene(id)
 }
 
-/**
- * 列出「我的场景」（仅用户创建）。
- */
 export async function listUserPlaybooks(): Promise<Playbook[]> {
   const all = await listPlaybooks()
   return all.filter((p) => !p.builtin)
 }
 
-/**
- * 区分内置与用户场景，便于 UI 分类。
- */
 export type PlaybookSource = "builtin" | "user"
 export async function listPlaybooksGrouped(): Promise<{
   builtin: Playbook[]
@@ -138,5 +138,14 @@ export async function listPlaybooksGrouped(): Promise<{
   return {
     builtin: all.filter((p) => p.builtin),
     user: all.filter((p) => !p.builtin),
+  }
+}
+
+export async function seedBuiltinScenes(): Promise<void> {
+  const root = await scenesRoot()
+  for (const scene of BUILTIN_SCENES) {
+    const path = await join(root, `${scene.playbook.id}.json`)
+    if (await exists(path)) continue
+    await writeTextFile(path, JSON.stringify(scene, null, 2))
   }
 }

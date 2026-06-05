@@ -1,11 +1,10 @@
 import { resolveCatalogBaseUrl } from "../shared/coding-plan-catalog"
-import type { LlmProviderConfig, LlmProviderKind, ModelTier } from "./runtime-settings"
+import type { LlmProviderConfig, ModelTier } from "./runtime-settings"
 
 export interface ChatModelEntry {
   id: string
   label: string
   tier: ModelTier
-  transport: LlmProviderKind
   model: string
   enabled: boolean
   preset?: string
@@ -32,24 +31,17 @@ export function normalizeMainChatModels(
   input: Partial<{ chatModels?: ChatModelEntry[]; llmProvider?: LlmProviderConfig }>
 ): ChatModelEntry[] {
   if (!input.chatModels?.length) return []
-  const ollama = input.chatModels.filter(
-    (e) => e.transport === "ollama" && e.enabled !== false && e.model?.trim()
-  )
   const globalApi = input.llmProvider ?? {
-    kind: "openai-compatible" as const,
     preset: "custom",
     baseUrl: "",
     apiKey: "",
     model: "",
   }
-  const apis = input.chatModels.filter(
+  return input.chatModels.filter(
     (e) =>
-      e.transport === "openai-compatible" &&
       e.enabled !== false &&
       e.model?.trim() &&
       resolveEntryApiKey(e, globalApi) &&
       resolveEntryApiBase(e, globalApi)
   )
-  const singleOllama = ollama.length ? ollama[ollama.length - 1] : null
-  return [...apis, ...(singleOllama ? [singleOllama] : [])]
 }

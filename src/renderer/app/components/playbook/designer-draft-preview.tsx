@@ -106,17 +106,6 @@ export function DesignerDraftPreview({ draft }: { draft: DesignerDraft }) {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Skill</h3>
-        <div className="flex flex-wrap gap-1.5">
-          {playbook.skillIds.map((id) => (
-            <Badge key={id} variant="outline">
-              {id}
-            </Badge>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-2">
         <h3 className="text-sm font-semibold">Prompt 模板预览</h3>
         <pre className="max-h-40 overflow-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-xs leading-relaxed">
           {inputProfile.promptTemplate.slice(0, 480)}

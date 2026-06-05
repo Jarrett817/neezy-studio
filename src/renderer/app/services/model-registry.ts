@@ -13,7 +13,6 @@ import {
 export interface ModelRegistrySnapshot {
   activeChatModelId: string
   chatModels: ChatModelEntry[]
-  ollamaHost: string
   apiModel: string
   apiPreset: string
   apiBaseUrl: string
@@ -38,7 +37,6 @@ export async function loadModelRegistry(): Promise<ModelRegistrySnapshot> {
   return {
     activeChatModelId: s.activeChatModelId,
     chatModels: s.chatModels,
-    ollamaHost: s.ollamaHost,
     apiModel: s.llmProvider.model,
     apiPreset: s.llmProvider.preset,
     apiBaseUrl: s.llmProvider.baseUrl,
@@ -50,7 +48,6 @@ export async function saveChatModels(
   models: ChatModelEntry[],
   patch?: {
     activeChatModelId?: string
-    ollamaHost?: string
   }
 ): Promise<RuntimeSettings> {
   const prev = await getRuntimeSettings()
@@ -64,7 +61,6 @@ export async function saveChatModels(
     ...prev,
     chatModels,
     activeChatModelId,
-    ollamaHost: patch?.ollamaHost ?? prev.ollamaHost,
   })
 }
 
@@ -81,7 +77,6 @@ export async function applyModelRegistry(
       prev.llmProvider,
       patch.activeChatModelId ?? prev.activeChatModelId
     ),
-    ollamaHost: patch.ollamaHost ?? prev.ollamaHost,
     llmProvider: {
       ...prev.llmProvider,
       preset: patch.apiPreset ?? prev.llmProvider.preset,

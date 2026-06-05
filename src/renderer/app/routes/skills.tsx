@@ -1,256 +1,576 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Archive,
-  BookOpenText,
-  FolderUp,
-  Image as ImageIcon,
-  RefreshCw,
-  SlidersHorizontal,
-  Trash2,
-  Wrench,
-} from "lucide-react"
-import { useRef } from "react"
+
+import { Download, FolderOpen, RefreshCw, Trash2, Upload } from "lucide-react"
+
+import { useMemo, useState } from "react"
+
+import { toast } from "sonner"
+
+
 
 import { Button } from "~/components/ui/button"
+
+import { Badge } from "~/components/ui/badge"
+
 import {
-  deleteSkill,
-  importSkillArchive,
-  importSkillFolder,
-  listSkills,
-  setSkillEnabled,
-  type AgentSkill,
-} from "~/services/workspace"
+
+  importSkillFromPath,
+
+  importSkillsFromDrop,
+
+  installSkill,
+
+  searchSkillCatalog,
+
+  uninstallSkill,
+  type InstalledSkill,
+} from "~/services/skills"
+
+import { listSkills, type AgentSkill } from "~/services/workspace"
+
+import { getElectronApi } from "~/services/electron-client"
+
+import {
+
+  SKILL_CATALOG_PUBLISHER_IDS,
+
+  SKILL_PUBLISHERS,
+
+  type SkillCatalogPublisherId,
+
+} from "../../../shared/skill-registry"
+
+import { cn } from "~/lib/utils"
+
+
 
 export default function SkillsRoute() {
+
   const queryClient = useQueryClient()
-  const archiveInputRef = useRef<HTMLInputElement | null>(null)
-  const folderInputRef = useRef<HTMLInputElement | null>(null)
-  const { data: skills = [] } = useQuery({
+
+  const [publisher, setPublisher] = useState<SkillCatalogPublisherId>("anthropic")
+
+  const [dragOver, setDragOver] = useState(false)
+
+
+
+  const { data: catalog = [], isLoading: loadingCatalog } = useQuery({
+
+    queryKey: ["skills-catalog", ""],
+
+    queryFn: () => searchSkillCatalog(""),
+
+  })
+
+
+
+  const { data: installed = [] } = useQuery({
+
     queryKey: ["skills"],
+
     queryFn: listSkills,
-  })
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["skills"] })
 
-  const importArchiveMutation = useMutation({
-    mutationFn: importSkillArchive,
-    onSuccess: refresh,
   })
-  const importFolderMutation = useMutation({
-    mutationFn: importSkillFolder,
-    onSuccess: refresh,
+
+
+
+  const refresh = () => {
+
+    void queryClient.invalidateQueries({ queryKey: ["skills"] })
+
+    void queryClient.invalidateQueries({ queryKey: ["skills-catalog"] })
+
+  }
+
+
+
+  const installMutation = useMutation({
+
+    mutationFn: installSkill,
+
+    onSuccess: (skill) => {
+
+      toast.success(`已安装 ${skill.name}`)
+
+      refresh()
+
+    },
+
+    onError: (err: Error) => toast.error(err.message || "安装失败"),
+
   })
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      setSkillEnabled(id, enabled),
-    onSuccess: refresh,
+
+
+
+  const importMutation = useMutation({
+    mutationFn: async (paths: string[]): Promise<InstalledSkill[]> => {
+      const results: InstalledSkill[] = []
+      for (const sourcePath of paths) {
+        results.push(await importSkillFromPath(sourcePath))
+      }
+      return results
+    },
+
+    onSuccess: (skills) => {
+
+      toast.success(`已导入 ${skills.length} 个 skill`)
+
+      refresh()
+
+    },
+
+    onError: (err: Error) => toast.error(err.message || "导入失败"),
+
   })
-  const deleteMutation = useMutation({
-    mutationFn: deleteSkill,
-    onSuccess: refresh,
+
+
+
+  const dropMutation = useMutation({
+
+    mutationFn: importSkillsFromDrop,
+
+    onSuccess: (skills) => {
+
+      toast.success(`已导入 ${skills.length} 个 skill`)
+
+      refresh()
+
+    },
+
+    onError: (err: Error) => toast.error(err.message || "导入失败"),
+
   })
+
+
+
+  const uninstallMutation = useMutation({
+
+    mutationFn: uninstallSkill,
+
+    onSuccess: () => {
+
+      toast.success("已卸载")
+
+      refresh()
+
+    },
+
+    onError: (err: Error) => toast.error(err.message || "卸载失败"),
+
+  })
+
+
+
+  const importing =
+
+    importMutation.isPending || dropMutation.isPending || installMutation.isPending
+
+
+
+  const installedKeys = new Set(installed.map((s) => s.id))
+
+
+
+  const catalogByPublisher = useMemo(() => {
+
+    const map = new Map<SkillCatalogPublisherId, typeof catalog>()
+
+    for (const id of SKILL_CATALOG_PUBLISHER_IDS) map.set(id, [])
+
+    for (const entry of catalog) {
+
+      if (entry.publisher === "local") continue
+
+      map.get(entry.publisher as SkillCatalogPublisherId)?.push(entry)
+
+    }
+
+    return map
+
+  }, [catalog])
+
+
+
+  const visibleCatalog = catalogByPublisher.get(publisher) ?? []
+
+
+
+  const onPickFolder = async () => {
+
+    try {
+
+      const dir = await getElectronApi().pickDirectory({ title: "选择 skill 文件夹" })
+
+      if (!dir) return
+
+      importMutation.mutate([dir])
+
+    } catch (e) {
+
+      toast.error(e instanceof Error ? e.message : "选择文件夹失败")
+
+    }
+
+  }
+
+
+
+  const onDrop = (e: React.DragEvent) => {
+
+    e.preventDefault()
+
+    setDragOver(false)
+
+    const files = [...e.dataTransfer.files]
+
+    if (files.length === 0) return
+
+    dropMutation.mutate(files)
+
+  }
+
+
 
   return (
-    <div className="space-y-6 pt-4">
-      <div className="flex items-center justify-end">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full"
-          onClick={refresh}
-          aria-label="刷新"
-        >
-          <RefreshCw className="size-4" />
-        </Button>
-      </div>
 
-      <input
-        ref={archiveInputRef}
-        className="hidden"
-        type="file"
-        accept=".zip,application/zip"
-        onChange={async (event) => {
-          const file = event.target.files?.[0]
-          if (!file) return
-          importArchiveMutation.mutate({
-            archiveName: file.name,
-            archiveBase64: await fileToBase64(file),
-          })
-          event.currentTarget.value = ""
-        }}
-      />
-      <input
-        ref={folderInputRef}
-        className="hidden"
-        type="file"
-        multiple
-        {...({ webkitdirectory: "" } as React.HTMLAttributes<HTMLInputElement>)}
-        onChange={async (event) => {
-          const files = Array.from(event.target.files ?? [])
-          if (!files.length) return
-          const folderName =
-            files[0].webkitRelativePath.split("/")[0] || `skill-${Date.now()}`
-          const payload = await Promise.all(
-            files.map(async (file) => ({
-              relativePath: file.webkitRelativePath || file.name,
-              bytesBase64: await fileToBase64(file),
-            }))
-          )
-          importFolderMutation.mutate({ folderName, files: payload })
-          event.currentTarget.value = ""
-        }}
-      />
+    <div className="w-full space-y-6 pt-4">
 
-      {/* 导入选项 */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <button
-          type="button"
-          className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm text-left transition-all hover:bg-muted/50"
-          onClick={() => archiveInputRef.current?.click()}
-        >
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-amber-50 p-3 text-amber-600 transition-colors group-hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400">
-              <Archive className="size-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">导入 ZIP 包</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                skill-creator 打包的完整技能包
-              </p>
-            </div>
-          </div>
-        </button>
-        <button
-          type="button"
-          className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm text-left transition-all hover:bg-muted/50"
-          onClick={() => folderInputRef.current?.click()}
-        >
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-emerald-50 p-3 text-emerald-600 transition-colors group-hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400">
-              <FolderUp className="size-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">导入文件夹</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                包含 SKILL.md 的 skill 文件夹
-              </p>
-            </div>
-          </div>
-        </button>
-      </div>
+      <div className="flex items-start justify-between gap-4">
 
-      {/* Skill 列表 */}
-      {skills.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <SlidersHorizontal className="mb-3 size-10 text-muted-foreground/30" />
-          <p className="text-sm font-medium">还没有安装 Skill</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            导入一个 Skill 包开始扩展能力
+        <div>
+
+          <h1 className="text-lg font-semibold">Skill 目录</h1>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+
+            官方目录可一键安装；也可拖入含 SKILL.md 的文件夹（或 SKILL.md 本身）本地导入。
+
           </p>
+
         </div>
-      ) : (
-        <div className="space-y-2">
-          {skills.map((skill) => (
-            <SkillCard
+
+        <Button variant="ghost" size="icon" className="rounded-full" onClick={refresh}>
+
+          <RefreshCw className="size-4" />
+
+        </Button>
+
+      </div>
+
+
+
+      <div
+
+        className={cn(
+
+          "flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+
+          dragOver ? "border-primary bg-primary/5" : "border-border/70 bg-muted/15"
+
+        )}
+
+        onDragOver={(e) => {
+
+          e.preventDefault()
+
+          setDragOver(true)
+
+        }}
+
+        onDragLeave={() => setDragOver(false)}
+
+        onDrop={onDrop}
+
+      >
+
+        <div className="flex size-12 items-center justify-center rounded-xl bg-background shadow-sm ring-1 ring-border/60">
+
+          <Upload className="size-6 text-primary" />
+
+        </div>
+
+        <div>
+
+          <p className="text-sm font-medium">拖入 skill 文件夹</p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+
+            需包含 SKILL.md · 落盘至 skills/local/
+
+          </p>
+
+        </div>
+
+        <Button
+
+          type="button"
+
+          variant="outline"
+
+          size="sm"
+
+          className="rounded-xl"
+
+          disabled={importing}
+
+          onClick={() => void onPickFolder()}
+
+        >
+
+          <FolderOpen className="size-4" />
+
+          选择文件夹
+
+        </Button>
+
+      </div>
+
+
+
+      {installed.length > 0 ? (
+
+        <section className="space-y-2">
+
+          <h2 className="text-sm font-medium text-muted-foreground">已安装</h2>
+
+          {installed.map((skill) => (
+
+            <InstalledSkillRow
+
               key={skill.id}
+
               skill={skill}
-              busy={
-                toggleMutation.isPending ||
-                deleteMutation.isPending ||
-                importArchiveMutation.isPending ||
-                importFolderMutation.isPending
-              }
-              onToggle={(enabled) =>
-                toggleMutation.mutate({ id: skill.id, enabled })
-              }
-              onDelete={() => deleteMutation.mutate(skill.id)}
+
+              busy={uninstallMutation.isPending}
+
+              onUninstall={() => uninstallMutation.mutate(skill.id)}
+
             />
+
           ))}
+
+        </section>
+
+      ) : null}
+
+
+
+      <section className="space-y-3">
+
+        <div className="flex flex-wrap items-center gap-2">
+
+          <h2 className="text-sm font-medium text-muted-foreground">官方目录</h2>
+
+          <div className="flex gap-1 rounded-xl border border-border/60 bg-muted/30 p-1">
+
+            {SKILL_CATALOG_PUBLISHER_IDS.map((id) => (
+
+              <button
+
+                key={id}
+
+                type="button"
+
+                className={cn(
+
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+
+                  publisher === id
+
+                    ? "bg-primary text-primary-foreground"
+
+                    : "text-muted-foreground hover:bg-background/80"
+
+                )}
+
+                onClick={() => setPublisher(id)}
+
+              >
+
+                {SKILL_PUBLISHERS[id].label}
+
+              </button>
+
+            ))}
+
+          </div>
+
         </div>
-      )}
+
+        <p className="text-xs text-muted-foreground">
+
+          {SKILL_PUBLISHERS[publisher].description}
+
+        </p>
+
+        {loadingCatalog ? (
+
+          <p className="text-sm text-muted-foreground">加载中…</p>
+
+        ) : visibleCatalog.length === 0 ? (
+
+          <p className="text-sm text-muted-foreground">暂无条目（请检查 API Key 或网络）</p>
+
+        ) : (
+
+          visibleCatalog.map((entry) => (
+
+            <div
+
+              key={entry.installKey}
+
+              className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/60 bg-card p-4 shadow-sm"
+
+            >
+
+              <div className="min-w-0 flex-1">
+
+                <div className="flex flex-wrap items-center gap-2">
+
+                  <p className="text-sm font-semibold">{entry.title ?? entry.id}</p>
+
+                  <Badge variant="outline" className="font-mono text-[10px]">
+
+                    {entry.installKey}
+
+                  </Badge>
+
+                  {entry.source === "github" ? (
+
+                    <Badge variant="secondary" className="text-[10px]">
+
+                      GitHub
+
+                    </Badge>
+
+                  ) : null}
+
+                  {installedKeys.has(entry.installKey) ? (
+
+                    <Badge variant="secondary">已安装</Badge>
+
+                  ) : null}
+
+                </div>
+
+                <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
+
+              </div>
+
+              {installedKeys.has(entry.installKey) ? (
+
+                <Button
+
+                  variant="outline"
+
+                  size="sm"
+
+                  disabled={uninstallMutation.isPending}
+
+                  onClick={() => uninstallMutation.mutate(entry.installKey)}
+
+                >
+
+                  <Trash2 className="size-3.5" />
+
+                  卸载
+
+                </Button>
+
+              ) : (
+
+                <Button
+
+                  size="sm"
+
+                  disabled={importing}
+
+                  onClick={() => installMutation.mutate(entry.installKey)}
+
+                >
+
+                  <Download className="size-3.5" />
+
+                  安装
+
+                </Button>
+
+              )}
+
+            </div>
+
+          ))
+
+        )}
+
+      </section>
+
     </div>
+
   )
+
 }
 
-function SkillCard({
+
+
+function InstalledSkillRow({
+
   skill,
+
   busy,
-  onToggle,
-  onDelete,
+
+  onUninstall,
+
 }: {
+
   skill: AgentSkill
+
   busy: boolean
-  onToggle: (enabled: boolean) => void
-  onDelete: () => void
+
+  onUninstall: () => void
+
 }) {
+
+  const isLocal = skill.sourceKind === "local"
+
   return (
-    <div className="group rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold">{skill.name}</p>
-            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-              {skill.sourceKind}
-            </span>
-            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-              {skill.fileCount} 个文件
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">{skill.description}</p>
-          <div className="flex flex-wrap gap-2">
-            {skill.hasScripts && (
-              <span className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                <Wrench className="size-3" /> scripts
-              </span>
-            )}
-            {skill.hasReferences && (
-              <span className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                <BookOpenText className="size-3" /> references
-              </span>
-            )}
-            {skill.hasAssets && (
-              <span className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                <ImageIcon className="size-3" /> assets
-              </span>
-            )}
-          </div>
+
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+
+      <div className="min-w-0 flex-1">
+
+        <div className="flex flex-wrap items-center gap-2">
+
+          <p className="text-sm font-medium">{skill.name}</p>
+
+          {isLocal ? (
+
+            <Badge variant="outline" className="text-[10px]">
+
+              本地
+
+            </Badge>
+
+          ) : null}
+
         </div>
-        <div className="flex items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
-              checked={skill.enabled}
-              disabled={busy}
-              onChange={(e) => onToggle(e.target.checked)}
-              className="size-3.5 rounded accent-primary"
-            />
-            <span className="text-muted-foreground">启用</span>
-          </label>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-red-500 hover:text-red-600"
-            disabled={busy}
-            onClick={onDelete}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
+
+        <p className="text-xs text-muted-foreground line-clamp-1">{skill.description}</p>
+
       </div>
-      <div className="mt-3 rounded-xl bg-muted/30 p-3">
-        <p className="mb-1 text-xs font-medium text-muted-foreground">
-          SKILL.md 指令摘录
-        </p>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {skill.instructions || skill.prompt || "无可用指令"}
-        </p>
-      </div>
+
+      <Button variant="ghost" size="sm" disabled={busy} onClick={onUninstall}>
+
+        <Trash2 className="size-3.5" />
+
+        卸载
+
+      </Button>
+
     </div>
+
   )
+
 }
 
-async function fileToBase64(file: File) {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ""
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
+

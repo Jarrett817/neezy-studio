@@ -7,14 +7,6 @@ import { Link } from "react-router"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
-import { cn } from "~/lib/utils"
-import {
-  getRuntimeMetrics,
-  getRuntimeSettings,
-  saveRuntimeSettings,
-} from "~/services/workspace"
-import { type RuntimeSettings } from "~/services/settings"
-import { isModelLoaded, getCurrentModel } from "~/services/llm"
 import { resetDbCache } from "~/services/db"
 import { resetMigrateDbCache } from "~/services/db/migrate"
 import { AgentPermissionsSection } from "~/components/settings/agent-permissions-section"
@@ -28,65 +20,11 @@ import {
 } from "~/services/storage-paths"
 
 export default function SettingsRoute() {
-  const queryClient = useQueryClient()
-  const { data: runtimeSettings } = useQuery({
-    queryKey: ["runtime-settings"],
-    queryFn: getRuntimeSettings,
-  })
-  const { data: metrics } = useQuery({
-    queryKey: ["runtime-metrics"],
-    queryFn: getRuntimeMetrics,
-    staleTime: 5000,
-  })
-  const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings | null>(null)
-
-  const modelLoaded = isModelLoaded()
-  const currentModel = getCurrentModel()
-
-  useEffect(() => {
-    if (runtimeSettings) setRuntimeDraft(runtimeSettings)
-  }, [runtimeSettings])
-
-  const saveRuntimeMutation = useMutation({
-    mutationFn: async (draft: RuntimeSettings) => {
-      const latest = await getRuntimeSettings()
-      return saveRuntimeSettings({
-        ...latest,
-        preferLowPower: draft.preferLowPower,
-        maxCpuPercent: draft.maxCpuPercent,
-      })
-    },
-    onSuccess: (nextSettings) => {
-      queryClient.setQueryData(["runtime-settings"], nextSettings)
-      setRuntimeDraft(nextSettings)
-      toast.success("已保存运行时设置")
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "保存失败")
-    },
-  })
-
   return (
     <div className="space-y-8 pt-4">
       <StoragePathsSection />
       <AgentPermissionsSection />
-      <RuntimeSection
-        metrics={metrics}
-        modelReady={modelLoaded}
-        currentModel={currentModel}
-        runtimeDraft={runtimeDraft}
-        setRuntimeDraft={setRuntimeDraft}
-        onSave={saveRuntimeMutation}
-      />
-      <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">本地模型</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          下载与管理 Ollama 对话模型；API 对话在「模型与连接」里配置。
-        </p>
-        <Button asChild className="mt-4 h-11 rounded-2xl" variant="outline">
-          <Link to="/models">打开本地模型</Link>
-        </Button>
-      </section>
+      <RuntimeSection />
     </div>
   )
 }
@@ -183,7 +121,7 @@ function StoragePathsSection() {
         <PathField
           id="dataRoot"
           label="存储目录"
-          hint="包含 memories.db、memories/、personas/、skills/ 等；models/ 仅放内置 Embedding。Ollama 对话模型由 Ollama 自身目录管理。修改目录时会自动迁移已有数据（目标须为空目录）"
+          hint="包含 memories.db、memories/、personas/、skills/、playbooks/scenes/ 等；models/ 仅放内置 Embedding。修改目录时会自动迁移已有数据（目标须为空目录）"
           value={draft.dataRoot}
           onChange={(value) => setDraft({ ...draft, dataRoot: value })}
           onBrowse={() => pickFolder("dataRoot")}
@@ -291,140 +229,25 @@ function DerivedPaths({
   )
 }
 
-function RuntimeSection({
-  metrics,
-  modelReady,
-  currentModel,
-  runtimeDraft,
-  setRuntimeDraft,
-  onSave,
-}: {
-  metrics?: {
-    cpuCount: number
-    availableMemoryGb: number
-    totalMemoryGb: number
-    pressure: string
-  }
-  modelReady?: boolean
-  currentModel?: string | null
-  runtimeDraft: RuntimeSettings | null
-  setRuntimeDraft: (settings: RuntimeSettings) => void
-  onSave: ReturnType<
-    typeof useMutation<RuntimeSettings, Error, RuntimeSettings>
-  >
-}) {
+function RuntimeSection() {
   return (
     <section>
       <div className="mb-4 flex items-center gap-2">
         <Settings2 className="size-5 text-primary" />
-        <h2 className="text-2xl font-semibold tracking-tight">
-          运行时
-        </h2>
+        <h2 className="text-2xl font-semibold tracking-tight">运行时</h2>
       </div>
 
-      {metrics && (
-        <div className="mb-4 flex flex-wrap gap-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">CPU: {metrics.cpuCount} 核</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm">
-              内存: {metrics.availableMemoryGb.toFixed(1)} /{" "}
-              {metrics.totalMemoryGb.toFixed(1)} GB
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                metrics.pressure === "low"
-                  ? "bg-green-500"
-                  : metrics.pressure === "medium"
-                    ? "bg-amber-500"
-                    : "bg-red-500"
-              )}
-            />
-            <span className="text-sm">
-              {metrics.pressure === "low"
-                ? "轻松"
-                : metrics.pressure === "medium"
-                  ? "中等"
-                  : "高"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                modelReady ? "bg-green-500" : "bg-gray-400"
-              )}
-            />
-            <span className="text-sm">
-              {modelReady ? `模型: ${currentModel || "已加载"}` : "模型未加载"}
-            </span>
-          </div>
+      <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">AI 连接</p>
+          <p className="text-xs text-muted-foreground">
+            Coding Plan 与 API Key 请在专用页面配置。
+          </p>
         </div>
-      )}
-
-      {runtimeDraft && (
-        <form className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-          <div className="flex flex-col gap-3 rounded-xl border border-border/50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium">AI 连接</p>
-              <p className="text-xs text-muted-foreground">
-                Coding Plan、API Key 与 Ollama 地址请在专用页面配置。
-              </p>
-            </div>
-            <Button asChild variant="outline" className="shrink-0 rounded-xl">
-              <Link to="/connect">前往 AI 连接</Link>
-            </Button>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="maxCpuPercent">最大 CPU 使用率</Label>
-              <Input
-                id="maxCpuPercent"
-                type="number"
-                value={runtimeDraft.maxCpuPercent}
-                onChange={(e) =>
-                  setRuntimeDraft({
-                    ...runtimeDraft,
-                    maxCpuPercent: Number(e.target.value),
-                  })
-                }
-                className="bg-transparent"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="preferLowPower"
-              checked={runtimeDraft.preferLowPower}
-              onChange={(e) =>
-                setRuntimeDraft({
-                  ...runtimeDraft,
-                  preferLowPower: e.target.checked,
-                })
-              }
-              className="size-4 rounded"
-            />
-            <Label htmlFor="preferLowPower">
-              优先低功耗（全 CPU）；关闭时按显存自动分配 GPU 层（类似 Ollama）
-            </Label>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2 rounded-xl"
-            disabled={onSave.isPending}
-            onClick={() => onSave.mutate(runtimeDraft)}
-          >
-            {onSave.isPending ? "保存中..." : "保存运行时"}
-          </Button>
-        </form>
-      )}
+        <Button asChild variant="outline" className="shrink-0 rounded-xl">
+          <Link to="/connect">前往 AI 连接</Link>
+        </Button>
+      </div>
     </section>
   )
 }

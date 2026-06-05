@@ -1,20 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
-import { Cloud, Cpu, Link2, Unplug } from "lucide-react"
+import { Cloud, Unplug } from "lucide-react"
 
 import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
 import { cn } from "~/lib/utils"
-import { getOllamaStatus } from "~/services/electron-client"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 
 export function ConnectStatusHero() {
   const { data: settings } = useQuery({
     queryKey: ["runtime-settings"],
     queryFn: getRuntimeSettings,
-  })
-  const { data: ollama } = useQuery({
-    queryKey: ["ollama-status"],
-    queryFn: getOllamaStatus,
-    refetchInterval: 20_000,
   })
 
   const enabledCount =
@@ -23,12 +17,8 @@ export function ConnectStatusHero() {
     ).length ?? 0
   const apiReady =
     settings?.chatModels.some(
-      (m) =>
-        m.transport === "openai-compatible" &&
-        m.enabled &&
-        isEntryConfigured(m, settings.llmProvider)
+      (m) => m.enabled && isEntryConfigured(m, settings.llmProvider)
     ) ?? false
-  const ollamaReady = ollama?.connected === true
 
   const activeEntry = settings ? resolveChatModelEntry(settings) : null
   const preview =
@@ -45,20 +35,12 @@ export function ConnectStatusHero() {
         条 · 下次对话预计：{" "}
         <span className="font-medium text-foreground">{preview}</span>
       </p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <HealthChip
-          icon={apiReady ? Cloud : Unplug}
-          label="Coding Plan"
-          ok={apiReady}
-          detail={apiReady ? "至少一条已配 Key" : "请添加并填写 Key"}
-        />
-        <HealthChip
-          icon={ollamaReady ? Link2 : Unplug}
-          label="Ollama"
-          ok={ollamaReady}
-          detail={ollama?.host?.replace(/^https?:\/\//, "") ?? "未连接"}
-        />
-      </div>
+      <HealthChip
+        icon={apiReady ? Cloud : Unplug}
+        label="API 连接"
+        ok={apiReady}
+        detail={apiReady ? "至少一条已配 Key" : "请添加并填写 Key"}
+      />
     </div>
   )
 }

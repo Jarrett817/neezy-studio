@@ -1,10 +1,6 @@
 import type { ChatModelEntry } from "./chat-model-entry"
-import { resolveProviderBaseUrl } from "./llm-presets"
-
-export type LlmProviderKind = "ollama" | "openai-compatible"
 
 export interface LlmProviderConfig {
-  kind: LlmProviderKind
   preset: string
   baseUrl: string
   apiKey: string
@@ -17,13 +13,11 @@ export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
   activeChatModelId: string
-  ollamaHost: string
   llmProvider: LlmProviderConfig
   chatModels?: ChatModelEntry[]
 }
 
 const DEFAULT_PROVIDER: LlmProviderConfig = {
-  kind: "openai-compatible",
   preset: "custom",
   baseUrl: "",
   apiKey: "",
@@ -34,7 +28,6 @@ const DEFAULT: RuntimeSettings = {
   preferLowPower: true,
   maxCpuPercent: 95,
   activeChatModelId: "",
-  ollamaHost: "http://127.0.0.1:11434",
   llmProvider: DEFAULT_PROVIDER,
 }
 
@@ -48,7 +41,6 @@ export function syncRuntimeSettings(input: RuntimeSettings): void {
     chatModels: input.chatModels,
     activeChatModelId: input.activeChatModelId?.trim() ?? "",
     llmProvider: {
-      kind: "openai-compatible",
       preset: provider.preset || DEFAULT_PROVIDER.preset,
       baseUrl: (provider.baseUrl || DEFAULT_PROVIDER.baseUrl).replace(/\/$/, ""),
       apiKey: provider.apiKey ?? "",
@@ -62,9 +54,9 @@ export function getSyncedRuntimeSettings(): RuntimeSettings {
 }
 
 export function resolveOpenAiBaseUrl(): string {
-  const base = resolveProviderBaseUrl(cache.llmProvider)
+  const base = cache.llmProvider.baseUrl.trim()
   if (!base) throw new Error("未配置 API Base URL")
-  return base
+  return base.replace(/\/$/, "")
 }
 
 export function resolveOpenAiV1Base(): string {

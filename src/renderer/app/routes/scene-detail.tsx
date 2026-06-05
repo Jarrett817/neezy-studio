@@ -6,7 +6,6 @@ import {
   FileCode2,
   Hash,
   Play,
-  Sparkles,
   Trash2,
 } from "lucide-react"
 import { useState } from "react"
@@ -29,9 +28,8 @@ import {
   deleteUserPlaybook,
   getInputProfile,
   getPlaybook,
-  saveUserPlaybook,
+  saveUserScene,
 } from "~/services/playbook/storage"
-import { listSkills } from "~/services/storage/skills"
 import type { InputProfile, Playbook } from "~/services/playbook/types"
 
 type Draft = {
@@ -44,11 +42,6 @@ export default function SceneDetailRoute() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const { data: skills = [] } = useQuery({
-    queryKey: ["skills"],
-    queryFn: listSkills,
-  })
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["scene-detail", playbookId],
@@ -77,19 +70,27 @@ export default function SceneDetailRoute() {
   const duplicateMutation = useMutation({
     mutationFn: async () => {
       if (!data) throw new Error("未找到场景")
-      const newId = `${data.playbook.id}-copy-${Date.now().toString(36).slice(-4)}`
-      const next: Playbook = {
-        ...data.playbook,
-        id: newId,
-        builtin: false,
-        name: `${data.playbook.name} 副本`,
-      }
-      return saveUserPlaybook(next)
+      const suffix = Date.now().toString(36).slice(-4)
+      const newId = `${data.playbook.id}-copy-${suffix}`
+      const newProfileId = `${data.profile.id}-copy-${suffix}`
+      return saveUserScene({
+        playbook: {
+          ...data.playbook,
+          id: newId,
+          builtin: false,
+          inputProfileId: newProfileId,
+          name: `${data.playbook.name} 副本`,
+        },
+        inputProfile: {
+          ...data.profile,
+          id: newProfileId,
+        },
+      })
     },
     onSuccess: async (saved) => {
       toast.success("已复制为新场景")
       await queryClient.invalidateQueries({ queryKey: ["playbooks"] })
-      navigate(`/scenes/${saved.id}`)
+      navigate(`/scenes/${saved.playbook.id}`)
     },
     onError: (err: Error) => {
       toast.error(err.message || "复制失败")
@@ -98,21 +99,21 @@ export default function SceneDetailRoute() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl pt-8 text-sm text-muted-foreground">
+      <div className="pt-8 text-sm text-muted-foreground">
         加载场景…
       </div>
     )
   }
   if (isError) {
     return (
-      <div className="mx-auto max-w-3xl pt-8 text-sm text-destructive">
+      <div className="pt-8 text-sm text-destructive">
         {error instanceof Error ? error.message : "加载失败"}
       </div>
     )
   }
   if (!data) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 pt-8">
+      <div className="space-y-4 pt-8">
         <p className="text-sm text-destructive">未找到该场景</p>
         <Button asChild variant="outline" className="rounded-xl">
           <Link to="/create">返回场景库</Link>
@@ -123,11 +124,9 @@ export default function SceneDetailRoute() {
 
   const { playbook, profile } = data
   const isBuiltin = Boolean(playbook.builtin)
-  const boundSkills = skills.filter((s) => playbook.skillIds.includes(s.id))
-  const otherSkills = skills.filter((s) => !playbook.skillIds.includes(s.id))
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 pt-4 pb-12">
+    <div className="w-full space-y-6 pt-4 pb-12">
       <Button asChild variant="ghost" size="sm" className="w-fit gap-2 rounded-xl">
         <Link to="/create">
           <ArrowLeft className="size-4" />
@@ -191,43 +190,6 @@ export default function SceneDetailRoute() {
           </div>
         </div>
       </header>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="size-4 text-primary" />
-            关联 Skill
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {boundSkills.length === 0 ? (
-            <p className="text-sm text-muted-foreground">未绑定任何 Skill</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {boundSkills.map((s) => (
-                <Badge key={s.id} variant="default" className="gap-1.5">
-                  <Hash className="size-3" />
-                  {s.name}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {otherSkills.length > 0 ? (
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer select-none">
-                其它可用 Skill（{otherSkills.length}）
-              </summary>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {otherSkills.map((s) => (
-                  <Badge key={s.id} variant="outline">
-                    {s.name}
-                  </Badge>
-                ))}
-              </div>
-            </details>
-          ) : null}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

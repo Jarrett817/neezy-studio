@@ -85,6 +85,32 @@ export const CODING_PLAN_VENDOR_CATALOG: CodingPlanVendor[] = [
     baseUrl: "https://api.minimaxi.com/anthropic",
     modelHints: ["MiniMax-M2.7"],
   },
+  {
+    id: "dashscope",
+    label: "阿里云百炼（国内）",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    modelHints: [
+      "qwen-plus",
+      "qwen3-max",
+      "qwen3.5-plus",
+      "qwen3-coder-plus",
+      "deepseek-v4-pro",
+      "qwq-plus",
+    ],
+    docsUrl: "https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope",
+  },
+  {
+    id: "dashscope-intl",
+    label: "阿里云百炼（国际）",
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    modelHints: [
+      "qwen-plus",
+      "qwen3-max",
+      "qwen3.5-plus",
+      "deepseek-v4-pro",
+    ],
+    docsUrl: "https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope",
+  },
 ]
 
 const CATALOG_BY_ID = new Map(CODING_PLAN_VENDOR_CATALOG.map((v) => [v.id, v]))
@@ -114,6 +140,30 @@ export function defaultModelForPreset(preset: string, fallback: string): string 
   if (preset === "custom") return fallback
   const hints = CATALOG_BY_ID.get(preset)?.modelHints
   return hints?.[0] ?? fallback
+}
+
+/** 百炼 OpenAI 兼容模式不提供 GET /v1/models，用文档常用模型作候选 */
+export function isDashScopeOpenAiBaseUrl(baseUrl: string): boolean {
+  const base = baseUrl.trim().toLowerCase().replace(/\/$/, "")
+  return (
+    /dashscope(-intl|-us)?\.aliyuncs\.com\/compatible-mode\/v1/.test(base) ||
+    /\.maas\.aliyuncs\.com\/compatible-mode\/v1/.test(base)
+  )
+}
+
+export function listDashScopeOpenAiModelHints(): string[] {
+  const vendor = CATALOG_BY_ID.get("dashscope")
+  return vendor?.modelHints ? [...vendor.modelHints] : []
+}
+
+export function dashScopeModelUsesThinking(modelId: string): boolean {
+  const n = modelId.trim().toLowerCase()
+  return (
+    n.includes("deepseek") ||
+    n.includes("qwq") ||
+    n.includes("thinking") ||
+    n.includes("reasoner")
+  )
 }
 
 /** 从 jqknono/coding-plans-for-copilot 的 package.json 拉取默认 vendors 并合并 */

@@ -39,7 +39,7 @@ export function TaskRunLayout({
   const stepIndex = STEPS.findIndex((s) => s.id === step)
 
   return (
-    <div className="relative mx-auto flex w-full max-w-4xl flex-col pb-24">
+    <div className="relative flex w-full flex-col pb-24">
       <Button asChild variant="ghost" size="sm" className="mb-4 w-fit gap-2 rounded-xl">
         <Link to={backHref}>
           <ArrowLeft className="size-4" />
@@ -98,7 +98,7 @@ export function TaskRunLayout({
 
       {trace && (step === "generating" || step === "result") ? (
         <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border/60 bg-card px-6 py-3 shadow-sm">
-          <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="flex w-full flex-wrap items-center justify-between gap-3 text-sm">
             <span className="text-muted-foreground">
               {step === "generating" ? "生成中…" : `用时 ${trace.elapsedMs}ms`}
               {step === "result" ? ` · 引用记忆 ${trace.memoriesUsed} 条` : null}

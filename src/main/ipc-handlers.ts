@@ -36,17 +36,23 @@ import {
   saveAgentPermissionSettings,
   type SaveAgentPermissionInput,
 } from "./agent-permissions-store"
+import {
+  importSkillFromPath,
+  installSkillByKey,
+  listInstalledSkills,
+  uninstallSkillByKey,
+} from "./skill-install"
+import { searchCatalogWithInstallState } from "./skill-catalog"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
 import { ingestDocumentFile, INGEST_FILE_EXTENSIONS } from "./knowledge/document-ingest"
 import { log } from "./logger"
-import { getOllamaStatus, testOllamaModel } from "./ollama/ops"
 import {
   ensurePlaywrightChromium,
   getPlaywrightBrowserStatus,
 } from "./playwright-browser-setup"
-import type { IpcContext, ModelKind } from "./types"
+import type { IpcContext } from "./types"
 
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
 export function registerIpcHandlers(ctx: IpcContext): void {
@@ -55,19 +61,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:get-playwright-browser-status", () => getPlaywrightBrowserStatus())
   ipcMain.handle("app:ensure-playwright-browser", () => ensurePlaywrightChromium())
   ipcMain.handle("app:test-llm-connection", () => testPiConnection())
-  ipcMain.handle("app:get-ollama-status", () => getOllamaStatus())
-  ipcMain.handle("app:test-ollama-model", (_event, payload: unknown) => {
-    const body =
-      typeof payload === "string"
-        ? { modelName: payload, kind: "chat" as const }
-        : payload && typeof payload === "object"
-          ? (payload as { modelName?: string; kind?: ModelKind })
-          : { modelName: "" }
-    return testOllamaModel(
-      body.modelName ?? "",
-      body.kind === "embedding" ? "embedding" : "chat"
-    )
-  })
 
   ipcMain.handle("app:get-build-info", () => ({
     appName: app.getName(),
@@ -79,14 +72,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:get-storage-paths", () => ctx.getPaths())
   ipcMain.handle("app:save-storage-paths", async (_event, input) => {
     ctx.closeAllSqliteHandles()
-    ctx.invalidateModelScanCache?.()
     const paths = await storagePaths.saveStoragePaths(app, input)
     applyAppConfig(app, loadAppConfig(app))
     return paths
   })
   ipcMain.handle("app:reset-storage-paths", async () => {
     ctx.closeAllSqliteHandles()
-    ctx.invalidateModelScanCache?.()
     const paths = await storagePaths.resetStoragePaths(app)
     applyAppConfig(app, loadAppConfig(app))
     return paths
@@ -161,27 +152,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle("app:get-runtime-metrics", () => ctx.runtimeMetrics())
-  ipcMain.handle("app:get-model-recommendations", () => ctx.runtimeMetrics())
-  ipcMain.handle("app:get-model-catalog", (_event, kind?: import("./types").ModelKind) =>
-    ctx.getModelCatalog(kind)
-  )
-  ipcMain.handle("app:rebuild-model-catalog", () => ctx.refreshModelCatalog())
-  ipcMain.handle("app:list-llm-models", async () => {
-    const catalog = await ctx.getModelCatalog("chat")
-    return catalog
-      .filter((m) => m.installed)
-      .map((m) => ({
-        id: m.fileName,
-        name: m.title,
-        path: m.fileName,
-        managed: true,
-      }))
-  })
-  ipcMain.handle("app:download-model", async (_event, modelId: string) => ctx.downloadModel(modelId))
-  ipcMain.handle("app:cancel-model-download", (_event, modelId: string) =>
-    ctx.cancelModelDownload(modelId)
-  )
-  ipcMain.handle("app:delete-model", async (_event, modelId: string) => ctx.deleteModel(modelId))
   ipcMain.handle("app:load-embedding-model", async (_event, modelId: string, preferLowPower?: boolean) =>
     ctx.loadEmbeddingModel(modelId, Boolean(preferLowPower))
   )
@@ -481,5 +451,29 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     const saved = resetAgentPermissionSettings(app)
     invalidatePiResourceLoaderCache()
     return saved
+  })
+
+  ipcMain.handle("skills:catalog-search", async (_event, { query }: { query?: string }) => {
+    const dataRoot = ctx.getPaths().dataRoot
+    const list = await listInstalledSkills(dataRoot)
+    const keys = new Set(list.map((s) => s.installKey))
+    return searchCatalogWithInstallState(query ?? "", keys)
+  })
+
+  ipcMain.handle("skills:list-installed", async () => {
+    return listInstalledSkills(ctx.getPaths().dataRoot)
+  })
+
+  ipcMain.handle("skills:install", async (_event, { installKey }: { installKey: string }) => {
+    return installSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
+  })
+
+  ipcMain.handle("skills:uninstall", async (_event, { installKey }: { installKey: string }) => {
+    await uninstallSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("skills:import-from-path", async (_event, { sourcePath }: { sourcePath: string }) => {
+    return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
   })
 }

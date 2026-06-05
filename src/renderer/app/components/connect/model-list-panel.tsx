@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Cloud, Cpu, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react"
-import { Link } from "react-router"
+import { Cloud, Loader2, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
   createChatModelEntry,
   entryDisplayName,
   enforceChatModelRules,
-  findOllamaChatEntry,
+  resolveEntryApiBase,
+  resolveEntryApiKey,
   type ChatModelEntry,
 } from "~/config/chat-models"
-import { getCodingPlanVendor, resolveCatalogBaseUrl } from "~/config/llm-presets"
+import { getCodingPlanVendor, isDashScopeOpenAiBaseUrl, resolveCatalogBaseUrl } from "~/config/llm-presets"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -24,52 +24,40 @@ import {
 } from "~/components/ui/select"
 import { Switch } from "~/components/ui/switch"
 import { useCodingPlanCatalog } from "~/hooks/use-coding-plan-catalog"
-import {
-  getModelCatalog,
-  getOllamaStatus,
-  listOpenAiModels,
-} from "~/services/electron-client"
+import { listOpenAiModels } from "~/services/electron-client"
 import { cn } from "~/lib/utils"
+import type { LlmProviderConfig } from "~/services/llm-provider"
 import { loadModelRegistry, saveChatModels } from "~/services/model-registry"
+
+function globalApiFromRegistry(registry: Awaited<ReturnType<typeof loadModelRegistry>>): LlmProviderConfig {
+  return {
+    preset: registry.apiPreset,
+    baseUrl: registry.apiBaseUrl,
+    apiKey: registry.apiKey,
+    model: registry.apiModel,
+  }
+}
 
 export function ModelListPanel() {
   const queryClient = useQueryClient()
-  const { vendors, refreshFromUpstream, isRefreshing } = useCodingPlanCatalog()
+  const { vendors } = useCodingPlanCatalog()
   const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
   const [fetchingId, setFetchingId] = useState<string | null>(null)
   const { data: registry, isLoading } = useQuery({
     queryKey: ["model-registry"],
     queryFn: loadModelRegistry,
   })
-  const { data: ollamaStatus } = useQuery({
-    queryKey: ["ollama-status"],
-    queryFn: getOllamaStatus,
-    refetchInterval: 15_000,
-  })
-  const { data: chatCatalog = [] } = useQuery({
-    queryKey: ["model-catalog", "chat", "installed"],
-    queryFn: () => getModelCatalog("chat"),
-    enabled: ollamaStatus?.connected === true,
-  })
-
-  const installedOllama = useMemo(
-    () => chatCatalog.filter((m) => m.installed && m.kind === "chat"),
-    [chatCatalog]
-  )
 
   const [models, setModels] = useState<ChatModelEntry[]>([])
   const [activeChatModelId, setActiveChatModelId] = useState("")
-  const [ollamaHost, setOllamaHost] = useState("http://127.0.0.1:11434")
 
   useEffect(() => {
     if (!registry) return
     setModels(enforceChatModelRules(registry.chatModels))
     setActiveChatModelId(registry.activeChatModelId)
-    setOllamaHost(registry.ollamaHost)
   }, [registry])
 
-  const ollamaEntry = findOllamaChatEntry(models)
-  const apiModels = models.filter((m) => m.transport === "openai-compatible")
+  const apiModels = models
 
   const setActiveModel = (id: string) => {
     setActiveChatModelId(id)
@@ -79,7 +67,6 @@ export function ModelListPanel() {
     mutationFn: () =>
       saveChatModels(models, {
         activeChatModelId,
-        ollamaHost: ollamaHost.trim(),
       }),
     onSuccess: (next) => {
       queryClient.setQueryData(["runtime-settings"], next)
@@ -93,30 +80,10 @@ export function ModelListPanel() {
     setModels(enforceChatModelRules(next))
   }
 
-  const upsertOllama = (patch: Partial<ChatModelEntry> & { model: string }) => {
-    const base = ollamaEntry ?? createChatModelEntry({
-      label: "",
-      tier: "balanced",
-      transport: "ollama",
-      model: "",
-    })
-    const next = models.filter((m) => m.transport !== "ollama")
-    setModelsSafe([
-      ...next,
-      {
-        ...base,
-        ...patch,
-        transport: "ollama",
-        enabled: patch.enabled ?? true,
-      },
-    ])
-  }
-
   const addApiModel = () => {
     const entry = createChatModelEntry({
       label: "",
       tier: "balanced",
-      transport: "openai-compatible",
       model: "",
       preset: "custom",
       baseUrl: "",
@@ -127,22 +94,29 @@ export function ModelListPanel() {
   }
 
   const fetchModelsForEntry = async (entry: ChatModelEntry) => {
+    if (!registry) {
+      toast.error("配置尚未加载")
+      return
+    }
+    const globalApi = globalApiFromRegistry(registry)
     setFetchingId(entry.id)
     try {
-      const base = resolveCatalogBaseUrl(
-        entry.preset ?? "custom",
-        entry.baseUrl ?? ""
-      )
+      const base = resolveEntryApiBase(entry, globalApi)
+      const apiKey = resolveEntryApiKey(entry, globalApi)
       const result = await listOpenAiModels({
         baseUrl: base,
-        apiKey: entry.apiKey ?? "",
+        apiKey,
       })
       if (!result.ok) {
         toast.error(result.error)
         return
       }
       setFetchedModels((prev) => ({ ...prev, [entry.id]: result.models }))
-      toast.success(`已拉取 ${result.models.length} 个模型`)
+      toast.success(
+        isDashScopeOpenAiBaseUrl(base)
+          ? `已加载 ${result.models.length} 个百炼常用模型（官方无列表接口，请按文档手填其它模型名）`
+          : `已拉取 ${result.models.length} 个模型`
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "拉取失败")
     } finally {
@@ -182,98 +156,14 @@ export function ModelListPanel() {
         <span className="font-mono text-[10px]">coding-plans-for-copilot</span>{" "}
         拉取，仅用于填充 <strong className="text-foreground">Base URL</strong>；
         <strong className="text-foreground">模型名</strong>以你填写或「从接口拉取」为准（目录里的
-        modelHints 只是示例，可能过时）。
-        本机 Ollama 同时只保留一个对话模型。在已启用的条目中指定一个「当前对话模型」即可，不再按档位自动切换。
+        modelHints 只是示例，可能过时）。在已启用的条目中指定一个「当前对话模型」即可。
       </p>
-
-      <section className="space-y-3 rounded-2xl border border-border/60 bg-muted/15 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Cpu className="size-4 text-primary" />
-            <h3 className="text-sm font-medium">本机 Ollama</h3>
-          </div>
-          {ollamaEntry ? (
-            <div className="flex items-center gap-2">
-              <Label htmlFor="ollama-enabled" className="text-xs text-muted-foreground">
-                启用
-              </Label>
-              <Switch
-                id="ollama-enabled"
-                checked={ollamaEntry.enabled}
-                onCheckedChange={(on) =>
-                  upsertOllama({ model: ollamaEntry.model, enabled: on })
-                }
-              />
-            </div>
-          ) : null}
-        </div>
-
-        {ollamaStatus?.connected !== true ? (
-          <p className="text-xs text-muted-foreground">
-            Ollama 未连接。请在下方折叠区填写地址，或到{" "}
-            <Link to="/models" className="text-primary hover:underline">
-              本地模型
-            </Link>{" "}
-            拉取模型。
-          </p>
-        ) : installedOllama.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            暂无已安装的对话模型，请先到{" "}
-            <Link to="/models" className="text-primary hover:underline">
-              本地模型
-            </Link>{" "}
-            pull。
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <Label className="text-xs">已安装模型</Label>
-              <Select
-                value={ollamaEntry?.model || ""}
-                onValueChange={(name) => {
-                  const entry = ollamaEntry ?? createChatModelEntry({
-                    label: "",
-                    tier: "balanced",
-                    transport: "ollama",
-                    model: "",
-                  })
-                  upsertOllama({
-                    model: name,
-                    label: installedOllama.find((m) => m.fileName === name)?.title ?? name,
-                    enabled: true,
-                  })
-                  if (!activeChatModelId) setActiveModel(entry.id)
-                }}
-              >
-                <SelectTrigger className="h-9 rounded-xl font-mono text-xs">
-                  <SelectValue placeholder="选择模型" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {installedOllama.map((m) => (
-                    <SelectItem key={m.id} value={m.fileName} className="font-mono text-xs">
-                      {m.title || m.fileName}
-                      <span className="ml-2 text-muted-foreground">{m.sizeLabel}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {ollamaEntry?.model ? (
-              <ActiveModelButton
-                entryId={ollamaEntry.id}
-                activeId={activeChatModelId}
-                onSelect={setActiveModel}
-              />
-            ) : null}
-          </div>
-        )}
-      </section>
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Cloud className="size-4 text-primary" />
-            <h3 className="text-sm font-medium">Coding Plan</h3>
+            <h3 className="text-sm font-medium">Coding Plan / API</h3>
           </div>
           <Button
             type="button"
@@ -289,7 +179,7 @@ export function ModelListPanel() {
 
         {apiModels.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/70 py-6 text-center text-xs text-muted-foreground">
-            可添加多条 API 配置，并指定其中一条为当前对话模型
+            添加 API 配置并填写 Key 与模型名后即可开始对话
           </p>
         ) : (
           <ul className="space-y-3">
@@ -435,16 +325,6 @@ export function ModelListPanel() {
           </ul>
         )}
       </section>
-
-      <div className="space-y-1 rounded-xl border border-border/60 bg-muted/20 p-3">
-        <Label className="text-xs">Ollama 地址（仅在使用本机 Ollama 对话时需要）</Label>
-        <Input
-          value={ollamaHost}
-          onChange={(e) => setOllamaHost(e.target.value)}
-          className="h-9 font-mono text-xs"
-          placeholder="http://127.0.0.1:11434"
-        />
-      </div>
 
       <Button
         type="button"

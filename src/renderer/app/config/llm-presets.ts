@@ -7,6 +7,7 @@ export {
   getCodingPlanVendor,
   getPresetLabel,
   isKnownCodingPlanPreset,
+  isDashScopeOpenAiBaseUrl,
   mergeCatalogVendors,
   refreshCodingPlanCatalogFromUpstream,
   resolveCatalogBaseUrl,

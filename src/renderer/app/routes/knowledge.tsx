@@ -23,7 +23,7 @@ export default function KnowledgeRoute() {
         : "knowledge"
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-2">
+    <div className="flex w-full flex-col gap-6 pt-2">
       <div className="flex gap-2 rounded-2xl border border-border/60 bg-card p-1 shadow-sm">
         {tabs.map((tab) => {
           const Icon = tab.icon

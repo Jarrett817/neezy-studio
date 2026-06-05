@@ -9,7 +9,6 @@ export type AgentEventPayload = {
 export interface CreateAgentSessionOptions {
   diskSessionId?: string
   createNew?: boolean
-  sceneSkillIds?: string[]
 }
 
 export async function createAgentSession(

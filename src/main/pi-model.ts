@@ -13,6 +13,10 @@ import {
   resolvePiProvider,
   type ChatApiKind,
 } from "../shared/chat-api-route"
+import {
+  dashScopeModelUsesThinking,
+  isDashScopeOpenAiBaseUrl,
+} from "../shared/coding-plan-catalog"
 import { resolveEntryApiBase } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
@@ -50,7 +54,8 @@ function buildApiModel(
   apiKind: ChatApiKind,
   baseUrl: string,
   provider: string,
-  reasoning: boolean
+  reasoning: boolean,
+  compat?: Record<string, unknown>
 ): Model<Api> {
   return {
     id: modelId,
@@ -63,42 +68,54 @@ function buildApiModel(
     cost: EMPTY_COST,
     contextWindow: 204_800,
     maxTokens: 131_072,
+    ...(compat ? { compat } : {}),
   } as Model<Api>
 }
 
 /** 从统一模型条目解析 pi-ai Model（优先使用 pi-ai 内置目录） */
-export function resolvePiChatModel(userMessage?: string): Model<Api> {
+export function resolvePiChatModel(_userMessage?: string): Model<Api> {
   const settings = getSyncedRuntimeSettings()
   const route = resolveActiveChatRoute()
   const entry = route.entry
-  const modelId = route.modelId || "qwen2.5:7b"
-
-  if (entry?.transport === "openai-compatible") {
-    const base = resolveEntryBaseUrl(entry)
-    const apiKind = inferChatApiKind(base)
-    const baseUrl = resolveChatApiBaseUrl(base, apiKind)
-    const preset = entry.preset?.trim() || settings.llmProvider.preset || "custom"
-    const provider = resolvePiProvider(preset, apiKind, base)
-
-    if (isKnownProvider(provider)) {
-      const catalog =
-        findPiCatalogModel(provider, modelId) ?? fallbackAnthropicTemplate(provider)
-      if (catalog) {
-        return {
-          ...catalog,
-          id: modelId,
-          name: modelId,
-          baseUrl,
-        }
-      }
-    }
-
-    const reasoning = apiKind === "anthropic-messages" && provider === "minimax-cn"
-    return buildApiModel(modelId, apiKind, baseUrl, provider, reasoning)
+  const modelId = route.modelId
+  if (!entry || !modelId) {
+    throw new Error("请先在「模型与连接」配置 API 对话模型")
   }
 
-  const ollamaBase = (settings.ollamaHost || "http://127.0.0.1:11434").replace(/\/$/, "")
-  return buildApiModel(modelId, "openai-completions", `${ollamaBase}/v1`, "ollama", false)
+  const base = resolveEntryBaseUrl(entry)
+  const apiKind = inferChatApiKind(base)
+  const baseUrl = resolveChatApiBaseUrl(base, apiKind)
+  const preset = entry.preset?.trim() || settings.llmProvider.preset || "custom"
+  const provider = resolvePiProvider(preset, apiKind, base)
+
+  if (isKnownProvider(provider)) {
+    const catalog =
+      findPiCatalogModel(provider, modelId) ?? fallbackAnthropicTemplate(provider)
+    if (catalog) {
+      return {
+        ...catalog,
+        id: modelId,
+        name: modelId,
+        baseUrl,
+      }
+    }
+  }
+
+  const reasoning =
+    apiKind === "anthropic-messages" && provider === "minimax-cn"
+      ? true
+      : isDashScopeOpenAiBaseUrl(baseUrl) && dashScopeModelUsesThinking(modelId)
+
+  const dashScopeCompat = isDashScopeOpenAiBaseUrl(baseUrl)
+    ? {
+        maxTokensField: "max_tokens" as const,
+        supportsStore: false,
+        supportsReasoningEffort: false,
+        thinkingFormat: "qwen" as const,
+      }
+    : undefined
+
+  return buildApiModel(modelId, apiKind, baseUrl, provider, reasoning, dashScopeCompat)
 }
 
 /** 推理模型需开启 Agent thinkingLevel；勿对 MiniMax 使用 forceAdaptiveThinking（会发 Claude adaptive 参数导致无流式输出） */

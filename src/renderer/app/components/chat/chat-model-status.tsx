@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { ArrowRight, Loader2 } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { Link } from "react-router"
 
-import { entryDisplayName } from "~/config/chat-models"
+import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
 import { useActiveModels } from "~/hooks/use-active-models"
 import { cn } from "~/lib/utils"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
@@ -15,63 +15,27 @@ export function ChatModelStatus({ className }: { className?: string }) {
   })
   const { chat } = useActiveModels()
   const entry = settings ? resolveChatModelEntry(settings) : null
-  const isApi = entry?.transport === "openai-compatible"
-
-  if (isApi && entry) {
-    return (
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground",
-          className
-        )}
-      >
-        <span className="truncate">
-          对话 · <span className="font-medium text-foreground">{entryDisplayName(entry)}</span>
-        </span>
-        <Link
-          to="/connect"
-          className="inline-flex shrink-0 items-center gap-0.5 font-medium text-foreground hover:underline"
-        >
-          模型与连接
-          <ArrowRight className="size-3" />
-        </Link>
-      </div>
-    )
-  }
-
-  const needsSetup = chat.status !== "ready"
+  const ready = entry && settings ? isEntryConfigured(entry, settings.llmProvider) : false
 
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs",
+        "flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground",
         className
       )}
     >
-      <span
-        className={cn(
-          "inline-flex items-center gap-1.5 truncate",
-          needsSetup ? "text-muted-foreground" : "text-foreground"
-        )}
-      >
-        {chat.status === "loading" ? (
-          <Loader2 className="size-3 shrink-0 animate-spin" />
-        ) : (
-          <span
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              chat.status === "ready" ? "bg-emerald-500" : "bg-amber-500"
-            )}
-            aria-hidden
-          />
-        )}
-        对话模型：{entry ? entryDisplayName(entry) : chat.label}
+      <span className="truncate">
+        对话 ·{" "}
+        <span className="font-medium text-foreground">
+          {entry ? entryDisplayName(entry) : chat.label}
+        </span>
+        {!ready ? "（未就绪）" : null}
       </span>
       <Link
         to="/connect"
         className="inline-flex shrink-0 items-center gap-0.5 font-medium text-foreground hover:underline"
       >
-        {needsSetup ? "去配置模型" : "模型与连接"}
+        {ready ? "模型与连接" : "去配置模型"}
         <ArrowRight className="size-3" />
       </Link>
     </div>

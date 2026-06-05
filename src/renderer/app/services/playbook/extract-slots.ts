@@ -30,8 +30,12 @@ export function normalizeSlots(
   for (const field of profile.fields) {
     const incoming = raw[field.key]
     if (incoming !== undefined && incoming !== null && incoming !== "") {
-      slots[field.key] =
-        field.type === "number" ? Number(incoming) : String(incoming)
+      if (field.type === "mindmap" || field.type === "flowchart") {
+        slots[field.key] = incoming as PlaybookSlots[string]
+      } else {
+        slots[field.key] =
+          field.type === "number" ? Number(incoming) : String(incoming)
+      }
       continue
     }
     const fallback = defaultForField(field)
@@ -45,6 +49,14 @@ export function normalizeSlots(
     .filter((f) => f.required)
     .filter((f) => {
       const v = slots[f.key]
+      if (f.type === "mindmap") {
+        const node = v as { topic?: string } | undefined
+        return !node?.topic?.trim()
+      }
+      if (f.type === "flowchart") {
+        const graph = v as { nodes?: unknown[] } | undefined
+        return !graph?.nodes?.length
+      }
       return v === undefined || v === null || String(v).trim() === ""
     })
     .map((f) => f.key)
@@ -88,29 +100,12 @@ export async function extractSlotsFromSingleLine(
   return normalizeSlots(profile, { ...parsed, extra: parsed.extra ?? trimmed })
 }
 
-const LAST_SLOTS_PREFIX = "playbook_last_slots_v1:"
-
-export function loadLastPlaybookSlots(
-  playbookId: string
-): Record<string, string | number> | null {
-  try {
-    const raw = localStorage.getItem(`${LAST_SLOTS_PREFIX}${playbookId}`)
-    if (!raw) return null
-    return JSON.parse(raw) as Record<string, string | number>
-  } catch {
-    return null
-  }
-}
-
-export function saveLastPlaybookSlots(
-  playbookId: string,
-  values: Record<string, unknown>
-): void {
-  localStorage.setItem(
-    `${LAST_SLOTS_PREFIX}${playbookId}`,
-    JSON.stringify(values)
-  )
-}
+export {
+  loadInputSceneSlots,
+  saveInputSceneSlots,
+  loadLastPlaybookSlots,
+  saveLastPlaybookSlots,
+} from "./input-scene-storage"
 
 export function buildMemoryQuery(slots: PlaybookSlots): string {
   const parts = ["topic", "title", "query", "content", "extra", "references"]

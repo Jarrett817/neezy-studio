@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react"
+﻿import { useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
@@ -10,14 +10,14 @@ import { RichTextField } from "~/components/playbook/RichTextField"
 import { cn } from "~/lib/utils"
 import {
   extractSlotsFromSingleLine,
-  loadLastPlaybookSlots,
-  saveLastPlaybookSlots,
+  loadInputSceneSlots,
+  saveInputSceneSlots,
   type InputField,
   type InputProfile,
 } from "~/services/playbook"
 
 type PlaybookWizardFormProps = {
-  playbookId: string
+  profileId: string
   profile: InputProfile
   disabled?: boolean
   formId?: string
@@ -26,7 +26,7 @@ type PlaybookWizardFormProps = {
 }
 
 export function PlaybookWizardForm({
-  playbookId,
+  profileId,
   profile,
   disabled,
   formId = "playbook-run-form",
@@ -37,34 +37,54 @@ export function PlaybookWizardForm({
   const capture = profile.capture ?? ["form"]
   const showSingleLine = capture.includes("singleLineExtract")
 
-  const initial = useMemo(() => {
+  const [step, setStep] = useState(0)
+  const [values, setValues] = useState<Record<string, string | number>>(() => {
     const v: Record<string, string | number> = {}
     for (const field of fields) {
       if (field.default !== undefined) v[field.key] = field.default
     }
-    const last = loadLastPlaybookSlots(playbookId)
-    if (last) {
-      for (const field of fields) {
-        const prev = last[field.key]
-        if (prev !== undefined) v[field.key] = prev
-      }
-    }
     return v
-  }, [fields, playbookId])
-
-  const [step, setStep] = useState(0)
-  const [values, setValues] = useState(initial)
+  })
+  const [draftReady, setDraftReady] = useState(false)
   const [singleLine, setSingleLine] = useState("")
   const [extracting, setExtracting] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+    setDraftReady(false)
+    void (async () => {
+      const last = await loadInputSceneSlots(profileId)
+      if (cancelled) return
+      const next: Record<string, string | number> = {}
+      for (const field of fields) {
+        if (field.default !== undefined) next[field.key] = field.default
+      }
+      if (last) {
+        for (const field of fields) {
+          const prev = last[field.key]
+          if (typeof prev === "string" || typeof prev === "number") {
+            next[field.key] = prev
+          }
+        }
+      }
+      setValues(next)
+      setDraftReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fields, profileId])
+
+  useEffect(() => {
+    if (!draftReady) return
     onValuesChange?.(values)
-  }, [values, onValuesChange])
+    void saveInputSceneSlots(profileId, values)
+  }, [values, onValuesChange, profileId, draftReady])
 
   // 富文本字段不分步：单步内联展示
   const hasRichText = fields.some((f) => f.type === "rich-text")
   if (hasRichText) {
-    return <InlineRichTextForm {...{ playbookId, profile, disabled, formId, onSubmit, onValuesChange, fields, values, setValues, showSingleLine, singleLine, setSingleLine, extracting, setExtracting }} />
+    return <InlineRichTextForm {...{ profileId, profile, disabled, formId, onSubmit, onValuesChange, fields, values, setValues, showSingleLine, singleLine, setSingleLine, extracting, setExtracting }} />
   }
 
   const totalSteps = fields.length
@@ -95,7 +115,7 @@ export function PlaybookWizardForm({
   }
 
   const submit = () => {
-    saveLastPlaybookSlots(playbookId, values)
+    void saveInputSceneSlots(profileId, values)
     onSubmit(values)
   }
 
@@ -286,7 +306,7 @@ function WizardField({
 
 // 富文本字段的内联（不分步）表单
 function InlineRichTextForm({
-  playbookId,
+  profileId,
   profile,
   disabled,
   formId,
@@ -301,7 +321,7 @@ function InlineRichTextForm({
   extracting,
   setExtracting,
 }: {
-  playbookId: string
+  profileId: string
   profile: InputProfile
   disabled?: boolean
   formId: string
@@ -346,7 +366,7 @@ function InlineRichTextForm({
       className="space-y-5"
       onSubmit={(e) => {
         e.preventDefault()
-        saveLastPlaybookSlots(playbookId, values)
+        void saveInputSceneSlots(profileId, values)
         onSubmit(values)
       }}
     >

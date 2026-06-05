@@ -38,15 +38,16 @@ type UsePiAgentChatOptions = {
   systemPrompt: string
   diskSessionId: string | null
   enabled: boolean
-  /** 场景对话：仅加载指定 Skill 文件 */
-  sceneSkillIds?: string[]
   onDiskMessagesReload?: (messages: ReturnType<typeof useAppStore.getState>["conversationHistory"]) => void
   /** 磁盘会话 id 失效后主进程新建会话时回写 UI */
   onDiskSessionIdRebound?: (newId: string) => void
 }
 
-function sceneSkillKey(ids?: string[]): string {
-  return ids?.length ? ids.slice().sort().join(",") : ""
+function enrichAgentFailureMessage(message: string): string {
+  if (message !== "Connection error." && !message.startsWith("Connection error")) {
+    return message
+  }
+  return `${message} HTTPS 连接失败（OpenAI SDK 网络层，不是 401/400）。请检查 Base URL 与 Key 地域是否一致（国内 dashscope.aliyuncs.com / 国际 dashscope-intl.aliyuncs.com）、代理与 SSL 证书；可在「模型与连接」点「从接口拉取」复现。`
 }
 
 function extractAgentFailure(
@@ -54,7 +55,8 @@ function extractAgentFailure(
 ): string | null {
   if (!message) return null
   if (message.stopReason === "error" || message.errorMessage) {
-    return message.errorMessage?.trim() || "模型调用失败"
+    const raw = message.errorMessage?.trim() || "模型调用失败"
+    return enrichAgentFailureMessage(raw)
   }
   return null
 }
@@ -63,7 +65,6 @@ export function usePiAgentChat({
   systemPrompt,
   diskSessionId,
   enabled,
-  sceneSkillIds,
   onDiskMessagesReload,
   onDiskSessionIdRebound,
 }: UsePiAgentChatOptions) {
@@ -97,11 +98,9 @@ export function usePiAgentChat({
   const systemPromptRef = useRef(systemPrompt)
   const onDiskMessagesReloadRef = useRef(onDiskMessagesReload)
   const onDiskSessionIdReboundRef = useRef(onDiskSessionIdRebound)
-  const sceneSkillIdsRef = useRef(sceneSkillIds)
-  const loadedSceneKeyRef = useRef("")
+  const loadedDiskIdRef = useRef("")
 
   systemPromptRef.current = systemPrompt
-  sceneSkillIdsRef.current = sceneSkillIds
   onDiskMessagesReloadRef.current = onDiskMessagesReload
   onDiskSessionIdReboundRef.current = onDiskSessionIdRebound
 
@@ -128,12 +127,11 @@ export function usePiAgentChat({
   const openAgentForDisk = useCallback(
     async (diskId: string) => {
       const running = agentSessionId.current
-      const nextSceneKey = sceneSkillKey(sceneSkillIdsRef.current)
 
-      if (running && (running !== diskId || loadedSceneKeyRef.current !== nextSceneKey)) {
+      if (running && running !== diskId) {
         await destroyAgentSession(running)
         agentSessionId.current = null
-        loadedSceneKeyRef.current = ""
+        loadedDiskIdRef.current = ""
       }
 
       if (agentSessionId.current === diskId) {
@@ -143,10 +141,9 @@ export function usePiAgentChat({
 
       const sid = await createAgentSession({
         diskSessionId: diskId,
-        sceneSkillIds: sceneSkillIdsRef.current,
       })
       agentSessionId.current = sid
-      loadedSceneKeyRef.current = nextSceneKey
+      loadedDiskIdRef.current = diskId
       if (sid !== diskId && diskSessionIdRef.current === diskId) {
         onDiskSessionIdReboundRef.current?.(sid)
       }
@@ -343,11 +340,7 @@ export function usePiAgentChat({
 
     void withSessionLock(async () => {
       try {
-        const sceneKey = sceneSkillKey(sceneSkillIdsRef.current)
-        if (
-          agentSessionId.current !== diskSessionId ||
-          loadedSceneKeyRef.current !== sceneKey
-        ) {
+        if (agentSessionId.current !== diskSessionId) {
           await openAgentForDisk(diskSessionId)
         }
         if (cancelled) {
@@ -367,7 +360,6 @@ export function usePiAgentChat({
   }, [
     enabled,
     diskSessionId,
-    sceneSkillIds,
     openAgentForDisk,
     withSessionLock,
   ])

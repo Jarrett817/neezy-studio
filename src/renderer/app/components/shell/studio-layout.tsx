@@ -1,12 +1,10 @@
-import { FileInput, SlidersHorizontal, Wand2 } from "lucide-react"
+import { Wand2 } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 
 import { cn } from "~/lib/utils"
 
 const studioNav = [
   { href: "/studio", label: "概览", end: true },
-  { href: "/studio/skills", label: "Skill", icon: SlidersHorizontal, end: false },
-  { href: "/studio/input-profiles", label: "输入模板", icon: FileInput, end: false },
   {
     href: "/studio/playbook-designer",
     label: "场景设计",
@@ -17,7 +15,7 @@ const studioNav = [
 
 export function StudioLayout() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pt-2 lg:flex-row lg:items-start">
+    <div className="flex w-full flex-col gap-6 pt-2 lg:flex-row lg:items-start">
       <aside className="w-full shrink-0 lg:w-52">
         <p className="mb-2 px-3 text-xs font-medium text-muted-foreground">高级工作室</p>
         <nav className="flex flex-row gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">

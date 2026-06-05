@@ -11,15 +11,7 @@ export type RuntimeMetrics = {
   totalMemoryGb: number
   availableMemoryGb: number
   pressure: "low" | "medium" | "high"
-  gpuLabel?: string
-  vramUsedPercent?: number
-  vramSummary?: string
   gpuInspectLines?: string[]
-  chatTier: ModelTier
-  recommendedChatId: string | null
-  recommendedReason: string
-  systemSummary: string
-  chatAlternatives: string[]
 }
 
 type DirEntry = {
@@ -110,20 +102,6 @@ export type ChatSyncMessage = {
   content: string
 }
 
-export type OllamaStatus = {
-  connected: boolean
-  host: string
-  version: string | null
-  runningModels: { name: string; size: number; sizeVram?: number }[]
-}
-
-export type OllamaModelTestResult = {
-  ok: boolean
-  latencyMs: number
-  preview?: string
-  error?: string
-}
-
 export type StoragePaths = {
   dataRoot: string
   modelsDir: string
@@ -154,14 +132,10 @@ type ElectronApi = {
     handler: (event: unknown, data: T) => void
   ) => () => void
   getBuildInfo: () => Promise<BuildInfo>
-  configureOllamaHost: (host: string) => Promise<void>
   syncRuntimeSettings: (settings: Record<string, unknown>) => Promise<void>
   getAppConfig?: () => Promise<AppConfig>
   saveAppConfig?: (config: AppConfig) => Promise<AppConfig>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
-  getModelCatalog: (kind?: ModelKind) => Promise<ModelCatalogItem[]>
-  rebuildModelCatalog: () => Promise<void>
-  getModelRecommendations: () => Promise<RuntimeMetrics>
   loadEmbeddingModel: (
     modelId?: string,
     preferLowPower?: boolean
@@ -181,11 +155,6 @@ type ElectronApi = {
     baseUrl: string
     apiKey: string
   }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
-  getOllamaStatus: () => Promise<OllamaStatus>
-  testOllamaModel: (
-    modelName: string,
-    kind?: ModelKind
-  ) => Promise<OllamaModelTestResult>
   chatPrompt: (
     input: string,
     options?: ChatPromptOptions
@@ -211,14 +180,6 @@ type ElectronApi = {
     modelId: string | null
     embeddingDim: number
   }>
-  listLlmModels: () => Promise<{ id: string; name: string; path: string }[]>
-  downloadModel: (modelId: string) => Promise<ModelCatalogItem>
-  cancelModelDownload: (modelId: string) => Promise<ModelCatalogItem>
-  deleteModel: (modelId: string) => Promise<ModelCatalogItem>
-  onModelCatalogUpdated: (handler: () => void) => () => void
-  onModelDownloadProgress: (
-    handler: (item: ModelCatalogItem) => void
-  ) => () => void
   appDataDir: () => Promise<string>
   getStoragePaths: () => Promise<StoragePaths>
   saveStoragePaths: (input: {
@@ -304,6 +265,49 @@ type ElectronApi = {
     sandbox: import("../../../shared/agent-permissions").SandboxPolicyConfig
   }) => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
   resetAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
+  skillsCatalogSearch: (query?: string) => Promise<
+    Array<{
+      id: string
+      publisher: import("../../../shared/skill-registry").SkillPublisherId
+      installKey: string
+      title?: string
+      subpath: string
+      description: string
+      source: "api" | "github"
+      installed: boolean
+    }>
+  >
+  skillsListInstalled: () => Promise<
+    Array<{
+      id: string
+      publisher: import("../../../shared/skill-registry").SkillPublisherId
+      installKey: string
+      name: string
+      description: string
+      skillDir: string
+      installedAt: number
+    }>
+  >
+  skillsInstall: (installKey: string) => Promise<{
+    id: string
+    publisher: import("../../../shared/skill-registry").SkillPublisherId
+    installKey: string
+    name: string
+    description: string
+    skillDir: string
+    installedAt: number
+  }>
+  skillsUninstall: (installKey: string) => Promise<{ ok: true }>
+  skillsImportFromPath: (sourcePath: string) => Promise<{
+    id: string
+    publisher: import("../../../shared/skill-registry").SkillPublisherId
+    installKey: string
+    name: string
+    description: string
+    skillDir: string
+    installedAt: number
+  }>
+  getPathForFile: (file: File) => string
 }
 
 declare global {
@@ -329,15 +333,6 @@ export function getElectronApi(): ElectronApi {
 
 export async function getBuildInfo(): Promise<BuildInfo> {
   return buildInfoSchema.parse(await getElectronApi().getBuildInfo())
-}
-
-export async function configureOllamaHost(host: string): Promise<void> {
-  const api = getElectronApi()
-  if (api.configureOllamaHost) {
-    await api.configureOllamaHost(host)
-    return
-  }
-  await api.invoke("app:configure-ollama-host", host)
 }
 
 export async function syncRuntimeSettingsToMain(
@@ -384,43 +379,8 @@ export async function listOpenAiModels(payload: {
   return api.invoke("app:list-openai-models", payload)
 }
 
-export async function getOllamaStatus(): Promise<OllamaStatus> {
-  const api = getElectronApi()
-  if (api.getOllamaStatus) return api.getOllamaStatus()
-  return api.invoke("app:get-ollama-status")
-}
-
-export async function testOllamaModel(
-  modelName: string,
-  kind?: ModelKind
-): Promise<OllamaModelTestResult> {
-  const api = getElectronApi()
-  if (api.testOllamaModel) return api.testOllamaModel(modelName, kind)
-  return api.invoke("app:test-ollama-model", { modelName, kind })
-}
-
 export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
   return getElectronApi().getRuntimeMetrics()
-}
-
-export async function listLlmModels(): Promise<
-  { id: string; name: string; path: string }[]
-> {
-  return getElectronApi().listLlmModels()
-}
-
-export async function getModelCatalog(
-  kind?: ModelKind
-): Promise<ModelCatalogItem[]> {
-  return getElectronApi().getModelCatalog(kind)
-}
-
-export async function rebuildModelCatalog(): Promise<void> {
-  return getElectronApi().rebuildModelCatalog()
-}
-
-export async function getModelRecommendations(): Promise<RuntimeMetrics> {
-  return getElectronApi().getModelRecommendations()
 }
 
 export async function loadEmbeddingModel(
@@ -497,32 +457,6 @@ export async function getEmbeddingsFromMain(
 
 export async function getEmbeddingStatus() {
   return getElectronApi().getEmbeddingStatus()
-}
-
-export async function downloadModel(
-  modelId: string
-): Promise<ModelCatalogItem> {
-  return getElectronApi().downloadModel(modelId)
-}
-
-export async function cancelModelDownload(
-  modelId: string
-): Promise<ModelCatalogItem> {
-  return getElectronApi().cancelModelDownload(modelId)
-}
-
-export async function deleteModel(modelId: string): Promise<ModelCatalogItem> {
-  return getElectronApi().deleteModel(modelId)
-}
-
-export function onModelCatalogUpdated(handler: () => void): () => void {
-  return getElectronApi().onModelCatalogUpdated(handler)
-}
-
-export function onModelDownloadProgress(
-  handler: (item: ModelCatalogItem) => void
-): () => void {
-  return getElectronApi().onModelDownloadProgress(handler)
 }
 
 export async function appDataDir(): Promise<string> {

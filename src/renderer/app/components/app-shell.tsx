@@ -2,12 +2,13 @@ import * as React from "react"
 import { NavLink, Link, useLocation } from "react-router"
 import {
   BookOpen,
+  Brain,
+  Clapperboard,
   LayoutDashboard,
   MessagesSquare,
   Settings,
   SlidersHorizontal,
   Sparkles,
-  Wand2,
 } from "lucide-react"
 
 import { CommandPalette } from "~/components/shell/command-palette"
@@ -20,18 +21,20 @@ import { getRuntimeSettings, pushRuntimeSettingsToMain } from "~/services/settin
 
 const mainNavItems = [
   { href: "/", label: "工作台", Icon: LayoutDashboard, end: true },
-  { href: "/create", label: "创作", Icon: Wand2, end: false },
-  { href: "/knowledge", label: "知识", Icon: BookOpen, end: false },
-  { href: "/skills", label: "Skill", Icon: SlidersHorizontal, end: false },
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
+  { href: "/scenes", label: "场景", Icon: Clapperboard, end: false },
+  { href: "/knowledge", label: "知识", Icon: BookOpen, end: false },
+  { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
+  { href: "/portrait", label: "画像", Icon: Brain, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {
   "/": "工作台",
-  "/create": "创作",
-  "/knowledge": "知识",
-  "/skills": "Skill",
   "/chat": "对话",
+  "/scenes": "场景",
+  "/knowledge": "知识",
+  "/skills": "技能",
+  "/portrait": "画像",
   "/connect": "模型与连接",
   "/settings": "设置",
 }
@@ -42,9 +45,8 @@ function resolveHeaderTitle(pathname: string, search: string): string {
     const playbook = new URLSearchParams(search).get("playbook")?.trim()
     if (playbook) return "场景对话"
   }
-  if (pathname.startsWith("/create/")) return "场景任务"
-  if (pathname === "/studio" || pathname.startsWith("/studio/")) return "高级工作室"
-  if (pathname.startsWith("/knowledge")) return "知识"
+  if (base.startsWith("/scenes/")) return "场景设计"
+  if (base === "/scenes") return "场景"
   return pageTitles[base] ?? "Neezy"
 }
 
@@ -70,16 +72,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <CommandPalette />
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        <aside className="z-30 flex w-14 shrink-0 flex-col border-r border-border/60 bg-card shadow-sm">
-          <div className="flex h-14 shrink-0 items-center justify-center border-b border-border/60">
+        <aside className="z-30 flex w-48 shrink-0 flex-col border-r border-border/60 bg-card shadow-sm">
+          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4">
             <Link
               to="/"
-              className="inline-flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"
+              className="inline-flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"
               aria-label="Neezy"
-              title="Neezy"
             >
               <Sparkles className="size-4" />
             </Link>
+            <span className="text-sm font-semibold tracking-tight">Neezy</span>
           </div>
 
           <nav className="flex-1 space-y-1 overflow-y-auto p-2">
@@ -90,17 +92,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={href}
                   to={href}
                   end={end}
-                  title={label}
                   className={({ isActive }) =>
                     cn(
-                      "relative flex h-11 items-center justify-center rounded-xl text-sm font-medium transition-colors hover:bg-muted/60",
+                      "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors hover:bg-muted/60",
                       isActive
-                        ? "bg-primary/10 text-primary before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-primary"
+                        ? "bg-primary/10 text-primary"
                         : "text-foreground/80"
                     )
                   }
                 >
                   <Icon className="size-5 shrink-0" />
+                  {label}
                 </NavLink>
               )
             })}

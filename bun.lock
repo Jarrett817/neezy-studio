@@ -7,6 +7,7 @@
       "dependencies": {
         "@earendil-works/pi-coding-agent": "^0.78.0",
         "@fontsource-variable/geist": "^5.2.9",
+        "@fontsource-variable/sora": "^5.2.8",
         "@libsql/client": "^0.17.3",
         "@tanstack/react-query": "^5.100.11",
         "@tiptap/extension-image": "^3.25.0",
@@ -314,6 +315,8 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "https://registry.npmmirror.com/@floating-ui/utils/-/utils-0.2.11.tgz", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
     "@fontsource-variable/geist": ["@fontsource-variable/geist@5.2.9", "https://registry.npmmirror.com/@fontsource-variable/geist/-/geist-5.2.9.tgz", {}, "sha512-TP+QSBG3wxKGPE33CbMy/L0Nu3qvJ6Fy81Yc4LnQ95xH+i+cfEp8fyU8/kfV14YwszxIFPhnoMTbjL71waVpyQ=="],
+
+    "@fontsource-variable/sora": ["@fontsource-variable/sora@5.2.8", "https://registry.npmmirror.com/@fontsource-variable/sora/-/sora-5.2.8.tgz", {}, "sha512-sP+ILTfi5r3cqmMBntI4ooQNxFI+LyHyD5hcPbWwwL4uh4kKFAkOz0w2veCXjz18fKRdva6OG0dY+5yQ02f30w=="],
 
     "@google/genai": ["@google/genai@1.52.0", "https://registry.npmmirror.com/@google/genai/-/genai-1.52.0.tgz", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q=="],
 

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MessageSquarePlus, Trash2 } from "lucide-react"
+import { MessageSquarePlus, Search, Trash2 } from "lucide-react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
+import { Input } from "~/components/ui/input"
 import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import {
@@ -24,11 +26,22 @@ export function ChatSessionSidebar({
   onSessionCreated: (sessionId: string) => void
 }) {
   const queryClient = useQueryClient()
+  const [query, setQuery] = useState("")
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["chat-sessions", "sidebar"],
     queryFn: listPiChatSessions,
   })
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return sessions
+    const q = query.toLowerCase()
+    return sessions.filter((s) => {
+      const title = sessionListTitle(s).toLowerCase()
+      const preview = (sessionListPreview(s) ?? "").toLowerCase()
+      return title.includes(q) || preview.includes(q)
+    })
+  }, [sessions, query])
 
   const newSessionMutation = useMutation({
     mutationFn: () => startNewPiChatSession(),
@@ -61,7 +74,7 @@ export function ChatSessionSidebar({
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-border/60 bg-card">
-      <div className="border-b border-border/60 p-3">
+      <div className="border-b border-border/60 p-3 space-y-2">
         <Button
           type="button"
           className="h-10 w-full justify-start gap-2 rounded-xl"
@@ -71,15 +84,26 @@ export function ChatSessionSidebar({
           <MessageSquarePlus className="size-4" />
           新对话
         </Button>
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-8 rounded-lg pl-8 text-xs"
+            placeholder="搜索对话…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {isLoading ? (
           <p className="px-2 py-4 text-xs text-muted-foreground">加载历史…</p>
-        ) : sessions.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-muted-foreground">暂无历史对话</p>
+        ) : filtered.length === 0 ? (
+          <p className="px-2 py-4 text-xs text-muted-foreground">
+            {query.trim() ? "无匹配对话" : "暂无历史对话"}
+          </p>
         ) : (
           <ul className="space-y-1">
-            {sessions.map((session) => {
+            {filtered.map((session) => {
               const active = session.id === activeSessionId
               const timeLabel = formatSessionTime(session.modified)
               return (

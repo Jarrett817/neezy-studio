@@ -110,6 +110,7 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
     ? {
         maxTokensField: "max_tokens" as const,
         supportsStore: false,
+        supportsDeveloperRole: false,
         supportsReasoningEffort: false,
         thinkingFormat: "qwen" as const,
       }

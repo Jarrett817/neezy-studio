@@ -57,9 +57,6 @@ const ipcSessions = new Map<string, IpcAgentSession>()
 /** 同一陈旧 id 多次 agent:create 时复用已恢复的磁盘会话，避免疯狂新建 */
 const staleDiskSessionRecovery = new Map<string, string>()
 
-/** 每个磁盘会话在本进程内仅尝试一次 /chrome authorize 引导 */
-const chromeAuthorizePrompted = new Set<string>()
-
 let resourceLoaderCache: { key: string; loader: ResourceLoader } | null = null
 let bundledExtensionsLogged = false
 
@@ -122,7 +119,6 @@ async function getResourceLoader(
   const hasPermissionSystem = loaded.some((p) => p.includes("pi-permission-system"))
   const hasWebAccess = loaded.some((p) => p.includes("pi-web-access"))
   const hasTextBrowser = loaded.some((p) => p.includes("pi-textbrowser"))
-  const hasPiChrome = loaded.some((p) => p.includes("pi-chrome"))
   if (!hasPermissionSystem) {
     log.error(
       "[pi-agent] pi-permission-system 未加载，文件读写/bash 不会出现确认框。请查看上方 extension load failed 日志。"
@@ -136,11 +132,6 @@ async function getResourceLoader(
   if (!hasTextBrowser) {
     log.error(
       "[pi-agent] pi-textbrowser 未加载，browser_navigate 等不可用。请查看上方 extension load failed 日志。"
-    )
-  }
-  if (!hasPiChrome) {
-    log.error(
-      "[pi-agent] pi-chrome 未加载，chrome_* 不可用。请查看上方 extension load failed 日志。"
     )
   }
   if (!bundledExtensionsLogged && loaded.length > 0) {
@@ -162,22 +153,6 @@ async function bindAgentSessionUi(
   // 勿传 createAgentSession({ tools })：该字段是 allowlist，会屏蔽扩展工具。
   // 不传时 SDK 仅默认激活 read/bash/edit/write；此处把 registry 内工具全部设为 active。
   session.setActiveToolsByName(session.getAllTools().map((t) => t.name))
-}
-
-async function maybePromptChromeAuthorize(
-  session: AgentSession,
-  diskSessionId: string
-): Promise<void> {
-  if (chromeAuthorizePrompted.has(diskSessionId)) return
-  chromeAuthorizePrompted.add(diskSessionId)
-  try {
-    await session.prompt("/chrome authorize indefinite")
-  } catch (error) {
-    log.warn(
-      "[pi-agent] Chrome 授权引导未完成:",
-      error instanceof Error ? error.message : error
-    )
-  }
 }
 
 function syncSessionChatRoute(session: AgentSession, userMessage?: string): void {
@@ -264,7 +239,6 @@ export async function createAgentSession(
   const session = await createPiSession(sm)
   syncSessionChatRoute(session)
   await bindAgentSessionUi(session, window, diskSessionId)
-  void maybePromptChromeAuthorize(session, diskSessionId)
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     window.webContents.send("agent:event", { sessionId: diskSessionId, event })

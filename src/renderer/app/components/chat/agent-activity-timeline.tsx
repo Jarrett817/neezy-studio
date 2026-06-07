@@ -11,9 +11,19 @@ import { cn } from "~/lib/utils"
 function StreamCursor() {
   return (
     <span
-      className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[2px] animate-pulse rounded-full bg-foreground/70"
+      className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[2px] animate-pulse rounded-full bg-foreground/50"
       aria-hidden
     />
+  )
+}
+
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 px-1">
+      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "0ms" }} />
+      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "150ms" }} />
+      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "300ms" }} />
+    </span>
   )
 }
 
@@ -205,10 +215,8 @@ export function AgentActivityTimeline({
   if (items.length === 0) {
     if (!isStreaming) return null
     return (
-      <div className={cn("flex items-center gap-2 py-2 text-sm text-muted-foreground", className)}>
-        <Loader2 className="size-3.5 animate-spin" />
-        <span>等待模型响应</span>
-        <StreamCursor />
+      <div className={cn("flex items-center gap-2 py-2 text-sm text-muted-foreground/60", className)}>
+        <TypingDots />
       </div>
     )
   }

@@ -16,6 +16,7 @@ import {
   promptAgent,
   resolvePermissionPrompt,
 } from "./pi-agent"
+import { piCompleteMessages } from "./pi-llm"
 import {
   takePendingPermissionGrant,
   type PermissionDialogAction,
@@ -475,5 +476,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle("skills:import-from-path", async (_event, { sourcePath }: { sourcePath: string }) => {
     return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
+  })
+
+  ipcMain.handle("pi:complete", async (_event, payload: {
+    messages: { role: "system" | "user" | "assistant"; content: string }[]
+    systemPrompt?: string
+    maxTokens?: number
+  }) => {
+    return piCompleteMessages(payload.messages, {
+      systemPrompt: payload.systemPrompt,
+      maxTokens: payload.maxTokens,
+    })
   })
 }

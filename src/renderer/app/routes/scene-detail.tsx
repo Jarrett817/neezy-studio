@@ -60,7 +60,7 @@ export default function SceneDetailRoute() {
     onSuccess: async () => {
       toast.success("场景已删除")
       await queryClient.invalidateQueries({ queryKey: ["playbooks"] })
-      navigate("/create", { replace: true })
+      navigate("/scenes", { replace: true })
     },
     onError: (err: Error) => {
       toast.error(err.message || "删除失败")
@@ -116,7 +116,7 @@ export default function SceneDetailRoute() {
       <div className="space-y-4 pt-8">
         <p className="text-sm text-destructive">未找到该场景</p>
         <Button asChild variant="outline" className="rounded-xl">
-          <Link to="/create">返回场景库</Link>
+          <Link to="/scenes">返回场景库</Link>
         </Button>
       </div>
     )
@@ -128,7 +128,7 @@ export default function SceneDetailRoute() {
   return (
     <div className="w-full space-y-6 pt-4 pb-12">
       <Button asChild variant="ghost" size="sm" className="w-fit gap-2 rounded-xl">
-        <Link to="/create">
+        <Link to="/scenes">
           <ArrowLeft className="size-4" />
           场景库
         </Link>
@@ -160,7 +160,7 @@ export default function SceneDetailRoute() {
               <>
                 <Button asChild variant="outline" className="rounded-xl">
                   <Link
-                    to={`/studio/playbook-designer?edit=${encodeURIComponent(playbook.id)}`}
+                    to={`/scenes/designer?edit=${encodeURIComponent(playbook.id)}`}
                   >
                     <Edit3 className="size-4" />
                     编辑

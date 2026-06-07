@@ -146,7 +146,7 @@ export default function WorkbenchRoute() {
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-muted-foreground">推荐场景</h2>
           <Button asChild variant="ghost" size="sm" className="rounded-xl">
-            <Link to="/create">全部</Link>
+            <Link to="/scenes">全部</Link>
           </Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -176,7 +176,7 @@ export default function WorkbenchRoute() {
         </div>
         {runnable.length === 0 ? (
           <Button asChild className="h-12 rounded-2xl">
-            <Link to="/create">去选创作任务</Link>
+            <Link to="/scenes">去选创作任务</Link>
           </Button>
         ) : null}
       </section>

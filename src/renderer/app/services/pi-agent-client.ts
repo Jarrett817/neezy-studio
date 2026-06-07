@@ -51,3 +51,11 @@ export function subscribeAgentEvents(
     callback(payload)
   })
 }
+
+/** 直接 LLM 补全，绕过 pi-agent 全量管线（不含工具、扩展、权限），速度更快 */
+export async function piComplete(
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  options?: { systemPrompt?: string; maxTokens?: number }
+): Promise<string> {
+  return getElectronApi().invoke<string>("pi:complete", { messages, ...options })
+}

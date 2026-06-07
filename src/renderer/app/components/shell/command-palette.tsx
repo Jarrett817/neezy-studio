@@ -25,19 +25,14 @@ import { listPlaybooks } from "~/services/playbook"
 
 const NAV_ITEMS = [
   { href: "/", label: "工作台", icon: Home, keywords: "home workbench" },
-  { href: "/create", label: "创作", icon: PenLine, keywords: "create playbook 场景" },
-  { href: "/knowledge", label: "知识", icon: Brain, keywords: "memory 记忆" },
-  { href: "/skills", label: "Skill", icon: SlidersHorizontal, keywords: "skill 技能" },
   { href: "/chat", label: "对话", icon: MessageSquare, keywords: "chat" },
-  {
-    href: "/connect",
-    label: "AI 连接",
-    icon: PlugZap,
-    keywords: "api key model coding plan 连接",
-  },
+  { href: "/scenes", label: "场景", icon: PenLine, keywords: "scenes playbook 创作" },
+  { href: "/knowledge", label: "知识", icon: Brain, keywords: "knowledge 记忆" },
+  { href: "/skills", label: "技能", icon: SlidersHorizontal, keywords: "skill" },
+  { href: "/portrait", label: "画像", icon: Brain, keywords: "portrait 人格" },
+  { href: "/connect", label: "AI 连接", icon: PlugZap, keywords: "api key model coding plan" },
   { href: "/settings", label: "设置", icon: Settings2, keywords: "settings" },
-  { href: "/studio", label: "高级工作室", icon: PenLine, keywords: "studio 场景设计" },
-  { href: "/studio/playbook-designer", label: "场景设计", icon: PenLine, keywords: "designer" },
+  { href: "/scenes/designer", label: "场景设计", icon: PenLine, keywords: "designer" },
 ] as const
 
 export function CommandPalette() {

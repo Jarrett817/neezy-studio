@@ -131,7 +131,7 @@ export default function PlaybookDesignerRoute() {
     <div className="flex min-h-[calc(100dvh-10rem)] flex-col gap-6">
       <div>
         <Button asChild variant="ghost" size="sm" className="mb-3 gap-2 rounded-xl">
-          <Link to="/studio">← 工作室</Link>
+          <Link to="/scenes">← 场景</Link>
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">对话创建场景</h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -262,7 +262,7 @@ export default function PlaybookDesignerRoute() {
               </summary>
               <Textarea
                 value={draftJson}
-                className="mt-3 min-h-48 rounded-xl font-mono text-xs"
+                className="mt-3 min-h-48 max-h-96 rounded-xl font-mono text-xs overflow-auto"
                 onChange={(e) => setDraftJson(e.target.value)}
               />
             </details>

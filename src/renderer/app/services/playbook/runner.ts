@@ -1,3 +1,4 @@
+import { piComplete } from "~/services/pi-agent-client"
 import { promptAgentOnce } from "~/services/agent-prompt"
 import { searchMemories } from "~/services/memories"
 import { getUserPortrait } from "~/services/user-portrait"
@@ -175,16 +176,8 @@ export async function designPlaybookFromIntent(
     throw new Error("请至少发送一条场景描述")
   }
   await ensurePlaybookDirs()
-  // 通用 Agent 自己决定使用哪个 skill（包括 playbook-designer），
-  // 通过 pi-agent 内置的 skill 机制加载，无需手动注入。
-  const messages = [
-    ...turns.map((t) => ({
-      role: t.role,
-      content: t.content,
-    })),
-  ]
-  const result = await promptAgentOnce(messages)
-  const rawText = result.content
+  const messages = turns.map((t) => ({ role: t.role, content: t.content }))
+  const rawText = await piComplete(messages, { maxTokens: 8192 })
   try {
     return { rawText, parsed: parseJsonFromLlm(rawText) }
   } catch {

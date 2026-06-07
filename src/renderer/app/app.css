@@ -1,16 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@fontsource-variable/sora";
+@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
-/* ========================================
-   NEUZY STUDIO — Notion / Codex 中性文档风
-   低饱和 · 实底卡片 · Geist sans
-   ======================================== */
-
 @theme inline {
-    --font-heading: var(--font-sans);
+    --font-heading: 'Sora Variable', 'Sora', sans-serif;
     --font-sans: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, sans-serif;
 
     --color-sidebar-ring: var(--sidebar-ring);
@@ -53,214 +50,132 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Light — Notion 式中性浅灰 ── */
+/* Light (default) */
 :root {
-    --background:       oklch(0.995 0.002 260);
-    --foreground:       oklch(0.22  0.012 260);
-
-    --card:            oklch(1 0 0);
-    --card-foreground: oklch(0.22  0.012 260);
-
+    --background:       oklch(0.985 0.004 55);
+    --foreground:       oklch(0.20 0.008 50);
+    --card:            oklch(1 0 0 / 0.6);
+    --card-foreground: oklch(0.20 0.008 50);
     --popover:         oklch(1 0 0);
-    --popover-foreground: oklch(0.22 0.012 260);
-
-    --primary:         oklch(0.24  0.014 260);
-    --primary-foreground: oklch(0.99 0.002 260);
-
-    --secondary:       oklch(0.965 0.004 260);
-    --secondary-foreground: oklch(0.28 0.012 260);
-
-    --accent:          oklch(0.955 0.006 260);
-    --accent-foreground: oklch(0.24 0.014 260);
-
-    --muted:           oklch(0.965 0.004 260);
-    --muted-foreground: oklch(0.48 0.012 260);
-
-    --destructive:    oklch(0.55  0.2   25);
-
-    --border:          oklch(0.91  0.006 260);
-    --input:           oklch(0.91  0.006 260);
-    --ring:            oklch(0.24  0.014 260);
-
-    --chart-1: oklch(0.45 0.06 250);
-    --chart-2: oklch(0.55 0.05 200);
-    --chart-3: oklch(0.50 0.04 280);
-    --chart-4: oklch(0.60 0.06 30);
-    --chart-5: oklch(0.52 0.04 150);
-
+    --popover-foreground: oklch(0.20 0.008 50);
+    --primary:         oklch(0.50 0.10 55);
+    --primary-foreground: oklch(0.98 0.002 55);
+    --secondary:       oklch(0.93 0.008 52);
+    --secondary-foreground: oklch(0.28 0.012 48);
+    --accent:          oklch(0.92 0.012 50);
+    --accent-foreground: oklch(0.24 0.012 48);
+    --muted:           oklch(0.95 0.006 52);
+    --muted-foreground: oklch(0.55 0.012 50);
+    --destructive:    oklch(0.55 0.18 25);
+    --border:          oklch(0.88 0.008 50);
+    --input:           oklch(0.88 0.008 50);
+    --ring:            oklch(0.50 0.10 55);
+    --chart-1: oklch(0.55 0.10 50);
+    --chart-2: oklch(0.50 0.08 40);
+    --chart-3: oklch(0.52 0.06 30);
+    --chart-4: oklch(0.58 0.12 60);
+    --chart-5: oklch(0.50 0.06 45);
     --radius: 0.625rem;
-
-    --sidebar:         oklch(0.985 0.003 260);
-    --sidebar-foreground: oklch(0.35 0.012 260);
-    --sidebar-primary: oklch(0.24  0.014 260);
-    --sidebar-primary-foreground: oklch(0.99 0.002 260);
-    --sidebar-accent:  oklch(0.955 0.006 260);
-    --sidebar-accent-foreground: oklch(0.24 0.014 260);
-    --sidebar-border:  oklch(0.91  0.006 260);
-    --sidebar-ring:    oklch(0.24  0.014 260);
+    --sidebar:         oklch(0.96 0.004 52 / 0.6);
+    --sidebar-foreground: oklch(0.35 0.01 50);
+    --sidebar-primary: oklch(0.50 0.10 55);
+    --sidebar-primary-foreground: oklch(0.98 0.002 55);
+    --sidebar-accent:  oklch(0.92 0.008 50 / 0.4);
+    --sidebar-accent-foreground: oklch(0.28 0.012 48);
+    --sidebar-border:  oklch(0.88 0.008 50 / 0.5);
+    --sidebar-ring:    oklch(0.50 0.10 55);
 }
 
-/* ── Dark — Codex 式冷灰 ── */
+/* Dark */
 .dark {
-    --background:       oklch(0.17  0.008 260);
-    --foreground:       oklch(0.93  0.006 260);
-
-    --card:            oklch(0.20  0.008 260);
-    --card-foreground: oklch(0.93  0.006 260);
-
-    --popover:        oklch(0.20  0.008 260);
-    --popover-foreground: oklch(0.93 0.006 260);
-
-    --primary:         oklch(0.93  0.006 260);
-    --primary-foreground: oklch(0.17 0.008 260);
-
-    --secondary:       oklch(0.26  0.008 260);
-    --secondary-foreground: oklch(0.90 0.006 260);
-
-    --accent:          oklch(0.26  0.008 260);
-    --accent-foreground: oklch(0.93 0.006 260);
-
-    --muted:           oklch(0.26  0.008 260);
-    --muted-foreground: oklch(0.62 0.01  260);
-
-    --destructive:     oklch(0.62  0.2   25);
-
-    --border:          oklch(0.30  0.01  260);
-    --input:           oklch(0.30  0.01  260);
-    --ring:            oklch(0.55  0.04  250);
-
-    --chart-1: oklch(0.70 0.06 250);
-    --chart-2: oklch(0.65 0.05 200);
-    --chart-3: oklch(0.68 0.04 280);
-    --chart-4: oklch(0.72 0.06 30);
-    --chart-5: oklch(0.66 0.04 150);
-
-    --sidebar:         oklch(0.15  0.008 260);
-    --sidebar-foreground: oklch(0.78 0.008 260);
-    --sidebar-primary: oklch(0.93  0.006 260);
-    --sidebar-primary-foreground: oklch(0.17 0.008 260);
-    --sidebar-accent:  oklch(0.24  0.008 260);
-    --sidebar-accent-foreground: oklch(0.93 0.006 260);
-    --sidebar-border:  oklch(0.28  0.01  260);
-    --sidebar-ring:    oklch(0.55  0.04  250);
+    --background:       oklch(0.18 0.006 50);
+    --foreground:       oklch(0.90 0.006 55);
+    --card:            oklch(0.22 0.008 50 / 0.5);
+    --card-foreground: oklch(0.90 0.006 55);
+    --popover:         oklch(0.22 0.008 50);
+    --popover-foreground: oklch(0.90 0.006 55);
+    --primary:         oklch(0.72 0.08 65);
+    --primary-foreground: oklch(0.15 0.008 50);
+    --secondary:       oklch(0.28 0.01 50);
+    --secondary-foreground: oklch(0.85 0.006 50);
+    --accent:          oklch(0.30 0.015 50);
+    --accent-foreground: oklch(0.90 0.006 55);
+    --muted:           oklch(0.26 0.008 50);
+    --muted-foreground: oklch(0.58 0.01 50);
+    --destructive:    oklch(0.58 0.18 25);
+    --border:          oklch(0.32 0.01 50);
+    --input:           oklch(0.32 0.01 50);
+    --ring:            oklch(0.72 0.08 65);
+    --sidebar:         oklch(0.145 0.006 50 / 0.7);
+    --sidebar-foreground: oklch(0.72 0.008 50);
+    --sidebar-primary: oklch(0.72 0.08 65);
+    --sidebar-primary-foreground: oklch(0.15 0.008 50);
+    --sidebar-accent:  oklch(0.26 0.01 50 / 0.4);
+    --sidebar-accent-foreground: oklch(0.85 0.006 50);
+    --sidebar-border:  oklch(0.32 0.01 50 / 0.4);
+    --sidebar-ring:    oklch(0.72 0.08 65);
 }
 
 @layer base {
   * { border-color: var(--border); }
-
   html { scroll-behavior: smooth; }
-
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
   }
-
-  h1,
-  h2,
-  h3,
-  h4 {
-    font-family: var(--font-sans);
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
     font-weight: 600;
+    letter-spacing: -0.02em;
   }
-
-  /* 自定义滚动条 */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: oklch(0.82 0.006 260); border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background: oklch(0.68 0.01 260); }
-
-  ::selection {
-    background: oklch(0.55 0.06 250 / 0.22);
-    color: oklch(0.22 0.012 260);
-  }
-  .dark ::selection {
-    background: oklch(0.55 0.06 250 / 0.35);
-    color: oklch(0.95 0.006 260);
-  }
+  ::-webkit-scrollbar-thumb { background: oklch(0.78 0.05 60 / 0.15); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.78 0.05 60 / 0.25); }
 }
 
-/* ========================================
-   共享样式
-   ======================================== */
-
-/* 悬浮无边框卡片 */
-.card-hover {
-  transition: background 0.3s ease, transform 0.3s ease;
+.glass {
+  background: oklch(1 0 0 / 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid oklch(0.88 0.008 50 / 0.5);
 }
-.card-hover:hover {
-  background: oklch(0.965 0.004 260);
-}
-.dark .card-hover:hover {
-  background: oklch(0.24 0.008 260);
+.dark .glass {
+  background: oklch(0.145 0.006 50 / 0.5);
+  border: 1px solid oklch(0.32 0.01 50 / 0.35);
 }
 
-/* 当前使用中的模型卡牌 — 金色泛光 */
-@keyframes model-active-glow {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.98);
-  }
-  50% {
-    opacity: 0.85;
-    transform: scale(1.02);
-  }
+.chat-bubble-user {
+  background: oklch(0.50 0.10 55);
+  color: white;
+  border: 1px solid oklch(0.55 0.10 55 / 0.2);
 }
-.model-card-active-glow {
-  animation: model-active-glow 2.8s ease-in-out infinite;
+.dark .chat-bubble-user {
+  background: oklch(0.72 0.08 65);
+  color: oklch(0.15 0.008 50);
+  border: 1px solid oklch(0.72 0.08 65 / 0.2);
 }
 
-/* 状态指示灯 */
-@keyframes pulse-warm {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.chat-bubble-assistant {
+  background: oklch(1 0 0 / 0.35);
+  border: 1px solid oklch(0.88 0.008 50 / 0.6);
 }
-.pulse-indicator { animation: pulse-warm 2s ease-in-out infinite; }
-
-/* 打字光标 */
-@keyframes blink-warm {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+.dark .chat-bubble-assistant {
+  background: oklch(0.22 0.008 50 / 0.3);
+  border: 1px solid oklch(0.32 0.01 50 / 0.3);
 }
-.cursor-blink { animation: blink-warm 1s step-end infinite; }
 
-/* 加载旋转 */
-@keyframes spin-warm {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.chat-input {
+  background: oklch(1 0 0 / 0.5);
+  border: 1px solid oklch(0.88 0.008 50 / 0.6);
 }
-.spin-warm { animation: spin-warm 1.2s linear infinite; }
+.dark .chat-input {
+  background: oklch(0.22 0.008 50 / 0.35);
+  border: 1px solid oklch(0.32 0.01 50 / 0.35);
+}
 
-/* 入场动画 */
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(16px); }
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-up { animation: fade-up 0.35s ease-out forwards; }
-
-/* 按钮动效 */
-.btn-warm { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-.btn-warm:hover { transform: translateY(-1px); }
-.btn-warm:active { transform: translateY(0); }
-
-/* 导航项目 */
-.nav-item {
-  transition: all 0.2s ease;
-  border-radius: 0.75rem;
-}
-.nav-item:hover { background: oklch(0.955 0.006 260); }
-.dark .nav-item:hover { background: oklch(0.26 0.008 260); }
-.nav-item.active { background: oklch(0.24 0.014 260 / 0.08); }
-.dark .nav-item.active { background: oklch(0.93 0.006 260 / 0.1); }
-
-/* 跑马灯动画 */
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-.animate-marquee {
-  animation: marquee 30s linear infinite;
-}
-.animate-marquee:hover {
-  animation-play-state: paused;
-}
+.anim-fade { animation: fade-in 0.35s ease-out both; }

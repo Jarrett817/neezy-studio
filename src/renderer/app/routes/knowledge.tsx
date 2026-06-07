@@ -1,26 +1,19 @@
 import { Link, useSearchParams } from "react-router"
-import { BookOpen, Brain, Sparkles } from "lucide-react"
+import { BookOpen, Brain } from "lucide-react"
 
 import { KnowledgeLibraryPanel } from "~/components/knowledge/knowledge-library-panel"
 import { MemoriesPanel } from "~/components/knowledge/memories-panel"
 import { cn } from "~/lib/utils"
-import PortraitRoute from "~/routes/portrait"
 
 const tabs = [
   { id: "knowledge", label: "知识", icon: BookOpen, href: "/knowledge" },
   { id: "memory", label: "记忆", icon: Brain, href: "/knowledge?tab=memory" },
-  { id: "persona", label: "人格", icon: Sparkles, href: "/knowledge?tab=persona" },
 ] as const
 
 export default function KnowledgeRoute() {
   const [params] = useSearchParams()
   const tabParam = params.get("tab")
-  const active =
-    tabParam === "persona"
-      ? "persona"
-      : tabParam === "memory"
-        ? "memory"
-        : "knowledge"
+  const active = tabParam === "memory" ? "memory" : "knowledge"
 
   return (
     <div className="flex w-full flex-col gap-6 pt-2">
@@ -44,13 +37,7 @@ export default function KnowledgeRoute() {
           )
         })}
       </div>
-      {active === "persona" ? (
-        <PortraitRoute />
-      ) : active === "memory" ? (
-        <MemoriesPanel />
-      ) : (
-        <KnowledgeLibraryPanel />
-      )}
+      {active === "memory" ? <MemoriesPanel /> : <KnowledgeLibraryPanel />}
     </div>
   )
 }

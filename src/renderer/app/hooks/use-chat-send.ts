@@ -73,8 +73,10 @@ export function useChatSend({
   }, [updateMessage, abortPiAgent])
 
   const send = useCallback(
-    async (userContent: string) => {
+    async (userContent: string, options?: { displayContent?: string }) => {
       if (isGenerating || !userContent) return
+
+      const visibleContent = options?.displayContent?.trim() || userContent
 
       let sid = sessionIdRef.current
       let createdSession = false
@@ -101,7 +103,7 @@ export function useChatSend({
 
       setIsGenerating(true)
 
-      addMessage({ id: userId, role: "user", content: userContent, thinking: "" })
+      addMessage({ id: userId, role: "user", content: visibleContent, thinking: "" })
       addMessage({
         id: assistantId,
         role: "assistant",

@@ -10,6 +10,10 @@ import { Link } from "react-router"
 
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
+import {
+  SCENE_CHAT_LAUNCH_STATE,
+  sceneChatPath,
+} from "~/lib/scene-chat-nav"
 import { loadInputSceneSlots } from "~/services/playbook/extract-slots"
 import { ensurePlaybookDirs, listPlaybooks } from "~/services/playbook"
 import {
@@ -130,7 +134,10 @@ export default function WorkbenchRoute() {
                   to={
                     continueTarget.type === "chat"
                       ? `/chat?session=${encodeURIComponent(continueTarget.id)}`
-                      : `/chat?playbook=${encodeURIComponent(continueTarget.id)}`
+                      : sceneChatPath(continueTarget.id)
+                  }
+                  state={
+                    continueTarget.type === "playbook" ? SCENE_CHAT_LAUNCH_STATE : undefined
                   }
                 >
                   继续
@@ -166,7 +173,7 @@ export default function WorkbenchRoute() {
                   {playbook.description}
                 </p>
                 <Button asChild className="h-12 w-full rounded-2xl">
-                  <Link to={`/chat?playbook=${encodeURIComponent(playbook.id)}`}>
+                  <Link to={sceneChatPath(playbook.id)} state={SCENE_CHAT_LAUNCH_STATE}>
                     开始创作
                   </Link>
                 </Button>

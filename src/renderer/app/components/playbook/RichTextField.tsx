@@ -1,10 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react"
-import { Hash } from "lucide-react"
 
-import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
-import { Label } from "~/components/ui/label"
-import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -14,7 +10,8 @@ import {
 } from "~/components/ui/select"
 import { cn } from "~/lib/utils"
 import {
-  extractTemplateTokens,
+  getRichTextTokenValues,
+  recoverRichTextTokenValues,
   renderRichTextTemplate,
   resolveTokenDefs,
   type ResolvedTokenDef,
@@ -44,80 +41,20 @@ function parseTemplate(template: string): TemplateSegment[] {
   return segs
 }
 
-/**
- * 从已渲染字符串反推 token 值。失败返回 null（不修改原值）。
- */
-function recoverTokenValues(
-  template: string,
-  rendered: string,
-  tokens: ResolvedTokenDef[]
-): Record<string, string | number> | null {
-  if (!template) return null
-  const segs = parseTemplate(template)
-  const values: Record<string, string | number> = {}
-  let pos = 0
-  for (let j = 0; j < segs.length; j++) {
-    const s = segs[j]
-    if (s.type === "text") {
-      if (rendered.slice(pos, pos + s.text.length) !== s.text) return null
-      pos += s.text.length
-    } else {
-      const next = segs[j + 1]
-      const nextText = next && next.type === "text" ? next.text : ""
-      let val: string
-      if (nextText) {
-        const idx = rendered.indexOf(nextText, pos)
-        if (idx < 0) return null
-        val = rendered.slice(pos, idx)
-        pos = idx
-      } else {
-        val = rendered.slice(pos)
-        pos = rendered.length
-      }
-      const def = tokens.find((t) => t.key === s.key)
-      if (def?.type === "number") {
-        const n = Number(val)
-        values[s.key] = Number.isNaN(n) ? val : n
-      } else {
-        values[s.key] = val
-      }
-    }
-  }
-  if (pos !== rendered.length) return null
-  for (const t of tokens) {
-    if (values[t.key] === undefined) return null
-  }
-  return values
-}
-
-function buildInitialTokens(
-  template: string,
-  value: unknown,
-  tokens: ResolvedTokenDef[]
-): Record<string, string | number> {
-  if (typeof value === "string" && value) {
-    const recovered = recoverTokenValues(template, value, tokens)
-    if (recovered) return recovered
-  }
-  const init: Record<string, string | number> = {}
-  for (const t of tokens) {
-    init[t.key] = t.default ?? ""
-  }
-  return init
+function buildInitialTokens(field: InputField, value: unknown): Record<string, string | number> {
+  return getRichTextTokenValues(field, value)
 }
 
 export type RichTextFieldProps = {
   field: InputField
-  value: string | number | undefined
+  value: string | number | Record<string, string | number> | undefined
   disabled?: boolean
-  onChange: (rendered: string) => void
-  /** 字段粒度提示文本（label 旁的副文案） */
+  onChange: (values: Record<string, string | number>) => void
   hint?: string
 }
 
 /**
- * 富文本填空：渲染 {{token}} 模板，token 是可点击的 chip。
- * 点击 chip 弹出 Popover 让用户选择/输入值。
+ * 富文本填空：模板文本与输入框/下拉框混排在同一行内。
  */
 export function RichTextField({
   field,
@@ -136,29 +73,26 @@ export function RichTextField({
   }, [tokens])
 
   const [values, setValues] = useState<Record<string, string | number>>(() =>
-    buildInitialTokens(template, value, tokens)
-  )
-  const seededRef = useRef(false)
-  useEffect(() => {
-    if (seededRef.current) return
-    seededRef.current = true
-    if (typeof value === "string" && value) {
-      const recovered = recoverTokenValues(template, value, tokens)
-      if (recovered) {
-        setValues(recovered)
-      }
-    }
-  }, [value, template, tokens])
-
-  const rendered = useMemo(
-    () => renderRichTextTemplate(template, values),
-    [template, values]
+    buildInitialTokens(field, value)
   )
 
-  // 把渲染结果回写到父组件（debounce 一帧避免 render 中调用）
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const emittedValuesRef = useRef<string>(JSON.stringify(values))
+
   useEffect(() => {
-    onChange(rendered)
-  }, [rendered, onChange])
+    const key = JSON.stringify(values)
+    if (emittedValuesRef.current === key) return
+    emittedValuesRef.current = key
+    onChangeRef.current(values)
+  }, [values])
+
+  useEffect(() => {
+    const incoming = JSON.stringify(getRichTextTokenValues(field, value))
+    if (incoming === emittedValuesRef.current) return
+    emittedValuesRef.current = incoming
+    setValues(JSON.parse(incoming) as Record<string, string | number>)
+  }, [field, value])
 
   const updateToken = (key: string, v: string | number) => {
     setValues((prev) => ({ ...prev, [key]: v }))
@@ -166,163 +100,139 @@ export function RichTextField({
 
   return (
     <div className="space-y-2">
-      <div className="rounded-xl border border-dashed border-border/60 bg-muted/30 p-3 text-sm leading-relaxed">
+      <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5 text-sm leading-8">
         {segments.length === 0 ? (
           <span className="text-muted-foreground">
             （未配置模板，请在模板中包含 {`{{tokenKey}}`} 形式的占位符）
           </span>
         ) : (
-          segments.map((seg, i) => {
-            if (seg.type === "text") {
-              return <span key={i}>{seg.text}</span>
-            }
-            const def = tokenByKey.get(seg.key)
-            if (!def) {
+          <div className="flex flex-wrap items-baseline gap-x-0.5 gap-y-1">
+            {segments.map((seg, i) => {
+              if (seg.type === "text") {
+                return (
+                  <span key={i} className="whitespace-pre-wrap">
+                    {seg.text}
+                  </span>
+                )
+              }
+              const def = tokenByKey.get(seg.key)
+              if (!def) {
+                return (
+                  <span
+                    key={i}
+                    className="rounded-md bg-destructive/10 px-1.5 text-destructive"
+                    title={`未定义的 token: ${seg.key}`}
+                  >
+                    {`{{${seg.key}}}`}
+                  </span>
+                )
+              }
               return (
-                <span
-                  key={i}
-                  className="mx-0.5 rounded-md bg-destructive/10 px-1.5 text-destructive"
-                  title={`未定义的 token: ${seg.key}`}
-                >
-                  {`{{${seg.key}}}`}
-                </span>
+                <InlineTokenControl
+                  key={`${seg.key}-${i}`}
+                  token={def}
+                  value={values[seg.key]}
+                  disabled={disabled}
+                  onChange={(next) => updateToken(seg.key, next)}
+                />
               )
-            }
-            const v = values[seg.key]
-            const filled =
-              v !== undefined && v !== null && String(v).trim() !== ""
-            return (
-              <TokenChipPopover
-                key={`${seg.key}-${i}`}
-                token={def}
-                value={v}
-                disabled={disabled}
-                onChange={(next) => updateToken(seg.key, next)}
-                filled={Boolean(filled)}
-              />
-            )
-          })
+            })}
+          </div>
         )}
       </div>
-      {hint ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-      {tokens.some((t) => t.chips?.length || t.options?.length) ? (
-        <p className="text-xs text-muted-foreground">
-          点击模板中的
-          <span className="mx-1 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-            <Hash className="size-2.5" />
-            token
-          </span>
-          选填；带候选的 token 也可点下方按钮快速设置。
-        </p>
-      ) : null}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }
 
-function TokenChipPopover({
+function InlineTokenControl({
   token,
   value,
   disabled,
   onChange,
-  filled,
 }: {
   token: ResolvedTokenDef
   value: string | number | undefined
   disabled?: boolean
   onChange: (v: string | number) => void
-  filled: boolean
 }) {
-  const chipOptions =
-    token.chips?.map((c) => String(c)) ?? token.options ?? []
-  const display = filled ? String(value) : token.label || token.key
+  const chipOptions = token.chips?.map((c) => String(c)) ?? []
+  const selectOptions =
+    token.type === "enum" && token.options?.length
+      ? token.options
+      : chipOptions.length > 0
+        ? chipOptions
+        : []
 
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
+  const filled =
+    value !== undefined && value !== null && String(value).trim() !== ""
+
+  const controlClass = cn(
+    "inline-flex h-7 align-baseline text-xs shadow-none",
+    "border-primary/30 bg-background focus-visible:ring-1",
+    disabled && "cursor-not-allowed opacity-50"
+  )
+
+  if (selectOptions.length > 0) {
+    return (
+      <Select
+        value={filled ? String(value) : undefined}
+        onValueChange={(v) =>
+          onChange(token.type === "number" ? Number(v) : v)
+        }
+        disabled={disabled}
+      >
+        <SelectTrigger
           className={cn(
-            "mx-0.5 inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors",
-            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-            filled
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-dashed border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
-            disabled && "cursor-not-allowed opacity-50"
+            controlClass,
+            "min-w-[4.5rem] w-auto max-w-[10rem] px-2",
+            !filled && "border-dashed text-muted-foreground"
           )}
         >
-          <Hash className="size-3" />
-          {display}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72">
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium">{token.label || token.key}</p>
-            {token.hint ? (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {token.hint}
-              </p>
-            ) : null}
-          </div>
-          {chipOptions.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {chipOptions.map((opt) => {
-                const isActive = String(value) === opt
-                return (
-                  <Button
-                    key={opt}
-                    type="button"
-                    size="xs"
-                    variant={isActive ? "default" : "outline"}
-                    className="rounded-full"
-                    onClick={() => {
-                      onChange(token.type === "number" ? Number(opt) : opt)
-                    }}
-                  >
-                    {opt}
-                  </Button>
-                )
-              })}
-            </div>
-          ) : null}
-          {token.type === "enum" && token.options?.length ? (
-            <Select
-              value={
-                value !== undefined && value !== null ? String(value) : ""
-              }
-              onValueChange={(v) => onChange(v)}
-            >
-              <SelectTrigger className="h-9 w-full rounded-lg">
-                <SelectValue placeholder={`选择 ${token.label || token.key}`} />
-              </SelectTrigger>
-              <SelectContent>
-                {token.options.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              value={value === undefined || value === null ? "" : String(value)}
-              type={token.type === "number" ? "number" : "text"}
-              placeholder={token.label || token.key}
-              onChange={(e) => {
-                const raw = e.target.value
-                onChange(token.type === "number" ? Number(raw) : raw)
-              }}
-              className="h-9 rounded-lg"
-            />
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+          <SelectValue placeholder={token.label || token.key} />
+        </SelectTrigger>
+        <SelectContent>
+          {selectOptions.map((opt) => (
+            <SelectItem key={opt} value={opt}>
+              {opt}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )
+  }
+
+  if (token.type === "number") {
+    return (
+      <Input
+        type="number"
+        disabled={disabled}
+        value={value === undefined || value === null ? "" : String(value)}
+        placeholder={token.label || token.key}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={cn(controlClass, "w-16 px-2")}
+      />
+    )
+  }
+
+  return (
+    <Input
+      type="text"
+      disabled={disabled}
+      value={value === undefined || value === null ? "" : String(value)}
+      placeholder={token.label || token.key}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        controlClass,
+        "min-w-[5rem] max-w-[12rem] px-2",
+        !filled && "border-dashed placeholder:text-muted-foreground/70"
+      )}
+    />
   )
 }
 
-// 预留工具：导出供测试
-export const __test = { parseTemplate, recoverTokenValues, extractTemplateTokens }
+export const __test = {
+  parseTemplate,
+  recoverTokenValues: recoverRichTextTokenValues,
+  renderRichTextTemplate,
+}

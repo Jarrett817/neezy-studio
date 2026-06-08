@@ -12,6 +12,7 @@ import {
 import { Button } from "~/components/ui/button"
 import { Textarea } from "~/components/ui/textarea"
 import { cn } from "~/lib/utils"
+import { SCENE_CHAT_LAUNCH_STATE, sceneChatPath } from "~/lib/scene-chat-nav"
 import {
   compilePrompt,
   designPlaybookFromIntent,
@@ -94,7 +95,7 @@ export default function PlaybookDesignerRoute() {
     },
     onSuccess: (id) => {
       toast.success("场景已保存")
-      navigate(`/chat?playbook=${encodeURIComponent(id)}`)
+      navigate(sceneChatPath(id), { state: SCENE_CHAT_LAUNCH_STATE })
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "保存失败")

@@ -10,6 +10,7 @@ export {
   renderFieldValue,
   extractTemplateTokens,
   resolveTokenDefs,
+  validateProfileSlots,
 } from "./compile-prompt"
 export type { ResolvedTokenDef } from "./compile-prompt"
 export {

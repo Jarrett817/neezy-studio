@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog"
 import { cn } from "~/lib/utils"
+import { SCENE_CHAT_LAUNCH_STATE, sceneChatPath } from "~/lib/scene-chat-nav"
 import { listPlaybooks } from "~/services/playbook"
 
 const NAV_ITEMS = [
@@ -57,9 +58,9 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
-  const go = (href: string) => {
+  const go = (href: string, state?: typeof SCENE_CHAT_LAUNCH_STATE) => {
     setOpen(false)
-    navigate(href)
+    navigate(href, state ? { state } : undefined)
   }
 
   return (
@@ -88,7 +89,7 @@ export function CommandPalette() {
                     key={pb.id}
                     value={`${pb.name} ${pb.description ?? ""} ${pb.id} 场景 playbook`}
                     onSelect={() =>
-                      go(`/chat?playbook=${encodeURIComponent(pb.id)}`)
+                      go(sceneChatPath(pb.id), SCENE_CHAT_LAUNCH_STATE)
                     }
                     className={cn(
                       "flex cursor-pointer flex-col items-start gap-0.5 rounded-xl px-3 py-2.5 text-sm",

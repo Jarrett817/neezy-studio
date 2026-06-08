@@ -23,7 +23,7 @@ import {
   openPiSessionManager,
 } from "./pi-disk-sessions"
 import { getPiAuthStorage, syncPiAuthForRoute } from "./pi-sdk-auth"
-import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
+import { resolveAgentThinkingLevel, applyDashScopeAgentFixes, resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 import { applyPlaywrightBrowsersPath } from "./playwright-browser-setup"
 import { getNeezyCustomTools } from "./pi-tool-registry"
@@ -217,6 +217,7 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
   })
 
   session.agent.toolExecution = "sequential"
+  applyDashScopeAgentFixes(session)
   return session
 }
 

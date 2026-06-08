@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { flushSync } from "react-dom"
 import { useQueryClient } from "@tanstack/react-query"
-import { useSearchParams } from "react-router"
+import { useLocation, useNavigate, useSearchParams } from "react-router"
 
 import { useAppStore } from "~/stores/app-store"
 import {
   bindChatSessionPlaybook,
-  ensurePiChatSessionForSend,
   getActiveSessionId,
   getChatSessionPlaybook,
   loadActivePiChatSession,
@@ -14,17 +13,24 @@ import {
   loadPiChatMessages,
   pruneEmptyPiChatSessions,
   reconcileActivePiSession,
-  removePiChatSession,
   setActiveSessionId as persistActiveSessionId,
   startNewPiChatSession,
 } from "~/services/pi-chat-sessions"
 import { clearActiveChatSessionId } from "~/services/storage/app-kv"
 
+type SceneLaunchState = { sceneLaunch?: boolean }
+
 export function useChatSession() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const sessionFromUrl = searchParams.get("session")?.trim() || null
   const playbookIdFromUrl = searchParams.get("playbook")?.trim() || null
+  const sceneLaunch =
+    (location.state as SceneLaunchState | null)?.sceneLaunch === true
+  const sceneLaunchRef = useRef(false)
+  sceneLaunchRef.current = sceneLaunch
 
   const [activePlaybookId, setActivePlaybookId] = useState<string | null>(playbookIdFromUrl)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -52,26 +58,59 @@ export function useChatSession() {
     if (playbookIdFromUrl) setActivePlaybookId(playbookIdFromUrl)
   }, [playbookIdFromUrl])
 
+  const bootFreshSceneSession = useCallback(
+    async (playbookId: string) => {
+      const fresh = await startNewPiChatSession()
+      await bindChatSessionPlaybook(fresh.id, playbookId)
+      sessionIdRef.current = fresh.id
+      setActiveSessionId(fresh.id)
+      setActivePlaybookId(playbookId)
+      await persistActiveSessionId(fresh.id)
+      clearConversation()
+      syncPlaybookInUrl(playbookId, null)
+      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      queryClient.invalidateQueries({ queryKey: ["chat-sessions", "with-messages"] })
+      return fresh.id
+    },
+    [clearConversation, queryClient, syncPlaybookInUrl]
+  )
+
   useEffect(() => {
     let cancelled = false
+    setSessionsReady(false)
+    const forceSceneLaunch = sceneLaunchRef.current
+    if (playbookIdFromUrl && (!sessionFromUrl || forceSceneLaunch)) {
+      clearConversation()
+    }
+
     ;(async () => {
       try {
         await reconcileActivePiSession()
         const keepId = sessionFromUrl ?? (await getActiveSessionId())
         await pruneEmptyPiChatSessions(keepId)
 
-        // playbook 模式：新建空白对话
-        if (playbookIdFromUrl && !sessionFromUrl) {
-          const fresh = await startNewPiChatSession()
-          if (!cancelled) {
-            sessionIdRef.current = fresh.id
-            setActiveSessionId(fresh.id)
-            setActivePlaybookId(playbookIdFromUrl)
-            await persistActiveSessionId(fresh.id)
-            clearConversation()
-            setSessionsReady(true)
+        // 场景入口：无 session 参数，或显式 sceneLaunch → 始终新建对话
+        if (playbookIdFromUrl && (!sessionFromUrl || forceSceneLaunch)) {
+          await bootFreshSceneSession(playbookIdFromUrl)
+          if (!cancelled && forceSceneLaunch) {
+            navigate(
+              {
+                pathname: "/chat",
+                search: `?playbook=${encodeURIComponent(playbookIdFromUrl)}`,
+              },
+              { replace: true, state: null }
+            )
           }
           return
+        }
+
+        if (playbookIdFromUrl && sessionFromUrl) {
+          const boundPlaybook = await getChatSessionPlaybook(sessionFromUrl)
+          if (boundPlaybook && boundPlaybook !== playbookIdFromUrl) {
+            await bootFreshSceneSession(playbookIdFromUrl)
+            return
+          }
         }
 
         const loaded = sessionFromUrl
@@ -91,10 +130,7 @@ export function useChatSession() {
           }
           setConversationHistory(loaded.messages)
         } else if (playbookIdFromUrl) {
-          sessionIdRef.current = null
-          setActiveSessionId(null)
-          setActivePlaybookId(playbookIdFromUrl)
-          clearConversation()
+          await bootFreshSceneSession(playbookIdFromUrl)
         } else {
           sessionIdRef.current = null
           setActiveSessionId(null)
@@ -111,7 +147,16 @@ export function useChatSession() {
       }
     })()
     return () => { cancelled = true }
-  }, [sessionFromUrl, playbookIdFromUrl])
+  }, [
+    sessionFromUrl,
+    playbookIdFromUrl,
+    bootFreshSceneSession,
+    clearConversation,
+    navigate,
+    queryClient,
+    setConversationHistory,
+    syncPlaybookInUrl,
+  ])
 
   const handleSelectSession = useCallback(
     async (sessionId: string) => {

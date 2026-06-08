@@ -1,0 +1,31 @@
+---
+inclusion: always
+---
+
+# Videoflow 技术栈与 UI 约束
+
+## 技术栈（以仓库为准）
+
+- **运行时**：React 19、TypeScript 5.9
+- **包管理**：**Bun**（`bun install` / `bun add` / `bunx`）；不要用 `npm`、`npx`、`pnpm`、`yarn` 作为本仓库的默认命令习惯。
+- **路由与构建**：React Router 7（`react-router` / `@react-router/dev`）、Vite 7
+- **样式**：Tailwind CSS 4（`@tailwindcss/vite`）、`tailwind-merge`、`class-variance-authority`、`clsx`、`tw-animate-css`
+- **组件基座**：Radix UI（`radix-ui`）、**shadcn**（`shadcn` CLI + `components.json`，style: `radix-nova`，`~/components/ui`）
+- **数据与校验**：TanStack React Query、TanStack React Table、Zod
+- **画布 / 工作流**：Flowgram（`@flowgram.ai/core`、`free-layout-editor`、`free-stack-plugin`）
+- **其他常用**：dayjs、lodash-es、lucide-react、recharts、`@videojs/react`、next-themes、sonner、xlsx 等
+
+新增能力时优先选用 **registry 上成熟、维护活跃** 的库；避免自造与生态重复的轮子（表格、日期、表单校验等优先用已有依赖）。
+
+## shadcn / 组件
+
+- **只通过 shadcn CLI** 向项目添加或更新官方 UI 块（例如 `bunx shadcn@latest add <component>`，版本与用法以项目 `components.json` 为准）。
+- **禁止**在 `~/components/ui`（或等价 `components/ui`）里**手写**与 shadcn 官方生成物同类的底层 primitive（Button、Dialog、Dropdown 等）；缺组件时先 CLI 添加再组合使用。
+- 业务组件通过 **组合** 已安装的 `~/components/ui/*` 实现，不把 shadcn 源码复制粘贴成「自制套件」。
+
+## 样式
+
+- UI 与布局 **只许用 Tailwind utility**（含 `cn()`、`tailwind-merge`、CVA 等与 Tailwind 配合的写法）。
+- **禁止**为业务/组件新增手写 CSS：不新建组件级 `.css` / CSS Modules、不在代码里堆自定义选择器；全局入口样式文件（如 `app/app.css`）**仅**保留 Tailwind 工程约定内容（`@import`、`@theme`、`@layer` 等），不把其当作业务样式入口。
+- **禁止**在 JSX/DOM 上使用 `style={{ ... }}` 或插入 `<style>...</style>` 发样式；动态值若必须落在 DOM 上，优先用 Tailwind 任意值语法（如 `w-[var(--x)]`）或设计 token + class，**非**行内 `style`。
+- 已有 `styled-components` **不新增、不扩大**使用面；第三方组件**强制**要求传入 `style` 的窄例外须在注释里写明依赖名与原因。

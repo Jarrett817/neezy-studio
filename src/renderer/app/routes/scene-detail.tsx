@@ -16,6 +16,10 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
 import {
+  SCENE_CHAT_LAUNCH_STATE,
+  sceneChatPath,
+} from "~/lib/scene-chat-nav"
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -151,7 +155,7 @@ export default function SceneDetailRoute() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild className="rounded-xl">
-              <Link to={`/chat?playbook=${encodeURIComponent(playbook.id)}`}>
+              <Link to={sceneChatPath(playbook.id)} state={SCENE_CHAT_LAUNCH_STATE}>
                 <Play className="size-4" />
                 运行
               </Link>

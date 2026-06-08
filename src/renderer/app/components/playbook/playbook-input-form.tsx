@@ -265,9 +265,9 @@ function FieldBlock({
         </Label>
         <RichTextField
           field={field}
-          value={value as string | number | undefined}
+          value={value as string | number | Record<string, string | number> | undefined}
           disabled={disabled}
-          onChange={(rendered) => onChange(rendered)}
+          onChange={(tokenValues) => onChange(tokenValues)}
         />
       </div>
     )

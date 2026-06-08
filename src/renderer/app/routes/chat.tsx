@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, useCallback } from "react"
+import { useState, useRef, useLayoutEffect, useCallback, useEffect } from "react"
 import { flushSync } from "react-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router"
@@ -19,6 +19,7 @@ import { useChatSession } from "~/hooks/use-chat-session"
 import { useChatSend } from "~/hooks/use-chat-send"
 import {
   compilePrompt, buildSceneAgentSystemPrompt, ensurePlaybookDirs, getScene,
+  validateProfileSlots,
   type InputProfile, type PlaybookSlots,
 } from "~/services/playbook"
 import type { JSONContent } from "@tiptap/react"
@@ -32,18 +33,7 @@ function isNearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_NEAR_BOTTOM_PX
 }
 
-function validateSceneSlots(profile: InputProfile, slots: Record<string, unknown>) {
-  for (const f of profile.fields) {
-    if (!f.required) continue
-    const v = slots[f.key]
-    if (f.type === "mindmap") { if (!(v as { topic?: string })?.topic?.trim()) return false; continue }
-    if (f.type === "flowchart") { if (!(v as { nodes?: unknown[] })?.nodes?.length) return false; continue }
-    if (v === undefined || v === null || String(v).trim() === "") return false
-  }
-  return true
-}
-
-function buildSceneUserContent(
+function buildSceneAgentPayload(
   profile: InputProfile, slots: Record<string, unknown>,
   chatText: string, file: { name: string; content: string } | null,
 ) {
@@ -53,6 +43,17 @@ function buildSceneUserContent(
   if (extra) parts.push(`【补充说明】\n${extra}`)
   if (file) parts.push(`[附件: ${file.name}]\n---\n${file.content}\n---`)
   return parts.join("\n\n")
+}
+
+function buildSceneDisplayContent(
+  chatText: string,
+  file: { name: string; content: string } | null,
+  sceneName?: string,
+) {
+  const extra = chatText.trim()
+  if (extra) return extra
+  if (file) return `附件：${file.name}`
+  return sceneName ? `【${sceneName}】` : "【场景任务】"
 }
 
 function extractText(json: JSONContent | null): string {
@@ -85,7 +86,14 @@ export default function ChatRoute() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const sceneCtxRef = useRef("")
+  const sceneBootRef = useRef("")
+
+  useEffect(() => {
+    const bootKey = `${activeSessionId ?? ""}\0${activePlaybookId ?? ""}`
+    if (bootKey === sceneBootRef.current) return
+    sceneBootRef.current = bootKey
+    setSceneSlotValues({})
+  }, [activeSessionId, activePlaybookId])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
@@ -124,7 +132,7 @@ export default function ChatRoute() {
     scenePlaybook != null
       ? buildSceneAgentSystemPrompt(SYSTEM_PROMPT, scenePlaybook)
       : sceneProfile != null
-        ? [SYSTEM_PROMPT, "", `【当前输入场景】${sceneProfile.name ?? sceneProfile.id}`, sceneProfile.description ?? "", "用户右侧面板中的参数为任务主输入；聊天框可写补充说明。"].join("\n")
+        ? [SYSTEM_PROMPT, "", `【当前输入场景】${sceneProfile.name ?? sceneProfile.id}`, sceneProfile.description ?? "", "右侧面板参数会作为隐藏上下文随每条消息发送；聊天框仅写补充说明。"].join("\n")
         : SYSTEM_PROMPT
 
   const { send, abort: abortSend, isGenerating, resetAgent } = useChatSend({
@@ -134,6 +142,11 @@ export default function ChatRoute() {
     sceneProfile, sceneSlotValues, chatEntry, syncPlaybookInUrl, sessionIdRef, sessionsReady,
   })
 
+  useEffect(() => {
+    if (!sessionsReady || !activeSessionId) return
+    void resetAgent([], activeSessionId).catch(() => {})
+  }, [activeSessionId, sessionsReady, resetAgent])
+
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
   const doSend = useCallback(() => {
@@ -142,31 +155,34 @@ export default function ChatRoute() {
     const inScene = Boolean(sceneProfile)
 
     if (inScene && sceneProfile) {
-      if (!validateSceneSlots(sceneProfile, sceneSlotValues)) return
-      if (!hasFile && !text && !sceneProfile.fields.some((f) => {
-        const v = sceneSlotValues[f.key]
-        return v !== undefined && v !== null && String(v).trim() !== ""
-      })) return
+      if (!validateProfileSlots(sceneProfile, sceneSlotValues)) return
     } else if (!text && !hasFile) return
 
     stickToBottomRef.current = true
+    const fileSnapshot = attachedFile
     setEditorContent(null)
     setAttachedFile(null)
 
-    if (inScene && sceneProfile && !sceneCtxRef.current) {
-      sceneCtxRef.current = buildSceneUserContent(sceneProfile, sceneSlotValues, "", null)
-    }
-
-    let userContent: string
+    let agentContent: string
+    let displayContent: string
     if (inScene && sceneProfile) {
-      userContent = buildSceneUserContent(sceneProfile, sceneSlotValues, text || (sceneCtxRef.current ? "继续基于场景生成" : ""), attachedFile)
-    } else if (attachedFile) {
-      userContent = text ? `${text}\n\n[附件: ${attachedFile.name}]\n---\n${attachedFile.content}\n---` : `[附件: ${attachedFile.name}]\n---\n${attachedFile.content}\n---`
+      agentContent = buildSceneAgentPayload(sceneProfile, sceneSlotValues, text, fileSnapshot)
+      displayContent = buildSceneDisplayContent(
+        text,
+        fileSnapshot,
+        scenePlaybook?.name ?? sceneProfile.name ?? sceneProfile.id
+      )
+    } else if (fileSnapshot) {
+      agentContent = text
+        ? `${text}\n\n[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
+        : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
+      displayContent = text || `附件：${fileSnapshot.name}`
     } else {
-      userContent = text
+      agentContent = text
+      displayContent = text
     }
-    send(userContent)
-  }, [editorContent, attachedFile, sceneProfile, sceneSlotValues, send])
+    send(agentContent, { displayContent })
+  }, [editorContent, attachedFile, sceneProfile, scenePlaybook, sceneSlotValues, send])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -184,7 +200,7 @@ export default function ChatRoute() {
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
   const chatModelName = chatEntry ? entryDisplayName(chatEntry) : "未配置"
-  const sceneFilled = !sceneProfile || validateSceneSlots(sceneProfile, sceneSlotValues)
+  const sceneFilled = !sceneProfile || validateProfileSlots(sceneProfile, sceneSlotValues)
 
   if (!sessionsReady) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -289,7 +305,7 @@ export default function ChatRoute() {
                   </Button>
                 ) : (
                   <Button size="sm" className="gap-2 rounded-full bg-primary/15 px-5 text-primary shadow-sm hover:bg-primary/25"
-                    disabled={(!editorContent && !attachedFile && !showScenePanel) || (showScenePanel && !sceneFilled)}
+                    disabled={isGenerating || (showScenePanel ? !sceneFilled : (!editorContent && !attachedFile))}
                     onClick={doSend}>
                     <Zap className="size-4" />发送
                   </Button>
@@ -305,6 +321,7 @@ export default function ChatRoute() {
           <div className="border-b border-border/30 px-4 py-3">
             <p className="font-heading text-sm font-semibold text-foreground/90">{scenePlaybook?.name ?? sceneProfile?.name ?? sceneProfile?.id}</p>
             <p className="mt-1 text-xs text-muted-foreground/70 line-clamp-2">{scenePlaybook?.description ?? sceneProfile?.description ?? ""}</p>
+            <p className="mt-2 text-[11px] text-muted-foreground/60">填完表单后可直接在下方发送；表单会作为隐藏上下文随每条消息携带。</p>
             {scenePlaybook && !scenePlaybook.builtin ? (
               <Link to={`/scenes/designer?edit=${encodeURIComponent(scenePlaybook.id)}`} className="mt-2 inline-block text-xs text-primary/80 hover:text-primary">编辑场景</Link>
             ) : null}
@@ -315,7 +332,7 @@ export default function ChatRoute() {
               formId="chat-scene-form" hideSubmitButton
               disabled={isGenerating}
               onValuesChange={setSceneSlotValues}
-              onSubmit={() => doSend()}
+              onSubmit={() => {}}
             />
           </div>
         </aside>

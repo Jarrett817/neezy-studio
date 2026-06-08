@@ -93,6 +93,7 @@ export const CODING_PLAN_VENDOR_CATALOG: CodingPlanVendor[] = [
       "qwen-plus",
       "qwen3-max",
       "qwen3.5-plus",
+      "qwen3.7-plus",
       "qwen3-coder-plus",
       "deepseek-v4-pro",
       "qwq-plus",
@@ -158,12 +159,22 @@ export function listDashScopeOpenAiModelHints(): string[] {
 
 export function dashScopeModelUsesThinking(modelId: string): boolean {
   const n = modelId.trim().toLowerCase()
-  return (
+  if (
     n.includes("deepseek") ||
     n.includes("qwq") ||
     n.includes("thinking") ||
     n.includes("reasoner")
-  )
+  ) {
+    return true
+  }
+  // 百炼混合思考系列（默认开启）：qwen3.5 / qwen3.6 / qwen3.7
+  if (/qwen3\.(5|6|7)/.test(n)) return true
+  return false
+}
+
+/** 百炼 OpenAI 兼容模式认顶层 enable_thinking（pi-ai thinkingFormat: qwen） */
+export function dashScopeThinkingFormat(): "qwen" {
+  return "qwen"
 }
 
 /** 从 jqknono/coding-plans-for-copilot 的 package.json 拉取默认 vendors 并合并 */

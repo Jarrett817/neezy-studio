@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { Textarea } from "~/components/ui/textarea"
-import { RichTextField } from "~/components/playbook/RichTextField"
+import { RichTextField, type RichTextFieldProps } from "~/components/playbook/RichTextField"
 import { cn } from "~/lib/utils"
 import {
   extractSlotsFromSingleLine,
@@ -38,8 +38,8 @@ export function PlaybookWizardForm({
   const showSingleLine = capture.includes("singleLineExtract")
 
   const [step, setStep] = useState(0)
-  const [values, setValues] = useState<Record<string, string | number>>(() => {
-    const v: Record<string, string | number> = {}
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
+    const v: Record<string, unknown> = {}
     for (const field of fields) {
       if (field.default !== undefined) v[field.key] = field.default
     }
@@ -55,7 +55,7 @@ export function PlaybookWizardForm({
     void (async () => {
       const last = await loadInputSceneSlots(profileId)
       if (cancelled) return
-      const next: Record<string, string | number> = {}
+      const next: Record<string, unknown> = {}
       for (const field of fields) {
         if (field.default !== undefined) next[field.key] = field.default
       }
@@ -98,7 +98,7 @@ export function PlaybookWizardForm({
     setExtracting(true)
     try {
       const slots = await extractSlotsFromSingleLine(profile, singleLine)
-      const next: Record<string, string | number> = { ...values }
+      const next: Record<string, unknown> = { ...values }
       for (const f of fields) {
         const v = slots[f.key]
         if (v !== undefined && v !== null && String(v).trim() !== "") {
@@ -227,9 +227,9 @@ function WizardField({
   onChange,
 }: {
   field: InputField
-  value: string | number | undefined
+  value: unknown
   disabled?: boolean
-  onChange: (v: string | number) => void
+  onChange: (v: unknown) => void
 }) {
   const chipOptions = field.chips?.map(String) ?? field.options ?? []
 
@@ -242,9 +242,9 @@ function WizardField({
         </Label>
         <RichTextField
           field={field}
-          value={value}
+          value={value as RichTextFieldProps["value"]}
           disabled={disabled}
-          onChange={(rendered) => onChange(rendered)}
+          onChange={(tokenValues) => onChange(tokenValues)}
         />
       </div>
     )
@@ -328,8 +328,8 @@ function InlineRichTextForm({
   onSubmit: (values: Record<string, unknown>) => void
   onValuesChange?: (values: Record<string, unknown>) => void
   fields: InputField[]
-  values: Record<string, string | number>
-  setValues: React.Dispatch<React.SetStateAction<Record<string, string | number>>>
+  values: Record<string, unknown>
+  setValues: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
   showSingleLine: boolean
   singleLine: string
   setSingleLine: (s: string) => void
@@ -344,7 +344,7 @@ function InlineRichTextForm({
     setExtracting(true)
     try {
       const slots = await extractSlotsFromSingleLine(profile, singleLine)
-      const next: Record<string, string | number> = { ...values }
+      const next: Record<string, unknown> = { ...values }
       for (const f of fields) {
         const v = slots[f.key]
         if (v !== undefined && v !== null && String(v).trim() !== "") {
@@ -427,9 +427,9 @@ function FieldBlockRichText({
   onChange,
 }: {
   field: InputField
-  value: string | number | undefined
+  value: unknown
   disabled?: boolean
-  onChange: (v: string | number) => void
+  onChange: (v: unknown) => void
 }) {
   return (
     <div className="space-y-2">
@@ -439,9 +439,9 @@ function FieldBlockRichText({
       </Label>
       <RichTextField
         field={field}
-        value={value}
+        value={value as RichTextFieldProps["value"]}
         disabled={disabled}
-        onChange={(rendered) => onChange(rendered)}
+        onChange={(tokenValues) => onChange(tokenValues)}
       />
     </div>
   )

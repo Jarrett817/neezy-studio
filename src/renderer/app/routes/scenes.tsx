@@ -8,6 +8,10 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card"
 import {
+  SCENE_CHAT_LAUNCH_STATE,
+  sceneChatPath,
+} from "~/lib/scene-chat-nav"
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -173,7 +177,7 @@ function SceneCard({
         </p>
         <div className="flex gap-2">
           <Button asChild className="h-10 flex-1 rounded-xl text-sm">
-            <Link to={`/chat?playbook=${encodeURIComponent(id)}`}>运行</Link>
+            <Link to={sceneChatPath(id)} state={SCENE_CHAT_LAUNCH_STATE}>运行</Link>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-10 rounded-xl">
             <Link to={`/scenes/${encodeURIComponent(id)}`}>

@@ -159,6 +159,7 @@ function syncSessionChatRoute(session: AgentSession, userMessage?: string): void
   const model = resolvePiChatModel(userMessage)
   session.agent.state.model = model
   session.setThinkingLevel(resolveAgentThinkingLevel(model))
+  applyDashScopeAgentFixes(session)
   syncPiAuthForRoute(userMessage)
 }
 
@@ -230,6 +231,7 @@ export async function createAgentSession(
   if (existing && !existing.window.isDestroyed()) {
     existing.window = window
     await bindAgentSessionUi(existing.session, window, diskSessionId)
+    syncSessionChatRoute(existing.session)
     return diskSessionId
   }
   if (existing) {

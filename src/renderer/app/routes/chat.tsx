@@ -139,7 +139,7 @@ export default function ChatRoute() {
     agentSystemPrompt, activeSessionId,
     onSessionCreated: (sid) => flushSync(() => setActiveSessionId(sid)),
     activePlaybookId,
-    sceneProfile, sceneSlotValues, chatEntry, syncPlaybookInUrl, sessionIdRef, sessionsReady,
+    sceneProfile, scenePlaybook, sceneSlotValues, chatEntry, syncPlaybookInUrl, sessionIdRef, sessionsReady,
   })
 
   useEffect(() => {

@@ -13,6 +13,7 @@ import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { resolveActiveChatRoute } from "./model-routing"
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
+import { isDashScopeOpenAiBaseUrl } from "../shared/coding-plan-catalog"
 
 /** Playbook 单轮流式：仅 role + 文本，经 toPiUserOrAssistant 转为 pi-ai Message */
 export type PiChatMessage = {
@@ -192,12 +193,42 @@ export async function piCompleteMessages(
   await ensureChatReady()
   const model = resolvePiChatModel()
   const context = buildContext(messages, { systemPrompt: options?.systemPrompt })
-  const result = await completeSimple(model, context, {
+  const streamOptions = {
     temperature: options?.temperature ?? 0.7,
     maxTokens: options?.maxTokens ?? 4096,
     apiKey: resolveRouteApiKey(),
     reasoning: resolvePiReasoningOption(),
-  })
+  }
+
+  // 百炼 OpenAI 兼容端点末包可能缺 finish_reason，用 streamSimple 替代 completeSimple
+  // 关键：通过 onPayload 删除 stream_options 避免百炼发出额外的 usage-only 空包
+  if (isDashScopeOpenAiBaseUrl(model.baseUrl ?? "")) {
+    const stream = streamSimple(model, context, {
+      ...streamOptions,
+      onPayload: (payload) => {
+        if (payload && typeof payload === "object") {
+          const p = payload as Record<string, unknown>
+          delete p.stream_options
+        }
+        return payload
+      },
+    })
+    let result: AssistantMessage
+    try {
+      result = await stream.result()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes("finish_reason")) return ""
+      throw err
+    }
+    const { content } = extractAssistantMessageText(result)
+    if (content) return content
+    if (result.errorMessage?.includes("finish_reason")) return ""
+    if (result.errorMessage) throw new Error(result.errorMessage)
+    return content
+  }
+
+  const result = await completeSimple(model, context, streamOptions)
   const { content } = extractAssistantMessageText(result)
   if (!content && result.errorMessage) throw new Error(result.errorMessage)
   return content
@@ -238,11 +269,21 @@ async function runPiChatStreamInner(
 ): Promise<string> {
   await ensureChatReady()
   const model = resolvePiChatModel()
+  const isDashScope = isDashScopeOpenAiBaseUrl(model.baseUrl ?? "")
   const stream = streamSimple(model, context, {
     temperature: options.temperature ?? 0.7,
     maxTokens: options.maxTokens ?? 4096,
     apiKey: resolveRouteApiKey(),
     reasoning: resolvePiReasoningOption(),
+    ...(isDashScope && {
+      onPayload: (payload: unknown) => {
+        if (payload && typeof payload === "object") {
+          const p = payload as Record<string, unknown>
+          delete p.stream_options
+        }
+        return payload
+      },
+    }),
   })
 
   for await (const event of stream) {
@@ -256,7 +297,13 @@ async function runPiChatStreamInner(
 
   const result = await stream.result()
   const { content } = extractAssistantMessageText(result)
-  if (!content && result.errorMessage) throw new Error(result.errorMessage)
+  // 百炼末包缺 finish_reason 时 pi-ai 报 error，但 delta 阶段内容已收到
+  if (!content && result.errorMessage) {
+    if (isDashScope && result.errorMessage.includes("finish_reason")) {
+      return ""
+    }
+    throw new Error(result.errorMessage)
+  }
   return content
 }
 

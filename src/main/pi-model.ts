@@ -480,52 +480,73 @@ function patchDashScopeRequestPayload(
 
   }
 
-  return next
+  // 百炼要求 user message 纯文本时 content 必须是 string，不能是 array
+  if (Array.isArray(next.messages)) {
+    const normalized = (next.messages as Array<Record<string, unknown>>).map((m) => {
+      if ((m.role === "user" || m.role === "tool") && Array.isArray(m.content)) {
+        const blocks = m.content as Array<Record<string, unknown>>
+        const allText = blocks.every((b) => b && b.type === "text")
+        if (allText) {
+          return { ...m, content: blocks.map((b) => String(b.text ?? "")).join("") }
+        }
+      }
+      return m
+    })
 
+    // 百炼要求 user/assistant 交替——合并连续的同 role 消息（仅对 user 做合并）
+    const merged: Array<Record<string, unknown>> = []
+    for (const m of normalized) {
+      const last = merged[merged.length - 1]
+      if (
+        last &&
+        last.role === "user" &&
+        m.role === "user" &&
+        typeof last.content === "string" &&
+        typeof m.content === "string"
+      ) {
+        last.content = `${last.content}\n\n${m.content}`
+      } else {
+        merged.push({ ...m })
+      }
+    }
+    next.messages = merged
+  }
+  return next
 }
 
 
 
 function wrapDashScopeStreamFn(base: StreamFn, getThinkingOn: () => boolean): StreamFn {
-
   return async (model, context, options) => {
-
     const isDashScope = isDashScopeOpenAiBaseUrl(model.baseUrl ?? "")
-
     const mergedOptions = isDashScope
-
       ? {
-
           ...options,
-
           onPayload: async (payload: unknown, m: Model<Api>) => {
-
             let next = payload
-
             if (options?.onPayload) {
-
               const patched = await options.onPayload(payload, m)
-
               if (patched !== undefined) next = patched
-
             }
-
-            return patchDashScopeRequestPayload(next, m, getThinkingOn())
-
+            const final = patchDashScopeRequestPayload(next, m, getThinkingOn())
+            try {
+              const summary = JSON.stringify(final, (_k, v) => {
+                if (typeof v === "string" && v.length > 200) return v.slice(0, 200) + `...(${v.length})`
+                return v
+              })
+              console.log("[pi-agent] dashscope payload:", summary.slice(0, 4000))
+            } catch {}
+            return final
           },
-
+          onResponse: async (response: { status: number; headers: Record<string, string> }, m: Model<Api>) => {
+            console.log("[pi-agent] dashscope response status:", response.status, "request-id:", response.headers["x-request-id"] ?? response.headers["x-dashscope-request-id"] ?? "n/a")
+            if (options?.onResponse) await options.onResponse(response, m)
+          },
         }
-
       : options
-
-
-
     const stream = await base(model, context, mergedOptions)
-
     return isDashScope ? wrapDashScopeEventStream(stream) : stream
-
   }
-
 }
 
 

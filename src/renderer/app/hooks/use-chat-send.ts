@@ -17,10 +17,12 @@ import {
   getPortraitContextForPrompt,
   updatePortraitFromConversation,
 } from "~/services/user-portrait"
+import { validateSceneOutput } from "~/lib/scene-output-validator"
 import {
   compilePrompt,
   buildSceneAgentSystemPrompt,
   type InputProfile,
+  type Playbook,
   type PlaybookSlots,
 } from "~/services/playbook"
 import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
@@ -31,6 +33,7 @@ export function useChatSend({
   onSessionCreated,
   activePlaybookId,
   sceneProfile,
+  scenePlaybook,
   sceneSlotValues,
   chatEntry,
   syncPlaybookInUrl,
@@ -42,6 +45,7 @@ export function useChatSend({
   onSessionCreated?: (sid: string) => void
   activePlaybookId: string | null
   sceneProfile: InputProfile | null
+  scenePlaybook: Playbook | null
   sceneSlotValues: Record<string, unknown>
   chatEntry: ReturnType<typeof resolveChatModelEntry>
   syncPlaybookInUrl: (playbookId: string | null, sessionId?: string | null) => void
@@ -183,6 +187,60 @@ export function useChatSend({
           return
         }
 
+        // followUp 反馈环：场景模式下自动验证输出格式
+        const validation = validateSceneOutput(finalContent, scenePlaybook)
+        if (!validation.valid && validation.followUpPrompt) {
+          // 先更新当前回复（标记为中间状态）
+          updateMessage(assistantId, {
+            content: finalContent,
+            thinking: finalThinking,
+            isStreaming: true,
+          })
+          // 自动追问修正
+          const retryId = crypto.randomUUID()
+          addMessage({ id: retryId, role: "assistant", content: "", thinking: "", isStreaming: true, toolCalls: [] })
+          activeAssistantId.current = retryId
+          const retryResult = await runPrompt({
+            userMessage: validation.followUpPrompt,
+            assistantId: retryId,
+            onStream: ({ thinking, content }) => { updateMessage(retryId, { thinking, content }) },
+            onWorkflow: (steps) => { updateMessage(retryId, { agentSteps: steps }) },
+            onToolStart: (item) => {
+              const current = getMessage(retryId)
+              updateMessage(retryId, { toolCalls: [...(current?.toolCalls ?? []), item] })
+            },
+            onToolUpdate: () => {},
+            onToolEnd: (item) => {
+              const current = getMessage(retryId)
+              updateMessage(retryId, {
+                toolCalls: (current?.toolCalls ?? []).map((t) =>
+                  t.toolCallId === item.toolCallId ? { ...t, ...item } : t
+                ),
+              })
+            },
+            onUsage: (summary) => { updateMessage(retryId, { usageSummary: summary }) },
+          })
+          const retryParsed = parseModelThinking(retryResult.content)
+          updateMessage(assistantId, { isStreaming: false })
+          updateMessage(retryId, {
+            content: retryParsed.visible || retryResult.content,
+            thinking: retryResult.thinking || retryParsed.thinking,
+            isStreaming: false,
+          })
+          // 用修正后的内容做后续处理
+          const correctedContent = retryParsed.visible || retryResult.content
+          queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+          updatePortraitFromConversation({ userContent, assistantContent: correctedContent })
+            .then(() => queryClient.invalidateQueries({ queryKey: ["user-portrait"] }))
+            .catch((err) => console.warn("[portrait] update failed:", err))
+          rememberConversationTurn({ userContent, assistantContent: correctedContent })
+            .catch((err) => console.warn("[memory] remember failed:", err))
+          addConversationSlice(retryId, userContent).catch((err) => {
+            console.warn("Failed to save conversation slice:", err)
+          })
+          return
+        }
+
         const finalMsg = getMessage(assistantId)
         updateMessage(assistantId, {
           content: finalContent,
@@ -222,6 +280,7 @@ export function useChatSend({
       abortPiAgent,
       activePlaybookId,
       sceneProfile,
+      scenePlaybook,
       sceneSlotValues,
       chatEntry,
       syncPlaybookInUrl,

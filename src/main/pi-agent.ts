@@ -37,6 +37,7 @@ import {
   createElectronPermissionUi,
 } from "./pi-permission-ui"
 import { resolveStoragePaths } from "./storage-paths"
+import { isDashScopeOpenAiBaseUrl } from "../shared/coding-plan-catalog"
 import { log } from "./logger"
 import { listAllInstalledSkillDirs } from "./skill-install"
 
@@ -84,6 +85,7 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   sm.applyOverrides({
     defaultThinkingLevel: level === "off" ? "off" : level,
     compaction: { enabled: true },
+    retry: { enabled: true, maxRetries: 3 },
   })
   return sm
 }
@@ -217,7 +219,7 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
     resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
   })
 
-  session.agent.toolExecution = "sequential"
+  session.agent.toolExecution = "parallel"
   applyDashScopeAgentFixes(session)
   return session
 }
@@ -244,6 +246,18 @@ export async function createAgentSession(
   await bindAgentSessionUi(session, window, diskSessionId)
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+    if (event.type === "agent_end") {
+      const last = [...event.messages].reverse().find((m) => m.role === "assistant")
+      if (last && last.role === "assistant") {
+        const blockSummary = (last.content as Array<{ type: string; text?: string; thinking?: string; name?: string }>).map((b) => {
+          if (b.type === "text") return `text(${b.text?.length ?? 0})`
+          if (b.type === "thinking") return `thinking(${b.thinking?.length ?? 0})`
+          if (b.type === "toolCall") return `tool(${b.name})`
+          return `unknown(${b.type})`
+        }).join(",")
+        log.info("[pi-agent] agent_end", "stopReason:", last.stopReason, "blocks:[" + blockSummary + "]", "errMsg:", last.errorMessage ?? "none")
+      }
+    }
     window.webContents.send("agent:event", { sessionId: diskSessionId, event })
   })
 
@@ -309,6 +323,8 @@ export async function promptAgent(diskSessionId: string, message: string): Promi
     model.id,
     model.api,
     model.baseUrl,
+    "isDashScope:", isDashScopeOpenAiBaseUrl(model.baseUrl ?? ""),
+    "thinkingLevel:", entry.session.agent.state.thinkingLevel,
     "piSession",
     diskSessionId
   )

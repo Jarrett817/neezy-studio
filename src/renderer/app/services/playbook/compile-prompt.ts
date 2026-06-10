@@ -250,13 +250,20 @@ export function buildSceneAgentSystemPrompt(
   basePrompt: string,
   playbook: Playbook
 ): string {
+  const memoryHint = playbook.memoryScope
+    ? `如果用户的需求与记忆/知识库相关，主动调用 memory_search 搜索相关内容来丰富产出。可搜索多次、用不同关键词扩大范围。`
+    : ""
   return [
     basePrompt,
     "",
     `【当前场景】${playbook.name}`,
     playbook.description,
     "右侧面板参数会作为隐藏上下文随每条用户消息一并发送；聊天框仅写补充说明。请产出可直接使用的结果，语气清晰自然。",
-  ].join("\n")
+    memoryHint,
+    playbook.outputSchema?.properties
+      ? `输出要求：请以 JSON 格式输出，必须包含字段：${Object.keys(playbook.outputSchema.properties).join("、")}。`
+      : "",
+  ].filter(Boolean).join("\n")
 }
 
 export function buildLlmMessages(

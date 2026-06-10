@@ -12,6 +12,7 @@ const memorySearchTool = defineTool({
   name: "memory_search",
   label: "memory_search",
   description: "搜索长期记忆中与查询语义相关的内容",
+  executionMode: "parallel",
   parameters: Type.Object({
     query: Type.String({ description: "搜索关键词或自然语言问题" }),
   }),
@@ -26,6 +27,7 @@ const memoryAddTool = defineTool({
   name: "memory_add",
   label: "memory_add",
   description: "将信息写入长期记忆（含向量索引）",
+  executionMode: "sequential",
   parameters: Type.Object({
     title: Type.String(),
     content: Type.String(),
@@ -49,6 +51,7 @@ const memoryEventTool = defineTool({
   name: "memory_event",
   label: "memory_event",
   description: "记录一个事件到记忆日志（含向量索引）",
+  executionMode: "sequential",
   parameters: Type.Object({
     content: Type.String({ description: "事件内容" }),
   }),
@@ -73,6 +76,7 @@ const skillCatalogSearchTool = defineTool({
   label: "skill_catalog_search",
   description:
     "搜索可安装的 Skill 目录（Anthropic 官方 API / anthropics/skills、Cursor 官方 cursor/plugins）。返回 installKey、描述与是否已安装。",
+  executionMode: "parallel",
   parameters: Type.Object({
     query: Type.String({ description: "搜索关键词，留空则列出全部" }),
   }),
@@ -103,6 +107,7 @@ const skillInstallTool = defineTool({
   label: "skill_install",
   description:
     "安装指定 skill（installKey 格式 publisher:id，如 anthropic:xlsx、cursor:cursor-team-kit--fix-ci）。安装后 Agent 可在后续回合使用该 skill。",
+  executionMode: "sequential",
   parameters: Type.Object({
     installKey: Type.String({ description: "installKey，如 anthropic:xlsx" }),
   }),

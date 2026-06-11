@@ -1,0 +1,74 @@
+{
+  "id": "brainstorm-mindmap",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "goal",
+      "label": "脑暴目标",
+      "type": "rich-text",
+      "required": true,
+      "template": "围绕「{{topic}}」做{{depth}}层次的{{style}}脑暴",
+      "tokenDefs": [
+        {
+          "key": "topic",
+          "label": "核心主题",
+          "type": "text",
+          "required": true,
+          "hint": "例如：2024年Q4增长策略、AI产品规划、用户留存"
+        },
+        {
+          "key": "depth",
+          "label": "展开层次",
+          "type": "enum",
+          "options": ["3", "4", "5"],
+          "default": "4",
+          "required": true
+        },
+        {
+          "key": "style",
+          "label": "脑暴风格",
+          "type": "enum",
+          "options": ["发散联想", "MECE拆解", "逆向思维", "类比迁移"],
+          "default": "发散联想",
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "mindmap",
+      "label": "思维导图（拖拽编辑）",
+      "type": "mindmap",
+      "required": true
+    },
+    {
+      "key": "constraints",
+      "label": "限制条件",
+      "type": "textarea",
+      "required": false
+    },
+    {
+      "key": "outputFormat",
+      "label": "输出形式",
+      "type": "enum",
+      "options": ["扩展思维导图", "结构化方案", "行动清单", "SWOT 分析"],
+      "default": "扩展思维导图",
+      "chip": true
+    },
+    {
+      "key": "branchCount",
+      "label": "每个节点扩展分支数",
+      "type": "number",
+      "default": 3,
+      "chips": [2, 3, 5],
+      "chip": true
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：基于用户提供的思维导图结构，进行深度脑暴扩展。\n\n脑暴目标：{{goal}}\n\n用户已构建的思维导图结构：\n{{mindmap}}\n\n限制条件：{{constraints}}\n输出形式要求：{{outputFormat}}\n每节点扩展分支数：{{branchCount}}\n\n用户背景：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请根据思维导图中已有的节点结构，沿着每个末端节点继续展开 {{branchCount}} 个子分支，深度达到 {{depth}} 层。输出 JSON，格式：{\"topic\": \"根节点\", \"children\": [{\"topic\": \"...\", \"children\": [...]}]}。保留用户原有结构，仅扩展末端。"
+}

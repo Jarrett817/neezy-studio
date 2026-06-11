@@ -6,45 +6,16 @@ import {
 } from "~/lib/agent-steps"
 
 export type TimelineItem =
-  | {
-      id: string
-      kind: "step"
-      step: AgentStep
-      tool?: ChatToolCall
-    }
+  | { id: string; kind: "step"; step: AgentStep; tool?: ChatToolCall }
   | { id: string; kind: "thinking"; text: string }
   | { id: string; kind: "usage"; text: string }
   | { id: string; kind: "answer"; text: string; streaming?: boolean }
 
-function toolCallIdFromStepId(stepId: string): string | null {
-  return stepId.startsWith("tool-") ? stepId.slice("tool-".length) : null
-}
-
-function toolCallsById(toolCalls: ChatToolCall[]): Map<string, ChatToolCall> {
-  return new Map(toolCalls.map((t) => [t.toolCallId, t]))
-}
-
-export function agentStepsFromToolCalls(toolCalls: ChatToolCall[]): AgentStep[] {
-  return toolCalls.map((t) => ({
-    id: `tool-${t.toolCallId}`,
-    label: toolLabel(t.name),
-    detail: formatToolArgsSummary(t.name, t.args),
-    status: t.status === "running" ? ("active" as const) : ("done" as const),
-    variant: t.status === "error" ? ("error" as const) : undefined,
-  }))
-}
-
-export function resolveWorkflowSteps(
-  agentSteps: AgentStep[] | undefined,
-  toolCalls: ChatToolCall[]
-): AgentStep[] {
-  const fromAgent = (agentSteps ?? []).filter(
-    (s) => s.status === "active" || s.status === "done"
-  )
-  if (fromAgent.length > 0) return fromAgent
-  return agentStepsFromToolCalls(toolCalls)
-}
-
+/**
+ * 构建线性工作流 timeline。
+ * 顺序：thinking → 工具调用（按出现顺序）→ 最终回复。
+ * 去掉抽象的 "规划中/分析中" 步骤，只展示实际动作。
+ */
 export function buildAssistantTimeline(input: {
   agentSteps?: AgentStep[]
   toolCalls?: ChatToolCall[]
@@ -53,31 +24,18 @@ export function buildAssistantTimeline(input: {
   usageSummary?: string
   isStreaming?: boolean
 }): TimelineItem[] {
-  const toolCalls = input.toolCalls ?? []
-  const tools = toolCallsById(toolCalls)
-  const steps = resolveWorkflowSteps(input.agentSteps, toolCalls)
   const items: TimelineItem[] = []
+  const toolCalls = input.toolCalls ?? []
 
+  // 1. 思考过程（如果有）
   const thinkingText = input.thinking?.trim() ?? ""
-  let thinkingInserted = false
-
-  for (const step of steps) {
-    const toolId = toolCallIdFromStepId(step.id)
-    const tool = toolId ? tools.get(toolId) : undefined
-    items.push({ id: step.id, kind: "step", step, tool })
-    if (thinkingText && step.id === "turn" && !thinkingInserted) {
-      items.push({ id: "thinking", kind: "thinking", text: thinkingText })
-      thinkingInserted = true
-    }
-  }
-
-  if (thinkingText && !thinkingInserted) {
+  if (thinkingText) {
     items.push({ id: "thinking", kind: "thinking", text: thinkingText })
   }
 
+  // 2. 工具调用（按顺序，每个都是独立步骤）
   for (const tool of toolCalls) {
     const stepId = `tool-${tool.toolCallId}`
-    if (items.some((i) => i.kind === "step" && i.id === stepId)) continue
     items.push({
       id: stepId,
       kind: "step",
@@ -92,11 +50,13 @@ export function buildAssistantTimeline(input: {
     })
   }
 
+  // 3. Token 用量
   const usage = input.usageSummary?.trim()
   if (usage) {
     items.push({ id: "usage", kind: "usage", text: usage })
   }
 
+  // 4. 最终回复
   const answer = input.content?.trim() ?? ""
   if (answer || input.isStreaming) {
     items.push({
@@ -108,4 +68,22 @@ export function buildAssistantTimeline(input: {
   }
 
   return items
+}
+
+// 兼容旧代码引用
+export function resolveWorkflowSteps(
+  agentSteps: AgentStep[] | undefined,
+  toolCalls: ChatToolCall[]
+): AgentStep[] {
+  return toolCalls.map((t) => ({
+    id: `tool-${t.toolCallId}`,
+    label: toolLabel(t.name),
+    detail: formatToolArgsSummary(t.name, t.args),
+    status: t.status === "running" ? ("active" as const) : ("done" as const),
+    variant: t.status === "error" ? ("error" as const) : undefined,
+  }))
+}
+
+export function agentStepsFromToolCalls(toolCalls: ChatToolCall[]): AgentStep[] {
+  return resolveWorkflowSteps(undefined, toolCalls)
 }

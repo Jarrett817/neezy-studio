@@ -20,6 +20,7 @@ import PlaybookRunRoute from "~/routes/playbook-run"
 import PortraitRoute from "~/routes/portrait"
 import SceneDetailRoute from "~/routes/scene-detail"
 import SceneListRoute from "~/routes/scenes"
+import SceneRunRoute from "~/routes/scene-run"
 import SettingsRoute from "~/routes/settings"
 import SkillsRoute from "~/routes/skills"
 import WorkbenchRoute from "~/routes/workbench"
@@ -70,7 +71,8 @@ export default function App() {
               <Route path="chat" element={<ChatRoute />} />
               <Route path="scenes" element={<SceneListRoute />} />
               <Route path="scenes/designer" element={<PlaybookDesignerRoute />} />
-              <Route path="scenes/:playbookId" element={<SceneDetailRoute />} />
+              <Route path="scenes/:playbookId" element={<SceneRunRoute />} />
+              <Route path="scenes/:playbookId/detail" element={<SceneDetailRoute />} />
               <Route path="knowledge" element={<KnowledgeRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
               <Route path="portrait" element={<PortraitRoute />} />

@@ -1,0 +1,56 @@
+{
+  "id": "process-flowchart",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "processName",
+      "label": "流程名称",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "flowchart",
+      "label": "流程图（拖拽编辑节点和连线）",
+      "type": "flowchart",
+      "required": true
+    },
+    {
+      "key": "analysisType",
+      "label": "分析维度",
+      "type": "enum",
+      "options": ["瓶颈优化", "异常处理补全", "自动化建议", "合规审查", "全量 SOP 输出"],
+      "default": "瓶颈优化",
+      "chip": true
+    },
+    {
+      "key": "role",
+      "label": "分析视角",
+      "type": "enum",
+      "options": ["产品经理", "架构师", "运营", "QA", "管理层"],
+      "default": "产品经理",
+      "chip": true
+    },
+    {
+      "key": "detailLevel",
+      "label": "输出详细度",
+      "type": "enum",
+      "options": ["摘要（要点）", "标准（含建议）", "详尽（含方案 + 示例）"],
+      "default": "标准（含建议）",
+      "chip": true
+    },
+    {
+      "key": "constraints",
+      "label": "业务约束",
+      "type": "textarea",
+      "required": false
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：对用户提供的流程图做「{{analysisType}}」分析。\n\n流程名称：{{processName}}\n分析视角：{{role}}\n输出详细度：{{detailLevel}}\n\n用户绘制的流程图结构：\n{{flowchart}}\n\n业务约束：{{constraints}}\n\n用户背景：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请基于上述流程图，以 {{role}} 视角输出「{{analysisType}}」分析结果。输出 JSON，格式：{\"title\": \"分析标题\", \"body\": \"Markdown 正文（含流程优化建议、新增步骤、风险点等）\", \"tags\": [\"标签\"]}。如果是「全量 SOP 输出」则 body 应包含完整的标准操作流程文档。"
+}

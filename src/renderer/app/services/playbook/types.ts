@@ -3,7 +3,7 @@
 export const inputFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(["text", "textarea", "number", "enum", "rich-text", "mindmap", "flowchart"]).optional(),
+  type: z.enum(["text", "textarea", "number", "enum", "rich-text", "mindmap", "flowchart", "canvas"]).optional(),
   required: z.boolean().optional(),
   default: z.union([z.string(), z.number()]).optional(),
   chips: z.array(z.union([z.string(), z.number()])).optional(),

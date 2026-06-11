@@ -76,3 +76,24 @@ export function defaultFlowchartValue(): FlowchartValue {
     edges: [{ id: "e1-2", source: "1", target: "2" }],
   }
 }
+
+/** 从 Excalidraw canvas elements 中提取文字内容，序列化为文本 */
+export function canvasToText(value: unknown): string {
+  if (!value || typeof value !== "object") return ""
+  const { elements = [] } = value as { elements?: unknown[] }
+  const texts: string[] = []
+  const shapes: string[] = []
+  for (const el of elements) {
+    if (!el || typeof el !== "object" || !("type" in el)) continue
+    const element = el as { type: string; text?: string; originalText?: string; width?: number; height?: number }
+    if (element.type === "text" && (element.text || element.originalText)) {
+      texts.push(element.originalText || element.text || "")
+    } else if (element.type === "rectangle" || element.type === "ellipse" || element.type === "diamond") {
+      shapes.push(element.type)
+    }
+  }
+  const parts: string[] = []
+  if (texts.length > 0) parts.push(`白板文字内容：\n${texts.join("\n")}`)
+  if (shapes.length > 0) parts.push(`包含图形：${shapes.join("、")}`)
+  return parts.join("\n\n") || "（白板为空）"
+}

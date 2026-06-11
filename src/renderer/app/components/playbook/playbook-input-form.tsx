@@ -10,6 +10,7 @@ import { PlaybookWizardForm } from "~/components/playbook/playbook-wizard-form"
 import { RichTextField } from "~/components/playbook/RichTextField"
 import { FlowchartField, FlowchartFieldLabel } from "~/components/playbook/flowchart-field"
 import { MindmapField, MindmapFieldLabel } from "~/components/playbook/mindmap-field"
+import { CanvasField, CanvasFieldLabel } from "~/components/playbook/canvas-field"
 import {
   defaultFlowchartValue,
   defaultMindmapValue,
@@ -103,7 +104,7 @@ export function PlaybookInputForm({
   const useWizard =
     profile.fields.length > 2 &&
     !profile.fields.some((f) =>
-      ["rich-text", "mindmap", "flowchart"].includes(f.type ?? "")
+      ["rich-text", "mindmap", "flowchart", "canvas"].includes(f.type ?? "")
     )
 
   if (useWizard) {
@@ -246,6 +247,19 @@ function FieldBlock({
       <div className="space-y-2">
         <FlowchartFieldLabel label={field.label} required={field.required} />
         <FlowchartField
+          value={value}
+          disabled={disabled}
+          onChange={(next) => onChange(next)}
+        />
+      </div>
+    )
+  }
+
+  if (field.type === "canvas") {
+    return (
+      <div className="space-y-2">
+        <CanvasFieldLabel label={field.label} required={field.required} />
+        <CanvasField
           value={value}
           disabled={disabled}
           onChange={(next) => onChange(next)}

@@ -529,17 +529,9 @@ function wrapDashScopeStreamFn(base: StreamFn, getThinkingOn: () => boolean): St
               if (patched !== undefined) next = patched
             }
             const final = patchDashScopeRequestPayload(next, m, getThinkingOn())
-            try {
-              const summary = JSON.stringify(final, (_k, v) => {
-                if (typeof v === "string" && v.length > 200) return v.slice(0, 200) + `...(${v.length})`
-                return v
-              })
-              console.log("[pi-agent] dashscope payload:", summary.slice(0, 4000))
-            } catch {}
             return final
           },
           onResponse: async (response: { status: number; headers: Record<string, string> }, m: Model<Api>) => {
-            console.log("[pi-agent] dashscope response status:", response.status, "request-id:", response.headers["x-request-id"] ?? response.headers["x-dashscope-request-id"] ?? "n/a")
             if (options?.onResponse) await options.onResponse(response, m)
           },
         }

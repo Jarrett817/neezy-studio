@@ -1,5 +1,5 @@
 ﻿import type { InputField, InputProfile, Playbook, PlaybookSlots } from "./types"
-import { flowchartToText, mindmapToJson } from "./graph-serializers"
+import { canvasToText, flowchartToText, mindmapToJson } from "./graph-serializers"
 
 const SLOT_RE = /\{\{(\w+)\}\}/g
 
@@ -175,6 +175,9 @@ export function renderFieldValue(
   }
   if (field.type === "flowchart") {
     return flowchartToText(v)
+  }
+  if (field.type === "canvas") {
+    return canvasToText(v)
   }
   if (v === undefined || v === null) return ""
   return String(v).trim()

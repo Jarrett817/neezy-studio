@@ -147,6 +147,22 @@ export default function ChatRoute() {
     void resetAgent([], activeSessionId).catch(() => {})
   }, [activeSessionId, sessionsReady, resetAgent])
 
+  // 从场景运行页跳转来时，自动发送第一条编译好的消息
+  const firstMessageSentRef = useRef(false)
+  useEffect(() => {
+    if (firstMessageSentRef.current) return
+    if (!sessionsReady || !activeSessionId || isGenerating) return
+    const params = new URLSearchParams(window.location.search)
+    const firstMessage = params.get("firstMessage")
+    if (!firstMessage) return
+    firstMessageSentRef.current = true
+    // 清理 URL 中的 firstMessage 参数
+    params.delete("firstMessage")
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`)
+    // 发送
+    send(firstMessage, { displayContent: scenePlaybook?.name ? `【${scenePlaybook.name}】` : "【场景任务】" })
+  }, [sessionsReady, activeSessionId, isGenerating, send, scenePlaybook])
+
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
   const doSend = useCallback(() => {
@@ -210,14 +226,14 @@ export default function ChatRoute() {
 
   return (
     <div className="flex h-full min-h-0">
-      <ChatSessionSidebar
-        activeSessionId={activeSessionId}
-        onSelectSession={async (id) => { await handleSelectSession(id); resetAgent([], id).catch(() => {}) }}
-        onSessionCreated={async (id) => { await handleNewSession(id); resetAgent([], id).catch(() => {}) }}
-      />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-border/30 px-6 py-3">
           <div className="flex items-center justify-between gap-3">
+            <ChatSessionSidebar
+              activeSessionId={activeSessionId}
+              onSelectSession={async (id) => { await handleSelectSession(id); resetAgent([], id).catch(() => {}) }}
+              onSessionCreated={async (id) => { await handleNewSession(id); resetAgent([], id).catch(() => {}) }}
+            />
             <ChatModelStatus className="min-w-0 flex-1" />
             <Sheet>
               <SheetTrigger asChild>
@@ -321,9 +337,9 @@ export default function ChatRoute() {
           <div className="border-b border-border/30 px-4 py-3">
             <p className="font-heading text-sm font-semibold text-foreground/90">{scenePlaybook?.name ?? sceneProfile?.name ?? sceneProfile?.id}</p>
             <p className="mt-1 text-xs text-muted-foreground/70 line-clamp-2">{scenePlaybook?.description ?? sceneProfile?.description ?? ""}</p>
-            <p className="mt-2 text-[11px] text-muted-foreground/60">填完表单后可直接在下方发送；表单会作为隐藏上下文随每条消息携带。</p>
+            <p className="mt-2 text-[11px] text-muted-foreground/60">修改选项后点"重新发送"可再次向 Agent 发起场景任务。</p>
             {scenePlaybook && !scenePlaybook.builtin ? (
-              <Link to={`/scenes/designer?edit=${encodeURIComponent(scenePlaybook.id)}`} className="mt-2 inline-block text-xs text-primary/80 hover:text-primary">编辑场景</Link>
+              <Link to={`/scenes/${encodeURIComponent(scenePlaybook.id)}/detail`} className="mt-2 inline-block text-xs text-primary/80 hover:text-primary">查看配置</Link>
             ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -334,6 +350,16 @@ export default function ChatRoute() {
               onValuesChange={setSceneSlotValues}
               onSubmit={() => {}}
             />
+          </div>
+          <div className="shrink-0 border-t border-border/30 p-4">
+            <Button
+              className="h-10 w-full gap-2 rounded-xl"
+              disabled={isGenerating || !sceneFilled}
+              onClick={doSend}
+            >
+              <Zap className="size-4" />
+              重新发送
+            </Button>
           </div>
         </aside>
       ) : null}

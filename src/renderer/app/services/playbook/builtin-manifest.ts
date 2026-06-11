@@ -4,10 +4,16 @@ import techDocProfile from "~/playbooks/builtin/input-profiles/tech-doc.json"
 import testCasesProfile from "~/playbooks/builtin/input-profiles/test-cases.json"
 import uiPrototypeProfile from "~/playbooks/builtin/input-profiles/ui-prototype.json"
 import xhsProfile from "~/playbooks/builtin/input-profiles/xhs-minimal.json"
+import brainstormMindmapProfile from "~/playbooks/builtin/input-profiles/brainstorm-mindmap.json"
+import processFlowchartProfile from "~/playbooks/builtin/input-profiles/process-flowchart.json"
+import sketchToDesignProfile from "~/playbooks/builtin/input-profiles/sketch-to-design.json"
 import techDocPlaybook from "~/playbooks/builtin/tech-doc/playbook.json"
 import testCasesPlaybook from "~/playbooks/builtin/test-cases/playbook.json"
 import uiPrototypePlaybook from "~/playbooks/builtin/ui-prototype/playbook.json"
 import xhsPlaybook from "~/playbooks/builtin/xhs-content/playbook.json"
+import brainstormMindmapPlaybook from "~/playbooks/builtin/brainstorm-mindmap/playbook.json"
+import processFlowchartPlaybook from "~/playbooks/builtin/process-flowchart/playbook.json"
+import sketchToDesignPlaybook from "~/playbooks/builtin/sketch-to-design/playbook.json"
 
 import {
   inputProfileSchema,
@@ -24,12 +30,18 @@ const BUILTIN_PROFILES_RAW = [
   techDocProfile,
   testCasesProfile,
   uiPrototypeProfile,
+  brainstormMindmapProfile,
+  processFlowchartProfile,
+  sketchToDesignProfile,
 ] as const
 const BUILTIN_PLAYBOOKS_RAW = [
   xhsPlaybook,
   techDocPlaybook,
   testCasesPlaybook,
   uiPrototypePlaybook,
+  brainstormMindmapPlaybook,
+  processFlowchartPlaybook,
+  sketchToDesignPlaybook,
   designerPlaybook,
 ] as const
 

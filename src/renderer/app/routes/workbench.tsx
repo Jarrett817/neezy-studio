@@ -169,7 +169,7 @@ export default function WorkbenchRoute() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground line-clamp-2">
+                <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
                   {playbook.description}
                 </p>
                 <Button asChild className="h-12 w-full rounded-2xl">

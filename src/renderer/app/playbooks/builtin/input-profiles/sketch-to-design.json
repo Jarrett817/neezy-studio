@@ -1,0 +1,74 @@
+{
+  "id": "sketch-to-design",
+  "version": 1,
+  "capture": ["chips", "form", "inheritPersona"],
+  "fields": [
+    {
+      "key": "canvas",
+      "label": "白板草图（画出你的想法）",
+      "type": "canvas",
+      "required": true
+    },
+    {
+      "key": "intent",
+      "label": "设计意图",
+      "type": "rich-text",
+      "required": true,
+      "template": "我画的是一个 {{category}} 的 {{target}}，希望你帮我 {{action}}",
+      "tokenDefs": [
+        {
+          "key": "category",
+          "label": "类别",
+          "type": "enum",
+          "options": ["移动端页面", "Web 页面", "海报", "Logo", "架构图", "流程示意"],
+          "default": "移动端页面",
+          "required": true
+        },
+        {
+          "key": "target",
+          "label": "目标物",
+          "type": "text",
+          "required": true,
+          "hint": "例如：登录页、首页 Banner、购物车"
+        },
+        {
+          "key": "action",
+          "label": "期望 AI 做什么",
+          "type": "enum",
+          "options": ["输出详细 UI 描述", "生成代码框架", "给出设计建议", "补全交互细节", "写成 PRD"],
+          "default": "输出详细 UI 描述",
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "style",
+      "label": "视觉风格",
+      "type": "enum",
+      "options": ["极简", "渐变质感", "扁平插画", "深色模式", "品牌定制"],
+      "default": "极简",
+      "chip": true
+    },
+    {
+      "key": "platform",
+      "label": "目标平台",
+      "type": "enum",
+      "options": ["iOS", "Android", "Web 桌面", "小程序", "通用"],
+      "default": "通用",
+      "chip": true
+    },
+    {
+      "key": "constraints",
+      "label": "约束与要求",
+      "type": "textarea",
+      "required": false
+    },
+    {
+      "key": "extra",
+      "label": "补充说明",
+      "type": "textarea",
+      "required": false
+    }
+  ],
+  "promptTemplate": "任务：根据用户在白板上的草图和意图描述，输出设计方案。\n\n设计意图：{{intent}}\n视觉风格：{{style}}\n目标平台：{{platform}}\n\n用户白板草图内容：\n{{canvas}}\n\n约束与要求：{{constraints}}\n\n用户背景：\n{{persona}}\n\n可参考记忆：\n{{retrievedMemories}}\n\n补充：{{extra}}\n\n请基于用户草图中的布局和文字标注，输出 JSON，格式：{\"title\": \"设计方案标题\", \"body\": \"Markdown 正文（含页面结构描述、各区块功能说明、组件建议、交互逻辑、视觉规范要点）\", \"tags\": [\"标签\"]}。如果用户选择了「生成代码框架」则 body 应包含可运行的 React/HTML 代码骨架。"
+}

@@ -151,16 +151,17 @@ export default function ChatRoute() {
   const firstMessageSentRef = useRef(false)
   useEffect(() => {
     if (firstMessageSentRef.current) return
-    if (!sessionsReady || !activeSessionId || isGenerating) return
-    const params = new URLSearchParams(window.location.search)
-    const firstMessage = params.get("firstMessage")
+    if (!sessionsReady || !activeSessionId) return
+    if (isGenerating) return
+    const firstMessage = sessionStorage.getItem("scene_first_message")
     if (!firstMessage) return
+    const playbookId = sessionStorage.getItem("scene_playbook_id")
+    // 立即清除防止重复
+    sessionStorage.removeItem("scene_first_message")
+    sessionStorage.removeItem("scene_playbook_id")
     firstMessageSentRef.current = true
-    // 清理 URL 中的 firstMessage 参数
-    params.delete("firstMessage")
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`)
-    // 发送
-    send(firstMessage, { displayContent: scenePlaybook?.name ? `【${scenePlaybook.name}】` : "【场景任务】" })
+    const displayName = scenePlaybook?.name ?? playbookId ?? "场景任务"
+    send(firstMessage, { displayContent: `【${displayName}】` })
   }, [sessionsReady, activeSessionId, isGenerating, send, scenePlaybook])
 
   const permissionDialog = useAgentPermissionDialog(activeSessionId)

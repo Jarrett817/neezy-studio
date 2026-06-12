@@ -13,11 +13,6 @@ import {
   validateProfileSlots,
   type PlaybookSlots,
 } from "~/services/playbook"
-import {
-  bindChatSessionPlaybook,
-  startNewPiChatSession,
-  setActiveSessionId as persistActiveSessionId,
-} from "~/services/pi-chat-sessions"
 
 /**
  * 场景运行页：全屏表单 → 填完后"开始生成"→ 新建对话 session → 跳转 /chat
@@ -52,15 +47,12 @@ export default function SceneRunRoute() {
       // 编译 prompt
       const compiled = compilePrompt(profile, { slots: slotValues as PlaybookSlots })
 
-      // 新建对话 session
-      const session = await startNewPiChatSession()
-      await bindChatSessionPlaybook(session.id, playbook.id)
-      await persistActiveSessionId(session.id)
+      // 存到 sessionStorage，chat 页接收后发送
+      sessionStorage.setItem("scene_first_message", compiled)
+      sessionStorage.setItem("scene_playbook_id", playbook.id)
 
-      // 跳转对话页，带上编译好的首条消息
-      navigate(`/chat?session=${session.id}&playbook=${encodeURIComponent(playbook.id)}&firstMessage=${encodeURIComponent(compiled)}`, {
-        replace: true,
-      })
+      // 直接跳对话页，带 playbook 参数触发新建 session
+      navigate(`/chat?playbook=${encodeURIComponent(playbook.id)}`, { replace: true, state: { sceneLaunch: true } })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "启动失败")
     } finally {

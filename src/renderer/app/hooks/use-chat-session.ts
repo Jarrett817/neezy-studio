@@ -6,7 +6,6 @@ import { useLocation, useNavigate, useSearchParams } from "react-router"
 import { useAppStore } from "~/stores/app-store"
 import {
   bindChatSessionPlaybook,
-  findRecentSessionForPlaybook,
   getActiveSessionId,
   getChatSessionPlaybook,
   loadActivePiChatSession,
@@ -61,20 +60,7 @@ export function useChatSession() {
 
   const bootFreshSceneSession = useCallback(
     async (playbookId: string) => {
-      // 优先复用该 playbook 绑定的最近有消息的 session
-      const existing = await findRecentSessionForPlaybook(playbookId)
-      if (existing) {
-        sessionIdRef.current = existing.id
-        setActiveSessionId(existing.id)
-        setActivePlaybookId(playbookId)
-        await persistActiveSessionId(existing.id)
-        const messages = await loadPiChatMessages(existing.id)
-        setConversationHistory(messages)
-        syncPlaybookInUrl(playbookId, existing.id)
-        return existing.id
-      }
-
-      // 无已有 session，新建
+      // 每次场景启动都新建对话
       const fresh = await startNewPiChatSession()
       await bindChatSessionPlaybook(fresh.id, playbookId)
       sessionIdRef.current = fresh.id
@@ -82,13 +68,13 @@ export function useChatSession() {
       setActivePlaybookId(playbookId)
       await persistActiveSessionId(fresh.id)
       clearConversation()
-      syncPlaybookInUrl(playbookId, null)
+      syncPlaybookInUrl(playbookId, fresh.id)
       queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
       queryClient.invalidateQueries({ queryKey: ["chat-sessions", "with-messages"] })
       return fresh.id
     },
-    [clearConversation, queryClient, syncPlaybookInUrl, setConversationHistory]
+    [clearConversation, queryClient, syncPlaybookInUrl]
   )
 
   useEffect(() => {

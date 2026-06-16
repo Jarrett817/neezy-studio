@@ -87,18 +87,19 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
   const failed = tool.status === "error"
 
   return (
-    <div
+    <details
       className={cn(
         "overflow-hidden rounded-lg border text-xs",
         failed ? "border-destructive/35" : "border-border/50"
       )}
+      open={running || failed}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/30 px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-border/40 bg-muted/30 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <span className="font-medium text-foreground">{toolLabel(tool.name)}</span>
         <span className="text-muted-foreground">
           {running ? "执行中" : failed ? "失败" : "已完成"}
         </span>
-      </div>
+      </summary>
 
       {isBash ? (
         <div className="bg-zinc-950 text-zinc-100">
@@ -132,7 +133,7 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
           等待输出…
         </p>
       ) : null}
-    </div>
+    </details>
   )
 }
 

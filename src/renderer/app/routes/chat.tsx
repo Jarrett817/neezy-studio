@@ -45,17 +45,6 @@ function buildSceneAgentPayload(
   return parts.join("\n\n")
 }
 
-function buildSceneDisplayContent(
-  chatText: string,
-  file: { name: string; content: string } | null,
-  sceneName?: string,
-) {
-  const extra = chatText.trim()
-  if (extra) return extra
-  if (file) return `附件：${file.name}`
-  return sceneName ? `【${sceneName}】` : "【场景任务】"
-}
-
 function extractText(json: JSONContent | null): string {
   if (!json?.content) return ""
   let result = ""
@@ -155,13 +144,21 @@ export default function ChatRoute() {
     if (isGenerating) return
     const firstMessage = sessionStorage.getItem("scene_first_message")
     if (!firstMessage) return
-    const playbookId = sessionStorage.getItem("scene_playbook_id")
-    // 立即清除防止重复
+    const image = sessionStorage.getItem("scene_first_image")
     sessionStorage.removeItem("scene_first_message")
     sessionStorage.removeItem("scene_playbook_id")
+    sessionStorage.removeItem("scene_first_image")
     firstMessageSentRef.current = true
-    const displayName = scenePlaybook?.name ?? playbookId ?? "场景任务"
-    send(firstMessage, { displayContent: `【${displayName}】` })
+    const contentJson = image
+      ? {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: firstMessage }] },
+            { type: "image", attrs: { src: image, alt: "白板截图" } },
+          ],
+        }
+      : undefined
+    send(image ? `${firstMessage}\n\n[白板截图]\n${image}` : firstMessage, { contentJson })
   }, [sessionsReady, activeSessionId, isGenerating, send, scenePlaybook])
 
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
@@ -181,24 +178,16 @@ export default function ChatRoute() {
     setAttachedFile(null)
 
     let agentContent: string
-    let displayContent: string
     if (inScene && sceneProfile) {
       agentContent = buildSceneAgentPayload(sceneProfile, sceneSlotValues, text, fileSnapshot)
-      displayContent = buildSceneDisplayContent(
-        text,
-        fileSnapshot,
-        scenePlaybook?.name ?? sceneProfile.name ?? sceneProfile.id
-      )
     } else if (fileSnapshot) {
       agentContent = text
         ? `${text}\n\n[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
         : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
-      displayContent = text || `附件：${fileSnapshot.name}`
     } else {
       agentContent = text
-      displayContent = text
     }
-    send(agentContent, { displayContent })
+    send(agentContent)
   }, [editorContent, attachedFile, sceneProfile, scenePlaybook, sceneSlotValues, send])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {

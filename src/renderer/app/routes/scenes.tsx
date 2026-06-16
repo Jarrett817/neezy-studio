@@ -53,26 +53,30 @@ export default function SceneListRoute() {
   })
 
   return (
-    <div className="w-full space-y-8 pt-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">场景</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            选择场景运行，或用 AI 描述需求自动生成场景配置。
-          </p>
+    <div className="mx-auto w-full max-w-6xl space-y-8 py-8">
+      <div className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-card/70 p-7 shadow-sm">
+        <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="mb-2 text-xs font-medium text-primary">SCENE WORKBENCH</p>
+            <h1 className="font-heading text-3xl font-semibold tracking-tight">场景</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              把高频任务封装成可复用工作卡片。每次运行都会创建一个专属对话，方便持续迭代。
+            </p>
+          </div>
+          <Button asChild className="h-11 shrink-0 rounded-2xl px-5">
+            <Link to="/scenes/designer">
+              <Wand2 className="size-4" />
+              对话创建
+            </Link>
+          </Button>
         </div>
-        <Button asChild className="h-11 shrink-0 rounded-2xl px-5">
-          <Link to="/scenes/designer">
-            <Wand2 className="size-4" />
-            对话创建
-          </Link>
-        </Button>
       </div>
 
       {userScenes.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground">我的场景</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {userScenes.map((pb) => (
               <SceneCard
                 key={pb.id}
@@ -89,7 +93,7 @@ export default function SceneListRoute() {
       {builtin.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground">内置场景</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {builtin.map((pb) => (
               <SceneCard
                 key={pb.id}
@@ -164,8 +168,9 @@ function SceneCard({
   onDelete?: () => void
 }) {
   return (
-    <Card className="relative rounded-2xl border border-border/60 bg-card shadow-sm">
-      <CardHeader className="pb-2">
+    <Card className="group relative overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
+      <CardHeader className="pb-2 pt-5">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <span className="line-clamp-1">{name}</span>
           {builtin ? <Badge variant="secondary" className="text-[10px]">内置</Badge> : null}

@@ -97,3 +97,22 @@ export function canvasToText(value: unknown): string {
   if (shapes.length > 0) parts.push(`包含图形：${shapes.join("、")}`)
   return parts.join("\n\n") || "（白板为空）"
 }
+
+export async function canvasToPngDataUrl(value: unknown): Promise<string | null> {
+  if (!value || typeof value !== "object") return null
+  const { elements = [], appState = {} } = value as { elements?: unknown[]; appState?: Record<string, unknown> }
+  if (!elements.length) return null
+  const { exportToBlob } = await import("@excalidraw/excalidraw")
+  const blob = await exportToBlob({
+    elements: elements as never,
+    appState: { viewBackgroundColor: "#ffffff", ...appState } as never,
+    files: {},
+    mimeType: "image/png",
+  })
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ""))
+    reader.onerror = () => reject(reader.error ?? new Error("白板截图失败"))
+    reader.readAsDataURL(blob)
+  })
+}

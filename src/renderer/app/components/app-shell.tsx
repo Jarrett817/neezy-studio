@@ -2,12 +2,10 @@ import * as React from "react"
 import { NavLink, Link, useLocation } from "react-router"
 import {
   BookOpen,
-  Brain,
   Clapperboard,
   LayoutDashboard,
   MessagesSquare,
   Settings,
-  SlidersHorizontal,
   Sparkles,
 } from "lucide-react"
 
@@ -21,11 +19,9 @@ import { getRuntimeSettings, pushRuntimeSettingsToMain } from "~/services/settin
 
 const mainNavItems = [
   { href: "/", label: "工作台", Icon: LayoutDashboard, end: true },
-  { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
   { href: "/scenes", label: "场景", Icon: Clapperboard, end: false },
+  { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
   { href: "/knowledge", label: "知识", Icon: BookOpen, end: false },
-  { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
-  { href: "/portrait", label: "画像", Icon: Brain, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {

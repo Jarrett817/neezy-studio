@@ -1,26 +1,25 @@
 import { useMutation } from "@tanstack/react-query"
-import { ChevronDown, Loader2, Save, Send } from "lucide-react"
+import { Loader2, Save, Send } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate } from "react-router"
+import { Link, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import {
-  DesignerDraftPreview,
   parseDesignerDraft,
   type DesignerDraft,
 } from "~/components/playbook/designer-draft-preview"
+import { PlaybookInputForm } from "~/components/playbook/playbook-input-form"
 import { Button } from "~/components/ui/button"
 import { Textarea } from "~/components/ui/textarea"
 import { cn } from "~/lib/utils"
-import { SCENE_CHAT_LAUNCH_STATE, sceneChatPath } from "~/lib/scene-chat-nav"
 import {
-  compilePrompt,
   designPlaybookFromIntent,
+  getScene,
   saveUserScene,
   type DesignPlaybookTurn,
 } from "~/services/playbook"
 
-type PreviewTab = "structure" | "compile"
+type PreviewTab = "preview" | "json"
 
 type ThreadMessage = DesignPlaybookTurn & { id: string }
 
@@ -29,11 +28,12 @@ const ASSISTANT_OK =
 
 export default function PlaybookDesignerRoute() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const editId = params.get("edit")?.trim() || null
   const [thread, setThread] = useState<ThreadMessage[]>([])
   const [input, setInput] = useState("")
   const [draftJson, setDraftJson] = useState("")
-  const [showJson, setShowJson] = useState(false)
-  const [previewTab, setPreviewTab] = useState<PreviewTab>("structure")
+  const [previewTab, setPreviewTab] = useState<PreviewTab>("preview")
   const threadEndRef = useRef<HTMLDivElement>(null)
 
   const structuredDraft = useMemo(
@@ -41,22 +41,25 @@ export default function PlaybookDesignerRoute() {
     [draftJson]
   )
 
-  const compilePreview = useMemo(() => {
-    if (!structuredDraft) return ""
-    const demoSlots = Object.fromEntries(
-      structuredDraft.inputProfile.fields.map((f) => [f.key, `（${f.label} 示例）`])
-    )
-    return compilePrompt(structuredDraft.inputProfile, {
-      slots: demoSlots,
-    })
-  }, [structuredDraft])
+  useEffect(() => {
+    if (!editId) return
+    let cancelled = false
+    ;(async () => {
+      const scene = await getScene(editId)
+      if (!cancelled && scene) {
+        setDraftJson(JSON.stringify(scene, null, 2))
+        setPreviewTab("preview")
+      }
+    })()
+    return () => { cancelled = true }
+  }, [editId])
 
   const designMutation = useMutation({
     mutationFn: (turns: DesignPlaybookTurn[]) => designPlaybookFromIntent(turns),
     onSuccess: (res) => {
       if (res.parsed) {
         setDraftJson(JSON.stringify(res.parsed, null, 2))
-        setShowJson(false)
+        setPreviewTab("preview")
         setThread((prev) => [
           ...prev,
           { id: crypto.randomUUID(), role: "assistant", content: ASSISTANT_OK },
@@ -64,7 +67,7 @@ export default function PlaybookDesignerRoute() {
         toast.success("已生成配置草案")
       } else {
         setDraftJson(res.rawText)
-        setShowJson(true)
+        setPreviewTab("json")
         setThread((prev) => [
           ...prev,
           {
@@ -95,7 +98,7 @@ export default function PlaybookDesignerRoute() {
     },
     onSuccess: (id) => {
       toast.success("场景已保存")
-      navigate(sceneChatPath(id), { state: SCENE_CHAT_LAUNCH_STATE })
+      navigate(`/scenes/${encodeURIComponent(id)}`)
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "保存失败")
@@ -110,7 +113,11 @@ export default function PlaybookDesignerRoute() {
       role: "user",
       content: text,
     }
+    const draftCtx = draftJson
+      ? [{ role: "assistant" as const, content: `当前配置：\n\`\`\`json\n${draftJson}\n\`\`\`\n用户将在此基础上修改。` }]
+      : []
     const turns: DesignPlaybookTurn[] = [
+      ...draftCtx,
       ...thread.map(({ role, content }) => ({ role, content })),
       { role: "user", content: text },
     ]
@@ -134,9 +141,11 @@ export default function PlaybookDesignerRoute() {
         <Button asChild variant="ghost" size="sm" className="mb-3 gap-2 rounded-xl">
           <Link to="/scenes">← 场景</Link>
         </Button>
-        <h1 className="text-2xl font-semibold tracking-tight">对话创建场景</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {editId ? "编辑场景" : "对话创建场景"}
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          左侧多轮描述需求，右侧实时预览结构化配置，确认后保存为创作任务。
+          左侧描述创建/修改需求，右侧默认展示真实表单预览，JSON 仅作为高级编辑入口。
         </p>
       </div>
 
@@ -209,8 +218,8 @@ export default function PlaybookDesignerRoute() {
             <div className="flex gap-1 rounded-xl border border-border/60 bg-muted/30 p-1">
               {(
                 [
-                  ["structure", "结构化"],
-                  ["compile", "编译预览"],
+                  ["preview", "表单预览"],
+                  ["json", "JSON"],
                 ] as const
               ).map(([tab, label]) => (
                 <button
@@ -232,15 +241,23 @@ export default function PlaybookDesignerRoute() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {previewTab === "compile" && structuredDraft ? (
-              <pre className="whitespace-pre-wrap rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-relaxed">
-                {compilePreview}
-              </pre>
+            {previewTab === "json" ? (
+              <Textarea
+                value={draftJson}
+                className="min-h-[28rem] resize-none rounded-xl font-mono text-xs"
+                onChange={(e) => setDraftJson(e.target.value)}
+              />
             ) : structuredDraft ? (
-              <DesignerDraftPreview draft={structuredDraft} />
+              <PlaybookInputForm
+                profileId={structuredDraft.inputProfile.id}
+                profile={structuredDraft.inputProfile}
+                formId="designer-preview-form"
+                hideSubmitButton
+                onSubmit={() => {}}
+              />
             ) : draftJson ? (
               <p className="text-sm text-muted-foreground">
-                预览解析失败，请使用下方「查看 JSON」修正后保存。
+                预览解析失败，请切换 JSON 修正后保存。
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -248,26 +265,6 @@ export default function PlaybookDesignerRoute() {
               </p>
             )}
           </div>
-
-          {draftJson ? (
-            <details
-              className="mt-4 border-t border-border/60 pt-4"
-              open={showJson}
-              onToggle={(e) => setShowJson(e.currentTarget.open)}
-            >
-              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
-                <ChevronDown
-                  className={cn("size-4 transition-transform", showJson && "rotate-180")}
-                />
-                查看 JSON（高级）
-              </summary>
-              <Textarea
-                value={draftJson}
-                className="mt-3 min-h-48 max-h-96 rounded-xl font-mono text-xs overflow-auto"
-                onChange={(e) => setDraftJson(e.target.value)}
-              />
-            </details>
-          ) : null}
         </section>
       </div>
 

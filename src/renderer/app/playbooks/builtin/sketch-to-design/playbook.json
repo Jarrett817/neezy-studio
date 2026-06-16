@@ -7,17 +7,15 @@
   "builtin": true,
   "inputProfileId": "sketch-to-design",
   "memoryScope": {
-    "categories": ["记忆", "knowledge"],
+    "categories": [
+      "记忆",
+      "knowledge"
+    ],
     "topK": 3,
     "allowExpandSearch": true
   },
-  "steps": ["retrieve", "llm", "parse:output"],
-  "outputSchema": {
-    "type": "object",
-    "properties": {
-      "title": { "type": "string" },
-      "body": { "type": "string" },
-      "tags": { "type": "array" }
-    }
-  }
+  "steps": [
+    "retrieve",
+    "llm"
+  ]
 }

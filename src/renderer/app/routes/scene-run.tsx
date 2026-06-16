@@ -13,6 +13,12 @@ import {
   validateProfileSlots,
   type PlaybookSlots,
 } from "~/services/playbook"
+import { canvasToPngDataUrl } from "~/services/playbook/graph-serializers"
+import {
+  bindChatSessionPlaybook,
+  setActiveSessionId,
+  startNewPiChatSession,
+} from "~/services/pi-chat-sessions"
 
 /**
  * 场景运行页：全屏表单 → 填完后"开始生成"→ 新建对话 session → 跳转 /chat
@@ -44,15 +50,18 @@ export default function SceneRunRoute() {
 
     setIsSubmitting(true)
     try {
-      // 编译 prompt
       const compiled = compilePrompt(profile, { slots: slotValues as PlaybookSlots })
-
-      // 存到 sessionStorage，chat 页接收后发送
+      const session = await startNewPiChatSession()
+      await bindChatSessionPlaybook(session.id, playbook.id)
+      await setActiveSessionId(session.id)
       sessionStorage.setItem("scene_first_message", compiled)
       sessionStorage.setItem("scene_playbook_id", playbook.id)
-
-      // 直接跳对话页，带 playbook 参数触发新建 session
-      navigate(`/chat?playbook=${encodeURIComponent(playbook.id)}`, { replace: true, state: { sceneLaunch: true } })
+      const canvasField = profile.fields.find((f) => f.type === "canvas")
+      if (canvasField) {
+        const png = await canvasToPngDataUrl(slotValues[canvasField.key])
+        if (png) sessionStorage.setItem("scene_first_image", png)
+      }
+      navigate(`/chat?session=${encodeURIComponent(session.id)}`, { replace: true })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "启动失败")
     } finally {

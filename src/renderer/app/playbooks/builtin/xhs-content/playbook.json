@@ -7,15 +7,16 @@
   "builtin": true,
   "inputProfileId": "xhs-minimal",
   "memoryScope": {
-    "categories": ["记忆", "xhs", "knowledge"],
+    "categories": [
+      "记忆",
+      "xhs",
+      "knowledge"
+    ],
     "topK": 5,
     "allowExpandSearch": true
   },
-  "steps": ["retrieve", "llm", "parse:output"],
-  "outputSchema": {
-    "type": "object",
-    "properties": {
-      "items": { "type": "array" }
-    }
-  }
+  "steps": [
+    "retrieve",
+    "llm"
+  ]
 }

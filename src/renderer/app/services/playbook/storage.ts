@@ -145,7 +145,10 @@ export async function seedBuiltinScenes(): Promise<void> {
   const root = await scenesRoot()
   for (const scene of BUILTIN_SCENES) {
     const path = await join(root, `${scene.playbook.id}.json`)
-    if (await exists(path)) continue
+    if (await exists(path)) {
+      const existing = await readSceneFile(path).catch(() => null)
+      if (!existing?.playbook.builtin) continue
+    }
     await writeTextFile(path, JSON.stringify(scene, null, 2))
   }
 }

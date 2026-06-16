@@ -16,10 +16,20 @@ export function ChatMessageBubble({
   const isAssistant = message.role === "assistant"
 
   if (isUser) {
+    const longText = !message.contentJson && message.content.length > 1200
     return (
       <div className="flex justify-end py-2 first:pt-1 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
         <div className="chat-bubble-user max-w-[75%] rounded-[20px] rounded-br-[4px] px-4 py-2.5 text-[15px] leading-relaxed shadow-sm">
-          {message.contentJson ? <TiptapContent doc={message.contentJson} /> : <div className="whitespace-pre-wrap break-words">{message.content}</div>}
+          {message.contentJson ? (
+            <TiptapContent doc={message.contentJson} />
+          ) : longText ? (
+            <details>
+              <summary className="cursor-pointer text-sm font-medium">场景上下文（点击展开完整提示词）</summary>
+              <div className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm opacity-90">{message.content}</div>
+            </details>
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )}
         </div>
       </div>
     )
@@ -64,7 +74,7 @@ export function ChatMessageBubble({
 
   return (
     <div className="py-2 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
-      <div className="chat-bubble-assistant max-w-[85%] rounded-[20px] rounded-bl-[4px] px-5 py-3.5">
+      <div className="max-w-[85%] rounded-[20px] rounded-bl-[4px] border border-border/50 bg-card/70 px-5 py-4 shadow-sm">
         <div className="mb-2 flex items-center gap-2">
           <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">N</span>
           <span className="text-[11px] font-medium tracking-wide text-muted-foreground">{modelName}</span>

@@ -261,11 +261,8 @@ export function buildSceneAgentSystemPrompt(
     "",
     `【当前场景】${playbook.name}`,
     playbook.description,
-    "右侧面板参数会作为隐藏上下文随每条用户消息一并发送；聊天框仅写补充说明。请产出可直接使用的结果，语气清晰自然。",
+    "右侧面板参数会作为隐藏上下文随每条用户消息一并发送；聊天框仅写补充说明。默认输出 Markdown 文本，除非用户明确要求 JSON。",
     memoryHint,
-    playbook.outputSchema?.properties
-      ? `输出要求：请以 JSON 格式输出，必须包含字段：${Object.keys(playbook.outputSchema.properties).join("、")}。`
-      : "",
   ].filter(Boolean).join("\n")
 }
 

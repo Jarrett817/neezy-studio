@@ -7,15 +7,16 @@
   "builtin": true,
   "inputProfileId": "tech-doc",
   "memoryScope": {
-    "categories": ["记忆", "knowledge", "tech"],
+    "categories": [
+      "记忆",
+      "knowledge",
+      "tech"
+    ],
     "topK": 5,
     "allowExpandSearch": true
   },
-  "steps": ["retrieve", "llm", "parse:output"],
-  "outputSchema": {
-    "type": "object",
-    "properties": {
-      "items": { "type": "array" }
-    }
-  }
+  "steps": [
+    "retrieve",
+    "llm"
+  ]
 }

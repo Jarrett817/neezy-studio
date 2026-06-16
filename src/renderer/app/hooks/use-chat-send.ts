@@ -77,10 +77,8 @@ export function useChatSend({
   }, [updateMessage, abortPiAgent])
 
   const send = useCallback(
-    async (userContent: string, options?: { displayContent?: string }) => {
+    async (userContent: string, options?: { contentJson?: unknown }) => {
       if (isGenerating || !userContent) return
-
-      const visibleContent = options?.displayContent?.trim() || userContent
 
       let sid = sessionIdRef.current
       let createdSession = false
@@ -94,7 +92,7 @@ export function useChatSend({
         await pruneEmptyPiChatSessions(sid)
         if (activePlaybookId) {
           await bindChatSessionPlaybook(sid, activePlaybookId)
-          syncPlaybookInUrl(activePlaybookId, sid)
+          syncPlaybookInUrl(null, sid)
         }
         queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       } else if (activePlaybookId) {
@@ -107,7 +105,7 @@ export function useChatSend({
 
       setIsGenerating(true)
 
-      addMessage({ id: userId, role: "user", content: visibleContent, thinking: "" })
+      addMessage({ id: userId, role: "user", content: userContent, contentJson: options?.contentJson as never, thinking: "" })
       addMessage({
         id: assistantId,
         role: "assistant",

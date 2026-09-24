@@ -52,17 +52,17 @@ export function ChatMessageBubble({
 
   if (isInitialLoading) {
     return (
-      <div className="py-3 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
-        <div className="chat-bubble-assistant max-w-[85%] rounded-[20px] rounded-bl-[4px] px-5 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">N</span>
-            <span className="text-[11px] font-medium tracking-wide text-muted-foreground">{modelName}</span>
-            <span className="flex gap-1 px-2">
-              <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "300ms" }} />
-            </span>
-          </div>
+      <div className="flex gap-3 py-3 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-xs font-semibold text-primary shadow-sm">
+          N
+        </span>
+        <div className="flex items-center gap-2 pt-1.5">
+          <span className="text-xs font-medium text-foreground/70">{modelName}</span>
+          <span className="flex gap-1">
+            <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="size-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "300ms" }} />
+          </span>
         </div>
       </div>
     )
@@ -73,12 +73,14 @@ export function ChatMessageBubble({
     Boolean(message.usageSummary?.trim())
 
   return (
-    <div className="py-2 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
-      <div className="max-w-[85%] rounded-[20px] rounded-bl-[4px] border border-border/50 bg-card/70 px-5 py-4 shadow-sm">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">N</span>
-          <span className="text-[11px] font-medium tracking-wide text-muted-foreground">{modelName}</span>
-          {message.isStreaming && <span className="size-1.5 rounded-full bg-primary/40 cursor-pulse" />}
+    <div className="flex gap-3 py-3 anim-fade" style={{ animationDelay: `${index * 30}ms` }}>
+      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-xs font-semibold text-primary shadow-sm">
+        N
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground/70">{modelName}</span>
+          {message.isStreaming && <span className="size-1.5 rounded-full bg-primary/50 animate-pulse" />}
         </div>
         {hasContent ? (
           <AgentActivityTimeline agentSteps={message.agentSteps} toolCalls={message.toolCalls}

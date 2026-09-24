@@ -8,7 +8,6 @@ import {
   type ThinkingContent,
 } from "@earendil-works/pi-ai"
 
-import type { ChatPromptOptions, ChatStreamDelta } from "./types"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { resolveActiveChatRoute } from "./model-routing"
 import { resolveEntryApiKey } from "./chat-model-entry"
@@ -120,51 +119,6 @@ async function ensureChatReady(userMessage?: string): Promise<void> {
   void userMessage
 }
 
-export function getChatModelStatus() {
-  const model = resolvePiChatModel()
-  return {
-    loaded: Boolean(activeModelId),
-    modelPath: activeModelId ?? model.id,
-    loadInfo: activeModelId
-      ? {
-          modelPath: activeModelId,
-          contextSize: 8192,
-          preferLowPower: false,
-          layerSplit: "auto" as const,
-          requestedLayerSplit: "auto" as const,
-        }
-      : null,
-  }
-}
-
-export async function loadChatModel(
-  modelName: string,
-  options: { systemPrompt?: string } = {}
-): Promise<NonNullable<ReturnType<typeof getChatModelStatus>["loadInfo"]>> {
-  await ensureChatReady(modelName)
-  activeModelId = modelName
-  void options.systemPrompt
-  return getChatModelStatus().loadInfo!
-}
-
-export async function unloadChatModel(): Promise<void> {
-  activeModelId = null
-}
-
-export function resetChatHistory(): void {
-  /* 无状态；历史由调用方 messages[] 传入 */
-}
-
-export function primeChatHistory(_messages: PiChatMessage[]): void {
-  /* 兼容 IPC；pi-ai 每次请求自带 messages */
-}
-
-export function messagesToChatHistory(
-  messages: { role: "system" | "user" | "assistant"; content: string }[]
-): PiChatMessage[] {
-  return messages.map((m) => ({ role: m.role, content: m.content }))
-}
-
 export async function testPiConnection(): Promise<{
   ok: boolean
   latencyMs: number
@@ -234,92 +188,4 @@ export async function piCompleteMessages(
   return content
 }
 
-export async function chatPrompt(
-  input: string,
-  options: ChatPromptOptions = {}
-): Promise<string> {
-  return piCompleteMessages([{ role: "user", content: input }], {
-    temperature: options.temperature,
-    maxTokens: options.maxTokens,
-  })
-}
 
-export async function runChatPromptStream(
-  input: string,
-  options: ChatPromptOptions & {
-    primeMessages?: PiChatMessage[]
-  },
-  onDelta: (delta: ChatStreamDelta) => void
-): Promise<string> {
-  const prime = options.primeMessages ?? []
-  return runPiChatStream(
-    {
-      messages: [...prime, { role: "user", content: input }],
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
-    },
-    onDelta
-  )
-}
-
-async function runPiChatStreamInner(
-  context: Context,
-  options: { temperature?: number; maxTokens?: number },
-  onDelta: (delta: ChatStreamDelta) => void
-): Promise<string> {
-  await ensureChatReady()
-  const model = resolvePiChatModel()
-  const isDashScope = isDashScopeOpenAiBaseUrl(model.baseUrl ?? "")
-  const stream = streamSimple(model, context, {
-    temperature: options.temperature ?? 0.7,
-    maxTokens: options.maxTokens ?? 4096,
-    apiKey: resolveRouteApiKey(),
-    reasoning: resolvePiReasoningOption(),
-    ...(isDashScope && {
-      onPayload: (payload: unknown) => {
-        if (payload && typeof payload === "object") {
-          const p = payload as Record<string, unknown>
-          delete p.stream_options
-        }
-        return payload
-      },
-    }),
-  })
-
-  for await (const event of stream) {
-    if (event.type === "thinking_delta" && event.delta) {
-      onDelta({ segment: "thought", delta: event.delta })
-    }
-    if (event.type === "text_delta" && event.delta) {
-      onDelta({ segment: "answer", delta: event.delta })
-    }
-  }
-
-  const result = await stream.result()
-  const { content } = extractAssistantMessageText(result)
-  // 百炼末包缺 finish_reason 时 pi-ai 报 error，但 delta 阶段内容已收到
-  if (!content && result.errorMessage) {
-    if (isDashScope && result.errorMessage.includes("finish_reason")) {
-      return ""
-    }
-    throw new Error(result.errorMessage)
-  }
-  return content
-}
-
-export async function runPiChatStream(
-  params: {
-    messages: PiChatMessage[]
-    systemPrompt?: string
-    temperature?: number
-    maxTokens?: number
-  },
-  onDelta: (delta: ChatStreamDelta) => void
-): Promise<string> {
-  const context = buildContext(params.messages, { systemPrompt: params.systemPrompt })
-  return runPiChatStreamInner(
-    context,
-    { temperature: params.temperature, maxTokens: params.maxTokens },
-    onDelta
-  )
-}

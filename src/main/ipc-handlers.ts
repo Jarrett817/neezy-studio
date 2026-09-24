@@ -1,8 +1,3 @@
-import {
-  messagesToChatHistory,
-  primeChatHistory,
-  runChatPromptStream,
-} from "./chat-router"
 import { BrowserWindow } from "electron"
 import path from "node:path"
 import {
@@ -16,7 +11,6 @@ import {
   promptAgent,
   resolvePermissionPrompt,
 } from "./pi-agent"
-import { piCompleteMessages } from "./pi-llm"
 import {
   takePendingPermissionGrant,
   type PermissionDialogAction,
@@ -70,13 +64,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle("app:get-storage-paths", () => ctx.getPaths())
   ipcMain.handle("app:save-storage-paths", async (_event, input) => {
-    ctx.closeAllSqliteHandles()
     const paths = await storagePaths.saveStoragePaths(app, input)
     applyAppConfig(app, loadAppConfig(app))
     return paths
   })
   ipcMain.handle("app:reset-storage-paths", async () => {
-    ctx.closeAllSqliteHandles()
     const paths = await storagePaths.resetStoragePaths(app)
     applyAppConfig(app, loadAppConfig(app))
     return paths
@@ -112,19 +104,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   })
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
   ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))
-  ipcMain.handle("app:get-migrations-dir", () => {
-    const candidates = [
-      ctx.path.join(ctx.app.getAppPath(), "drizzle"),
-      ctx.path.join(process.cwd(), "drizzle"),
-    ]
-    for (const dir of candidates) {
-      if (ctx.fsSync.existsSync(ctx.path.join(dir, "meta", "_journal.json"))) {
-        return dir
-      }
-    }
-    return ctx.path.join(process.cwd(), "drizzle")
-  })
-
   ipcMain.handle("fs:exists", async (_event, targetPath: string) =>
     ctx.fsSync.existsSync(targetPath)
   )
@@ -149,175 +128,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       isFile: entry.isFile(),
     }))
   })
-
-  ipcMain.handle("app:get-runtime-metrics", () => ctx.runtimeMetrics())
-  ipcMain.handle("app:load-embedding-model", async (_event, modelId: string, preferLowPower?: boolean) =>
-    ctx.loadEmbeddingModel(modelId, Boolean(preferLowPower))
-  )
-  ipcMain.handle("app:unload-embedding-model", () => ctx.unloadEmbeddingModel())
-  ipcMain.handle("app:load-chat-model", async (_event, payload) => ctx.loadChatModel(payload))
-  ipcMain.handle("app:unload-chat-model", () => ctx.unloadChatModel())
-  ipcMain.handle("app:reset-chat-history", () => ctx.resetChatHistory())
-  ipcMain.handle(
-    "app:prime-chat-history",
-    (
-      _event,
-      messages: { role: "system" | "user" | "assistant"; content: string }[]
-    ) => {
-      primeChatHistory(messagesToChatHistory(messages))
-    }
-  )
-  ipcMain.handle("app:get-chat-model-status", () => ctx.getChatModelStatus())
-  ipcMain.handle("app:chat-prompt", async (_event, input: string, options) =>
-    ctx.chatPrompt(input, options)
-  )
-  ipcMain.handle("app:chat-prompt-stream", async (event, payload) => {
-    const { requestId, input, primeMessages, temperature, topK, maxTokens, useFunctions } =
-      payload as {
-        requestId: string
-        input: string
-        primeMessages?: { role: "system" | "user" | "assistant"; content: string }[]
-        temperature?: number
-        topK?: number
-        maxTokens?: number
-        useFunctions?: boolean
-      }
-    try {
-      event.sender.send("app:chat-stream", { requestId, type: "start" })
-      const prime = primeMessages?.length
-        ? messagesToChatHistory(primeMessages)
-        : undefined
-
-      await runChatPromptStream(
-        input,
-        { temperature, topK, maxTokens, useFunctions, primeMessages: prime },
-        ({ segment, delta }) => {
-          if (!delta) return
-          event.sender.send("app:chat-stream", {
-            requestId,
-            type: "chunk",
-            segment,
-            delta,
-          })
-        }
-      )
-      event.sender.send("app:chat-stream", { requestId, type: "done", content: "" })
-    } catch (error) {
-      event.sender.send("app:chat-stream", {
-        requestId,
-        type: "error",
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  })
-  ipcMain.handle("app:get-chat-model-file-info", (_event, fileName: string) =>
-    ctx.getChatModelFileInfo(fileName)
-  )
-  ipcMain.handle(
-    "app:get-embeddings",
-    async (_event, texts: string | string[], purpose?: "query" | "document") =>
-      ctx.embedTexts(texts, purpose)
-  )
-  ipcMain.handle("app:get-embedding-status", () => ctx.getEmbeddingStatus())
-
-  ipcMain.handle("sqlite:vec-status", (_event, dbPath: string) => {
-    ctx.getSqlite(dbPath)
-    return ctx.sqliteRuntime.getVecStatus(dbPath)
-  })
-  ipcMain.handle("sqlite:ensure-vector-schema", async (_event, dbPath: string) => {
-    ctx.getSqlite(dbPath)
-    return ctx.sqliteRuntime.ensureVectorSchema(dbPath)
-  })
-  ipcMain.handle(
-    "sqlite:vector-upsert-memory",
-    async (_event, dbPath: string, id: string, embedding: number[]) => {
-      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
-      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
-      await ctx.sqliteRuntime.libsqlVector.upsertMemoryEmbedding(client, id, embedding)
-      return { mode: "libsql" as const }
-    }
-  )
-  ipcMain.handle(
-    "sqlite:vector-delete-memory",
-    async (_event, dbPath: string, id: string) => {
-      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
-      await ctx.sqliteRuntime.libsqlVector.deleteMemoryEmbedding(client, id)
-      return { mode: "libsql" as const }
-    }
-  )
-  ipcMain.handle(
-    "sqlite:vector-search-memories",
-    async (_event, dbPath: string, embedding: number[], limit = 10) => {
-      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
-      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
-      const rows = await ctx.sqliteRuntime.libsqlVector.searchMemories(
-        client,
-        embedding,
-        limit
-      )
-      return { mode: "libsql" as const, rows }
-    }
-  )
-  ipcMain.handle(
-    "sqlite:vector-upsert-slice",
-    async (
-      _event,
-      dbPath: string,
-      id: string,
-      content: string,
-      sessionId: string | null,
-      memoryType: string,
-      embedding: number[]
-    ) => {
-      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
-      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
-      await ctx.sqliteRuntime.libsqlVector.upsertMemorySlice(
-        client,
-        id,
-        content,
-        sessionId,
-        memoryType,
-        embedding
-      )
-      return { mode: "libsql" as const }
-    }
-  )
-  ipcMain.handle(
-    "sqlite:vector-search-slices",
-    async (
-      _event,
-      dbPath: string,
-      embedding: number[],
-      limit = 10,
-      memoryType: string | null = null
-    ) => {
-      const { client } = ctx.sqliteRuntime.getEntry(dbPath)
-      await ctx.sqliteRuntime.ensureVectorSchema(dbPath)
-      const rows = await ctx.sqliteRuntime.libsqlVector.searchMemorySlices(
-        client,
-        embedding,
-        limit,
-        memoryType
-      )
-      return { mode: "libsql" as const, rows }
-    }
-  )
-
-  ipcMain.handle(
-    "sqlite:execute",
-    async (_event, dbPath: string, sql: string, params: unknown[] = []) => {
-      ctx.getSqlite(dbPath)
-      const result = await ctx.sqliteRuntime.runStatement(dbPath, sql, params)
-      return { ok: true, rows: [], ...result }
-    }
-  )
-  ipcMain.handle(
-    "sqlite:select",
-    async (_event, dbPath: string, sql: string, params: unknown[] = []) => {
-      ctx.getSqlite(dbPath)
-      return await ctx.sqliteRuntime.selectStatement(dbPath, sql, params)
-    }
-  )
 
   ipcMain.handle("pi-sessions:get-dir", () => getPiSessionsDirectory())
   ipcMain.handle("pi-sessions:list", () => listPiChatSessions(app))
@@ -463,16 +273,5 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle("skills:import-from-path", async (_event, { sourcePath }: { sourcePath: string }) => {
     return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
-  })
-
-  ipcMain.handle("pi:complete", async (_event, payload: {
-    messages: { role: "system" | "user" | "assistant"; content: string }[]
-    systemPrompt?: string
-    maxTokens?: number
-  }) => {
-    return piCompleteMessages(payload.messages, {
-      systemPrompt: payload.systemPrompt,
-      maxTokens: payload.maxTokens,
-    })
   })
 }

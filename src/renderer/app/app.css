@@ -146,32 +146,27 @@
 }
 
 .chat-bubble-user {
-  background: oklch(0.50 0.10 55);
+  background: linear-gradient(135deg, oklch(0.54 0.10 58), oklch(0.48 0.10 52));
   color: white;
-  border: 1px solid oklch(0.55 0.10 55 / 0.2);
+  box-shadow: 0 2px 8px oklch(0.50 0.10 55 / 0.18);
 }
 .dark .chat-bubble-user {
-  background: oklch(0.72 0.08 65);
+  background: linear-gradient(135deg, oklch(0.74 0.08 68), oklch(0.68 0.08 62));
   color: oklch(0.15 0.008 50);
-  border: 1px solid oklch(0.72 0.08 65 / 0.2);
-}
-
-.chat-bubble-assistant {
-  background: oklch(1 0 0 / 0.35);
-  border: 1px solid oklch(0.88 0.008 50 / 0.6);
-}
-.dark .chat-bubble-assistant {
-  background: oklch(0.22 0.008 50 / 0.3);
-  border: 1px solid oklch(0.32 0.01 50 / 0.3);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.25);
 }
 
 .chat-input {
-  background: oklch(1 0 0 / 0.5);
-  border: 1px solid oklch(0.88 0.008 50 / 0.6);
+  background: oklch(1 0 0 / 0.7);
+  border: 1px solid oklch(0.88 0.008 50 / 0.7);
+  box-shadow: 0 2px 12px oklch(0.50 0.10 55 / 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .dark .chat-input {
-  background: oklch(0.22 0.008 50 / 0.35);
-  border: 1px solid oklch(0.32 0.01 50 / 0.35);
+  background: oklch(0.24 0.008 50 / 0.6);
+  border: 1px solid oklch(0.34 0.01 50 / 0.5);
+  box-shadow: 0 2px 12px oklch(0 0 0 / 0.2);
 }
 
 @keyframes fade-in {

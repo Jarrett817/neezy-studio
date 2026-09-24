@@ -1,7 +1,7 @@
 import { useRef, useLayoutEffect, useCallback, useEffect, useState } from "react"
 import { flushSync } from "react-dom"
 import { useQuery } from "@tanstack/react-query"
-import { MoreHorizontal, Paperclip, Square, Zap, Sparkles, FileText, Loader2 } from "lucide-react"
+import { MoreHorizontal, Paperclip, Square, ArrowUp, X, Sparkles, FileText, Loader2 } from "lucide-react"
 
 import { ChatModelStatus } from "~/components/chat/chat-model-status"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
@@ -180,15 +180,13 @@ export default function ChatRoute() {
 
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-5 px-4">
-              <div className="flex size-24 items-center justify-center rounded-[28px] bg-primary/8">
-                <Sparkles className="size-10 text-primary" />
+            <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
+              <div className="flex size-20 items-center justify-center rounded-[24px] bg-gradient-to-br from-primary/15 to-primary/5 shadow-sm ring-1 ring-primary/10">
+                <Sparkles className="size-9 text-primary" />
               </div>
-              <div className="text-center">
-                <p className="font-heading text-xl font-semibold tracking-tight text-foreground/90">
-                  说说你想做什么
-                </p>
-              </div>
+              <p className="font-heading text-xl font-semibold tracking-tight text-foreground/80">
+                说说你想做什么
+              </p>
             </div>
           ) : (
             <div className="mx-auto max-w-3xl pb-8">
@@ -197,15 +195,15 @@ export default function ChatRoute() {
           )}
         </div>
 
-        <div className="shrink-0 px-6 pb-4">
+        <div className="shrink-0 px-6 pb-5">
           <div className="mx-auto max-w-3xl">
-            <div className="chat-input overflow-hidden rounded-[20px]">
+            <div className="chat-input overflow-hidden rounded-[24px] transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25">
               {attachedFile && (
-                <div className="flex items-center gap-2 border-b border-border/20 px-4 py-2.5">
+                <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">
                   <FileText className="size-4 shrink-0 text-primary" />
                   <span className="flex-1 truncate text-xs text-muted-foreground/80">{attachedFile.name}</span>
                   <Button variant="ghost" size="icon-sm" className="size-6 rounded-lg text-muted-foreground/50 hover:text-foreground" onClick={() => setAttachedFile(null)}>
-                    <Square className="size-3" />
+                    <X className="size-3.5" />
                   </Button>
                 </div>
               )}
@@ -216,23 +214,23 @@ export default function ChatRoute() {
                 disabled={isGenerating}
                 onSubmit={() => doSend()}
               />
-              <div className="flex items-center justify-between gap-3 border-t border-border/20 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 px-3 pb-2.5">
                 <div className="flex items-center gap-1">
                   <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-                  <button className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-accent/30 hover:text-foreground"
-                    onClick={() => fileInputRef.current?.click()} disabled={isGenerating || isReadingFile}>
+                  <button className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-accent/40 hover:text-foreground disabled:opacity-40"
+                    onClick={() => fileInputRef.current?.click()} disabled={isGenerating || isReadingFile} title="附加文件">
                     {isReadingFile ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
                   </button>
                 </div>
                 {isGenerating ? (
-                  <Button variant="outline" size="sm" className="gap-2 rounded-full border-primary/20 text-primary/80 hover:bg-primary/10 hover:text-primary" onClick={abortSend}>
-                    <Square className="size-3.5 fill-current" />停止
+                  <Button variant="outline" size="sm" className="gap-1.5 rounded-full border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground" onClick={abortSend}>
+                    <Square className="size-3 fill-current" />停止
                   </Button>
                 ) : (
-                  <Button size="sm" className="gap-2 rounded-full bg-primary/15 px-5 text-primary shadow-sm hover:bg-primary/25"
+                  <Button size="sm" className="gap-1.5 rounded-full px-5 shadow-sm"
                     disabled={isGenerating || (!editorContent && !attachedFile)}
                     onClick={doSend}>
-                    <Zap className="size-4" />发送
+                    <ArrowUp className="size-4" />发送
                   </Button>
                 )}
               </div>

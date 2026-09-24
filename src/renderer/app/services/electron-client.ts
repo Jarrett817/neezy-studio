@@ -135,17 +135,6 @@ type ElectronApi = {
   syncRuntimeSettings: (settings: Record<string, unknown>) => Promise<void>
   getAppConfig?: () => Promise<AppConfig>
   saveAppConfig?: (config: AppConfig) => Promise<AppConfig>
-  getRuntimeMetrics: () => Promise<RuntimeMetrics>
-  loadEmbeddingModel: (
-    modelId?: string,
-    preferLowPower?: boolean
-  ) => Promise<{ embeddingDim: number; modelId: string | null; loaded?: boolean }>
-  unloadEmbeddingModel: () => Promise<void>
-  loadChatModel: (payload: ChatLoadPayload) => Promise<ChatLoadResult>
-  unloadChatModel: () => Promise<void>
-  resetChatHistory: () => Promise<void>
-  primeChatHistory: (messages: ChatSyncMessage[]) => Promise<void>
-  getChatModelStatus: () => Promise<{ loaded: boolean; modelPath: string | null }>
   testLlmConnection: () => Promise<{
     ok: boolean
     latencyMs: number
@@ -155,31 +144,6 @@ type ElectronApi = {
     baseUrl: string
     apiKey: string
   }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
-  chatPrompt: (
-    input: string,
-    options?: ChatPromptOptions
-  ) => Promise<string>
-  chatPromptStream: (payload: ChatStreamPayload) => Promise<void>
-  onChatStream: (
-    handler: (event: ChatStreamEvent) => void
-  ) => () => void
-  getChatModelFileInfo: (fileName: string) => Promise<{
-    ok: boolean
-    filePath?: string
-    sizeBytes?: number
-    expectedBytes?: number | null
-    reason?: string | null
-  }>
-  getEmbeddings: (
-    texts: string | string[],
-    purpose?: "query" | "document"
-  ) => Promise<number[] | number[][]>
-  getEmbeddingStatus: () => Promise<{
-    loaded: boolean
-    filePath: string | null
-    modelId: string | null
-    embeddingDim: number
-  }>
   appDataDir: () => Promise<string>
   getStoragePaths: () => Promise<StoragePaths>
   saveStoragePaths: (input: {
@@ -197,7 +161,6 @@ type ElectronApi = {
     fullText: string
     chunks: { index: number; title: string; content: string }[]
   }>
-  getMigrationsDir: () => Promise<string>
   join: (...parts: string[]) => Promise<string>
   exists: (path: string) => Promise<boolean>
   mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>
@@ -205,59 +168,6 @@ type ElectronApi = {
   writeTextFile: (path: string, content: string) => Promise<void>
   remove: (path: string) => Promise<void>
   readDir: (path: string) => Promise<DirEntry[]>
-  sqliteExecute: (
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<{
-    ok?: boolean
-    vecUnavailable?: boolean
-    error?: string
-    rows: unknown[]
-    lastInsertRowid: number
-    changes: number
-  }>
-  sqliteSelect: <T = Record<string, unknown>>(
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<T[]>
-  sqliteVecStatus: (dbPath: string) => Promise<{
-    available: boolean
-    path: string | null
-    error: string | null
-  }>
-  sqliteEnsureVectorSchema: (
-    dbPath: string
-  ) => Promise<{ mode: "libsql" }>
-  sqliteVectorUpsertMemory: (
-    dbPath: string,
-    id: string,
-    embedding: number[]
-  ) => Promise<{ mode: "libsql" }>
-  sqliteVectorDeleteMemory: (
-    dbPath: string,
-    id: string
-  ) => Promise<{ mode: "libsql" }>
-  sqliteVectorSearchMemories: (
-    dbPath: string,
-    embedding: number[],
-    limit?: number
-  ) => Promise<{ mode: "libsql"; rows: Record<string, unknown>[] }>
-  sqliteVectorUpsertSlice: (
-    dbPath: string,
-    id: string,
-    content: string,
-    sessionId: string | null,
-    memoryType: string,
-    embedding: number[]
-  ) => Promise<{ mode: "libsql" }>
-  sqliteVectorSearchSlices: (
-    dbPath: string,
-    embedding: number[],
-    limit?: number,
-    memoryType?: string | null
-  ) => Promise<{ mode: "libsql"; rows: Record<string, unknown>[] }>
   getAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
   saveAgentPermissionSettings: (input: {
     policy: import("../../../shared/agent-permissions").AgentPermissionPolicy
@@ -358,84 +268,9 @@ export async function listOpenAiModels(payload: {
   return api.invoke("app:list-openai-models", payload)
 }
 
-export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
-  return getElectronApi().getRuntimeMetrics()
-}
-
-export async function loadEmbeddingModel(
-  modelId?: string,
-  preferLowPower?: boolean
-) {
-  return getElectronApi().loadEmbeddingModel(modelId, preferLowPower)
-}
-
-export async function loadChatModel(payload: ChatLoadPayload) {
-  return getElectronApi().loadChatModel(payload)
-}
-
-export async function unloadChatModel() {
-  return getElectronApi().unloadChatModel()
-}
-
-export async function resetChatHistoryFromMain() {
-  return getElectronApi().resetChatHistory()
-}
-
-export async function primeChatHistoryFromMain(
-  messages: ChatSyncMessage[]
-) {
-  return getElectronApi().primeChatHistory(messages)
-}
-
-export async function chatPromptFromMain(
-  input: string,
-  options?: ChatPromptOptions
-) {
-  return getElectronApi().chatPrompt(input, options)
-}
-
-export function onChatStreamFromMain(
-  handler: (event: ChatStreamEvent) => void
-): () => void {
-  return getElectronApi().onChatStream(handler)
-}
-
-export async function chatPromptStreamFromMain(
-  payload: ChatStreamPayload
-): Promise<void> {
-  return getElectronApi().chatPromptStream(payload)
-}
-
-export async function unloadEmbeddingModel() {
-  return getElectronApi().unloadEmbeddingModel()
-}
-
-export async function getChatModelFileInfo(fileName: string) {
-  return getElectronApi().getChatModelFileInfo(fileName)
-}
-
 /** 渲染进程在 Electron 壳内（有 electronAPI） */
 export function isElectronApp(): boolean {
   return typeof window !== "undefined" && window.electronAPI != null
-}
-
-export async function getEmbeddingsFromMain(
-  texts: string,
-  options?: { purpose?: "query" | "document" }
-): Promise<number[]>
-export async function getEmbeddingsFromMain(
-  texts: string[],
-  options?: { purpose?: "query" | "document" }
-): Promise<number[][]>
-export async function getEmbeddingsFromMain(
-  texts: string | string[],
-  options?: { purpose?: "query" | "document" }
-): Promise<number[] | number[][]> {
-  return getElectronApi().getEmbeddings(texts, options?.purpose)
-}
-
-export async function getEmbeddingStatus() {
-  return getElectronApi().getEmbeddingStatus()
 }
 
 export async function appDataDir(): Promise<string> {
@@ -461,10 +296,6 @@ export async function pickDirectory(options?: {
   defaultPath?: string
 }): Promise<string | null> {
   return getElectronApi().pickDirectory(options)
-}
-
-export async function getMigrationsDir(): Promise<string> {
-  return getElectronApi().getMigrationsDir()
 }
 
 export async function join(...parts: string[]): Promise<string> {
@@ -499,80 +330,4 @@ export async function remove(path: string): Promise<void> {
 
 export async function readDir(path: string): Promise<DirEntry[]> {
   return getElectronApi().readDir(path)
-}
-
-export async function sqliteExecute(
-  dbPath: string,
-  sql: string,
-  params: unknown[] = []
-) {
-  return getElectronApi().sqliteExecute(dbPath, sql, params)
-}
-
-export async function sqliteSelect<T = Record<string, unknown>>(
-  dbPath: string,
-  sql: string,
-  params: unknown[] = []
-) {
-  return getElectronApi().sqliteSelect<T>(dbPath, sql, params)
-}
-
-export async function sqliteVecStatus(dbPath: string) {
-  return getElectronApi().sqliteVecStatus(dbPath)
-}
-
-export async function sqliteEnsureVectorSchema(dbPath: string) {
-  return getElectronApi().sqliteEnsureVectorSchema(dbPath)
-}
-
-export async function sqliteVectorUpsertMemory(
-  dbPath: string,
-  id: string,
-  embedding: number[]
-) {
-  return getElectronApi().sqliteVectorUpsertMemory(dbPath, id, embedding)
-}
-
-export async function sqliteVectorDeleteMemory(dbPath: string, id: string) {
-  return getElectronApi().sqliteVectorDeleteMemory(dbPath, id)
-}
-
-export async function sqliteVectorSearchMemories(
-  dbPath: string,
-  embedding: number[],
-  limit = 10
-) {
-  return getElectronApi().sqliteVectorSearchMemories(dbPath, embedding, limit)
-}
-
-export async function sqliteVectorUpsertSlice(
-  dbPath: string,
-  id: string,
-  content: string,
-  sessionId: string | null,
-  memoryType: string,
-  embedding: number[]
-) {
-  return getElectronApi().sqliteVectorUpsertSlice(
-    dbPath,
-    id,
-    content,
-    sessionId,
-    memoryType,
-    embedding
-  )
-}
-
-export async function sqliteVectorSearchSlices(
-  dbPath: string,
-  embedding: number[],
-  limit = 10,
-  memoryType: string | null = null
-) {
-  return getElectronApi().sqliteVectorSearchSlices(
-    dbPath,
-    embedding,
-    limit,
-    memoryType
-  )
 }

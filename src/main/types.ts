@@ -5,9 +5,6 @@ import type * as FsSync from "node:fs"
 import type * as Os from "node:os"
 import type * as Path from "node:path"
 
-/** sentence-transformers/all-MiniLM-L6-v2 · 内置 GGUF 输出 384 维 */
-export const EMBEDDING_DIM = 384
-
 export type ModelTier = "light" | "balanced" | "performance"
 export type ModelKind = "chat" | "embedding"
 export type CatalogSection = "recommended" | "local"
@@ -43,72 +40,6 @@ export interface ModelDefinition {
   downloadUris?: string[]
 }
 
-export type MemoryPressure = "low" | "medium" | "high"
-
-export type RuntimeMetricsBase = {
-  cpuCount: number
-  cpuUsagePercent: number
-  totalMemoryGb: number
-  availableMemoryGb: number
-  pressure: MemoryPressure
-  /** Ollama / 系统 GPU 摘要 */
-  gpuLabel?: string
-  vramUsedPercent?: number
-  vramSummary?: string
-  /** Ollama 运行时探测摘要 */
-  gpuInspectLines?: string[]
-}
-
-export type ModelLayerSplit = "cpu" | "gpu" | "mixed" | "auto"
-
-export type ChatLoadPayload = {
-  modelPath: string
-  preferLowPower?: boolean
-  systemPrompt?: string
-  temperature?: number
-  topK?: number
-}
-
-export type ChatLoadResult = {
-  modelPath: string
-  contextSize: number
-  preferLowPower: boolean
-  fallbackCpu?: boolean
-  gpuLayersOnGpu?: number
-  totalLayers?: number
-  layerSplit?: ModelLayerSplit
-  requestedLayerSplit?: ModelLayerSplit
-  flashAttention?: boolean
-  compatibilityScore?: number
-}
-
-export type ChatPromptOptions = {
-  temperature?: number
-  topK?: number
-  maxTokens?: number
-  /** 使用 Ollama tools（须显式 true 且模型支持） */
-  useFunctions?: boolean
-  /** 开启 Ollama 原生 think（显著增加耗时，默认关） */
-  enableThinking?: boolean
-}
-
-export type ChatStreamSegment = "thought" | "answer"
-
-export type ChatStreamPayload = {
-  requestId: string
-  input: string
-  primeMessages?: { role: "system" | "user" | "assistant"; content: string }[]
-  temperature?: number
-  topK?: number
-  maxTokens?: number
-  useFunctions?: boolean
-}
-
-export type ChatStreamDelta = {
-  segment: ChatStreamSegment
-  delta: string
-}
-
 export type StoragePaths = {
   dataRoot: string
   modelsDir: string
@@ -141,31 +72,6 @@ export type ModelDownloadState = {
   cancellable?: boolean
 }
 
-export type VectorStoreMode = "libsql"
-
-export type SqliteRuntimeModule = {
-  openDatabase: (dbPath: string) => unknown
-  getEntry: (dbPath: string) => { client: import("@libsql/client").Client }
-  closeAll: () => void
-  getVecStatus: (dbPath: string) => {
-    available: boolean
-    path: string | null
-    error: string | null
-  }
-  ensureVectorSchema: (dbPath: string) => Promise<{ mode: VectorStoreMode }>
-  runStatement: (
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<{ lastInsertRowid: number; changes: number }>
-  selectStatement: (
-    dbPath: string,
-    sql: string,
-    params?: unknown[]
-  ) => Promise<unknown[]>
-  libsqlVector: typeof import("./libsql-vector")
-}
-
 export interface IpcContext {
   app: App
   ipcMain: IpcMain
@@ -179,41 +85,4 @@ export interface IpcContext {
   getPaths: () => StoragePaths
   appDataDir: () => string
   modelsDir: () => string
-  closeAllSqliteHandles: () => void
-  runtimeMetrics: () => Promise<Record<string, unknown>>
-  loadEmbeddingModel: (
-    modelId: string,
-    preferLowPower?: boolean
-  ) => Promise<unknown>
-  unloadEmbeddingModel: () => Promise<void>
-  loadChatModel: (payload: ChatLoadPayload) => Promise<ChatLoadResult>
-  unloadChatModel: () => Promise<void>
-  resetChatHistory: () => void
-  chatPrompt: (input: string, options?: ChatPromptOptions) => Promise<string>
-  chatPromptStream: (
-    input: string,
-    options: ChatPromptOptions & {
-      primeMessages?: { role: "system" | "user" | "assistant"; content: string }[]
-    },
-    onDelta: (delta: ChatStreamDelta) => void
-  ) => Promise<string>
-  getChatModelStatus: () => {
-    loaded: boolean
-    modelPath: string | null
-    loadInfo: ChatLoadResult | null
-  }
-  getChatModelFileInfo: (fileName: string) => Promise<{
-    ok: boolean
-    filePath?: string
-    sizeBytes?: number
-    expectedBytes?: number | null
-    reason?: string | null
-  }>
-  embedTexts: (
-    texts: string | string[],
-    purpose?: "query" | "document"
-  ) => Promise<number[] | number[][]>
-  getEmbeddingStatus: () => unknown
-  getSqlite: (dbPath: string) => unknown
-  sqliteRuntime: SqliteRuntimeModule
 }

@@ -17,11 +17,6 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "db:generate": "drizzle-kit generate",
-    "db:inspect": "node scripts/db-inspect.mjs",
-    "db:studio": "node scripts/db-studio.mjs",
-    "db:path": "node scripts/resolve-app-database.mjs --print-path",
-    "db:reset": "node scripts/reset-local-db.mjs",
     "knip": "knip",
     "knip:fix": "knip --fix --fix-type exports,types,dependencies",
     "knip:clean": "knip --fix --fix-type exports,types,dependencies,files --allow-remove-files"
@@ -30,7 +25,6 @@
     "@earendil-works/pi-coding-agent": "^0.78.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/sora": "^5.2.8",
-    "@libsql/client": "^0.17.3",
     "@tanstack/react-query": "^5.100.11",
     "@tiptap/extension-image": "^3.25.0",
     "@tiptap/extension-link": "^3.25.0",
@@ -42,13 +36,11 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "drizzle-kit": "^0.31.10",
     "electron-log": "^5.4.4",
     "lucide-react": "^1.16.0",
     "mammoth": "^1.12.0",
     "nanoid": "^5.1.11",
     "next-themes": "^0.4.6",
-    "node-llama-cpp": "^3.18.1",
     "pdf-parse": "^2.4.5",
     "pi-chrome": "0.15.27",
     "pi-permission-system": "^0.6.0",
@@ -71,13 +63,23 @@
     "zustand": "^5.0.13"
   },
   "build": {
-    "extraResources": [
-      {
-        "from": "resources/embeddings",
-        "to": "embeddings",
-        "filter": ["**/*.gguf"]
-      }
-    ]
+    "appId": "com.neezy.studio",
+    "productName": "Neezy",
+    "directories": {
+      "output": "dist-win"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "overrides": {
     "@types/react": "19.2.15",

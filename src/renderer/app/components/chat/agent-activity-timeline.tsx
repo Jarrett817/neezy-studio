@@ -167,21 +167,14 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
   }
 
   return (
-    <div className="min-w-0 text-[15px] text-foreground">
-      <p className="mb-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-        回复
-      </p>
+    <div className="min-w-0 text-[15px] leading-relaxed text-foreground">
       {item.text ? (
         <div className={cn(item.streaming && "streaming-reply")}>
           <MarkdownContent content={item.text} variant="chat" />
           {item.streaming ? <StreamCursor /> : null}
         </div>
       ) : item.streaming ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>正在生成</span>
-          <StreamCursor />
-        </div>
+        <TypingDots />
       ) : null}
     </div>
   )

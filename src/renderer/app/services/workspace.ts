@@ -1,7 +1,3 @@
-import {
-  getRuntimeMetrics as getElectronRuntimeMetrics,
-  type RuntimeMetrics as ElectronRuntimeMetrics,
-} from "~/services/electron-client"
 import { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 export { getRuntimeSettings, saveRuntimeSettings } from "~/services/settings"
 
@@ -74,8 +70,6 @@ export type RuntimePlan = {
   pressure: "low" | "medium" | "high"
 }
 
-export type RuntimeMetrics = ElectronRuntimeMetrics
-
 export type KnowledgeItem = {
   id?: string
   title: string
@@ -128,12 +122,6 @@ export async function getWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
     drafts: [],
     knowledge: [],
   }
-}
-
-// ==================== 运行时指标 ====================
-
-export async function getRuntimeMetrics(): Promise<RuntimeMetrics> {
-  return getElectronRuntimeMetrics()
 }
 
 // ==================== 知识库 (前端 memories.ts) ====================

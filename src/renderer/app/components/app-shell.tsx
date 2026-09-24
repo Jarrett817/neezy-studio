@@ -1,63 +1,40 @@
 import * as React from "react"
 import { NavLink, Link, useLocation } from "react-router"
-import {
-  BookOpen,
-  Clapperboard,
-  LayoutDashboard,
-  MessagesSquare,
-  Settings,
-  Sparkles,
-} from "lucide-react"
+import { MessagesSquare, Settings, SlidersHorizontal, Sparkles } from "lucide-react"
 
 import { CommandPalette } from "~/components/shell/command-palette"
 import { ModelPill } from "~/components/shell/model-pill"
 import { cn } from "~/lib/utils"
 import { queryClient } from "~/lib/query-client"
-import { ensureInit } from "~/services/db"
-import { bootstrapRuntimeModels } from "~/services/model-runtime"
 import { getRuntimeSettings, pushRuntimeSettingsToMain } from "~/services/settings"
 
 const mainNavItems = [
-  { href: "/", label: "工作台", Icon: LayoutDashboard, end: true },
-  { href: "/scenes", label: "场景", Icon: Clapperboard, end: false },
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
-  { href: "/knowledge", label: "知识", Icon: BookOpen, end: false },
+  { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {
-  "/": "工作台",
   "/chat": "对话",
-  "/scenes": "场景",
-  "/knowledge": "知识",
   "/skills": "技能",
-  "/portrait": "画像",
   "/connect": "模型与连接",
   "/settings": "设置",
 }
 
-function resolveHeaderTitle(pathname: string, search: string): string {
+function resolveHeaderTitle(pathname: string): string {
   const base = pathname.split("?")[0]
-  if (base === "/chat") {
-    const playbook = new URLSearchParams(search).get("playbook")?.trim()
-    if (playbook) return "场景对话"
-  }
-  if (base.startsWith("/scenes/")) return "场景设计"
-  if (base === "/scenes") return "场景"
   return pageTitles[base] ?? "Neezy"
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { pathname, search } = useLocation()
-  const headerTitle = resolveHeaderTitle(pathname, search)
+  const { pathname } = useLocation()
+  const headerTitle = resolveHeaderTitle(pathname)
 
   React.useEffect(() => {
     void (async () => {
       try {
-        await ensureInit()
         const settings = await getRuntimeSettings()
         queryClient.setQueryData(["runtime-settings"], settings)
         await pushRuntimeSettingsToMain()
-        await bootstrapRuntimeModels()
       } catch (error) {
         console.warn("[app] startup init failed:", error)
       }

@@ -6,49 +6,24 @@ import { useAppStore } from "~/stores/app-store"
 import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 import {
-  bindChatSessionPlaybook,
   ensurePiChatSessionForSend,
   pruneEmptyPiChatSessions,
+  setActiveSessionId as persistActiveSessionId,
 } from "~/services/pi-chat-sessions"
-import { setActiveSessionId as persistActiveSessionId } from "~/services/pi-chat-sessions"
-import { addConversationSlice } from "~/services/storage/memory-vectors"
-import { rememberConversationTurn } from "~/services/memory-profile"
-import {
-  getPortraitContextForPrompt,
-  updatePortraitFromConversation,
-} from "~/services/user-portrait"
-import { validateSceneOutput } from "~/lib/scene-output-validator"
-import {
-  compilePrompt,
-  buildSceneAgentSystemPrompt,
-  type InputProfile,
-  type Playbook,
-  type PlaybookSlots,
-} from "~/services/playbook"
 import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
 
 export function useChatSend({
   agentSystemPrompt,
   activeSessionId,
   onSessionCreated,
-  activePlaybookId,
-  sceneProfile,
-  scenePlaybook,
-  sceneSlotValues,
   chatEntry,
-  syncPlaybookInUrl,
   sessionIdRef,
   sessionsReady,
 }: {
   agentSystemPrompt: string
   activeSessionId: string | null
   onSessionCreated?: (sid: string) => void
-  activePlaybookId: string | null
-  sceneProfile: InputProfile | null
-  scenePlaybook: Playbook | null
-  sceneSlotValues: Record<string, unknown>
   chatEntry: ReturnType<typeof resolveChatModelEntry>
-  syncPlaybookInUrl: (playbookId: string | null, sessionId?: string | null) => void
   sessionIdRef: React.MutableRefObject<string | null>
   sessionsReady: boolean
 }) {
@@ -90,13 +65,7 @@ export function useChatSend({
         onSessionCreated?.(sid)
         await persistActiveSessionId(sid)
         await pruneEmptyPiChatSessions(sid)
-        if (activePlaybookId) {
-          await bindChatSessionPlaybook(sid, activePlaybookId)
-          syncPlaybookInUrl(null, sid)
-        }
         queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      } else if (activePlaybookId) {
-        await bindChatSessionPlaybook(sid, activePlaybookId)
       }
 
       const userId = crypto.randomUUID()
@@ -124,13 +93,7 @@ export function useChatSend({
       const modelFile = entryForSend?.model ?? chatEntry?.model
 
       try {
-        let portraitContext = ""
-        await getPortraitContextForPrompt().then((ctx) => { portraitContext = ctx })
-
-        const userForAgent = appendModelReplyHints(
-          portraitContext ? `${userContent}\n${portraitContext}` : userContent,
-          modelFile
-        )
+        const userForAgent = appendModelReplyHints(userContent, modelFile)
 
         const result = await runPrompt({
           userMessage: userForAgent,
@@ -185,60 +148,6 @@ export function useChatSend({
           return
         }
 
-        // followUp 反馈环：场景模式下自动验证输出格式
-        const validation = validateSceneOutput(finalContent, scenePlaybook)
-        if (!validation.valid && validation.followUpPrompt) {
-          // 先更新当前回复（标记为中间状态）
-          updateMessage(assistantId, {
-            content: finalContent,
-            thinking: finalThinking,
-            isStreaming: true,
-          })
-          // 自动追问修正
-          const retryId = crypto.randomUUID()
-          addMessage({ id: retryId, role: "assistant", content: "", thinking: "", isStreaming: true, toolCalls: [] })
-          activeAssistantId.current = retryId
-          const retryResult = await runPrompt({
-            userMessage: validation.followUpPrompt,
-            assistantId: retryId,
-            onStream: ({ thinking, content }) => { updateMessage(retryId, { thinking, content }) },
-            onWorkflow: (steps) => { updateMessage(retryId, { agentSteps: steps }) },
-            onToolStart: (item) => {
-              const current = getMessage(retryId)
-              updateMessage(retryId, { toolCalls: [...(current?.toolCalls ?? []), item] })
-            },
-            onToolUpdate: () => {},
-            onToolEnd: (item) => {
-              const current = getMessage(retryId)
-              updateMessage(retryId, {
-                toolCalls: (current?.toolCalls ?? []).map((t) =>
-                  t.toolCallId === item.toolCallId ? { ...t, ...item } : t
-                ),
-              })
-            },
-            onUsage: (summary) => { updateMessage(retryId, { usageSummary: summary }) },
-          })
-          const retryParsed = parseModelThinking(retryResult.content)
-          updateMessage(assistantId, { isStreaming: false })
-          updateMessage(retryId, {
-            content: retryParsed.visible || retryResult.content,
-            thinking: retryResult.thinking || retryParsed.thinking,
-            isStreaming: false,
-          })
-          // 用修正后的内容做后续处理
-          const correctedContent = retryParsed.visible || retryResult.content
-          queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-          updatePortraitFromConversation({ userContent, assistantContent: correctedContent })
-            .then(() => queryClient.invalidateQueries({ queryKey: ["user-portrait"] }))
-            .catch((err) => console.warn("[portrait] update failed:", err))
-          rememberConversationTurn({ userContent, assistantContent: correctedContent })
-            .catch((err) => console.warn("[memory] remember failed:", err))
-          addConversationSlice(retryId, userContent).catch((err) => {
-            console.warn("Failed to save conversation slice:", err)
-          })
-          return
-        }
-
         const finalMsg = getMessage(assistantId)
         updateMessage(assistantId, {
           content: finalContent,
@@ -249,15 +158,6 @@ export function useChatSend({
           usageSummary: finalMsg?.usageSummary,
         })
         queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-
-        updatePortraitFromConversation({ userContent, assistantContent: finalContent })
-          .then(() => queryClient.invalidateQueries({ queryKey: ["user-portrait"] }))
-          .catch((err) => console.warn("[portrait] update failed:", err))
-        rememberConversationTurn({ userContent, assistantContent: finalContent })
-          .catch((err) => console.warn("[memory] remember failed:", err))
-        addConversationSlice(assistantId, userContent).catch((err) => {
-          console.warn("Failed to save conversation slice:", err)
-        })
       } catch (error) {
         const message = error instanceof Error ? error.message : "生成失败"
         updateMessage(assistantId, { isStreaming: false, failed: true, content: message })
@@ -275,13 +175,9 @@ export function useChatSend({
       queryClient,
       runPrompt,
       resetAgent,
-      abortPiAgent,
-      activePlaybookId,
-      sceneProfile,
-      scenePlaybook,
-      sceneSlotValues,
       chatEntry,
-      syncPlaybookInUrl,
+      onSessionCreated,
+      sessionIdRef,
     ]
   )
 

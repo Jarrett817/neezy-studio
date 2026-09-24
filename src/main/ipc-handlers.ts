@@ -39,11 +39,9 @@ import {
 } from "./agent-permissions-store"
 import {
   importSkillFromPath,
-  installSkillByKey,
   listInstalledSkills,
   uninstallSkillByKey,
 } from "./skill-install"
-import { searchCatalogWithInstallState } from "./skill-catalog"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
@@ -386,8 +384,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(
     "agent:configure",
-    (_event, payload: { sessionId: string; systemPrompt: string }) => {
-      configureAgentSession(payload.sessionId, {
+    async (_event, payload: { sessionId: string; systemPrompt: string }) => {
+      await configureAgentSession(payload.sessionId, {
         systemPrompt: payload.systemPrompt,
       })
       return { ok: true }
@@ -454,19 +452,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     return saved
   })
 
-  ipcMain.handle("skills:catalog-search", async (_event, { query }: { query?: string }) => {
-    const dataRoot = ctx.getPaths().dataRoot
-    const list = await listInstalledSkills(dataRoot)
-    const keys = new Set(list.map((s) => s.installKey))
-    return searchCatalogWithInstallState(query ?? "", keys)
-  })
-
   ipcMain.handle("skills:list-installed", async () => {
     return listInstalledSkills(ctx.getPaths().dataRoot)
-  })
-
-  ipcMain.handle("skills:install", async (_event, { installKey }: { installKey: string }) => {
-    return installSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
   })
 
   ipcMain.handle("skills:uninstall", async (_event, { installKey }: { installKey: string }) => {

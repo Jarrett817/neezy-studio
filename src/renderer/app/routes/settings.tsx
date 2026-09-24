@@ -7,8 +7,6 @@ import { Link } from "react-router"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
-import { resetDbCache } from "~/services/db"
-import { resetMigrateDbCache } from "~/services/db/migrate"
 import { AgentPermissionsSection } from "~/components/settings/agent-permissions-section"
 import {
   getStoragePaths,
@@ -46,17 +44,15 @@ function StoragePathsSection() {
   const saveMutation = useMutation({
     mutationFn: saveStoragePaths,
     onSuccess: (next) => {
-      resetDbCache()
-      resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
       setDraft({ dataRoot: next.dataRoot })
       if (next.migration && next.migration.movedCount > 0) {
-        toast.success("存储路径已保存，数据已迁移", {
+        toast.success("工作区路径已保存，数据已迁移", {
           description: `已移动 ${next.migration.movedCount} 项至新目录，请重启应用后继续使用。`,
         })
       } else {
-        toast.success("存储路径已保存", {
-          description: "请重启应用以确保数据库与模型路径生效。",
+        toast.success("工作区路径已保存", {
+          description: "请重启应用以确保生效。",
         })
       }
     },
@@ -68,8 +64,6 @@ function StoragePathsSection() {
   const resetMutation = useMutation({
     mutationFn: resetStoragePaths,
     onSuccess: (next) => {
-      resetDbCache()
-      resetMigrateDbCache()
       queryClient.setQueryData(["storage-paths"], next)
       setDraft({ dataRoot: next.dataRoot })
       if (next.migration && next.migration.movedCount > 0) {
@@ -120,8 +114,8 @@ function StoragePathsSection() {
       <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
         <PathField
           id="dataRoot"
-          label="存储目录"
-          hint="包含 memories.db、memories/、personas/、skills/、playbooks/scenes/ 等；models/ 仅放内置 Embedding。修改目录时会自动迁移已有数据（目标须为空目录）"
+          label="工作区目录"
+          hint="Agent 的工作目录（cwd），存放 soul.md、skills/ 及会话与文件产物。修改目录时会自动迁移已有数据（目标须为空目录）"
           value={draft.dataRoot}
           onChange={(value) => setDraft({ ...draft, dataRoot: value })}
           onBrowse={() => pickFolder("dataRoot")}
@@ -208,9 +202,8 @@ function DerivedPaths({
   paths: StoragePaths
   draft: StoragePathsInput
 }) {
-  const previewDb = `${draft.dataRoot.replace(/\\/g, "/")}/memories.db`
-  const previewMemories = `${draft.dataRoot.replace(/\\/g, "/")}/memories/`
-  const previewModels = `${draft.dataRoot.replace(/\\/g, "/")}/models/`
+  const previewSoul = `${draft.dataRoot.replace(/\\/g, "/")}/soul.md`
+  const previewSkills = `${draft.dataRoot.replace(/\\/g, "/")}/skills/`
   const defaultNote =
     draft.dataRoot === paths.defaultDataRoot
       ? "当前为系统默认路径"
@@ -220,9 +213,8 @@ function DerivedPaths({
     <div className="rounded-xl border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
       <p className="mb-2 font-medium text-foreground">保存后将使用</p>
       <ul className="space-y-1 font-mono break-all">
-        <li>数据库：{previewDb}</li>
-        <li>记忆 Markdown：{previewMemories}</li>
-        <li>内置 Embedding：{previewModels}</li>
+        <li>长期沉淀：{previewSoul}</li>
+        <li>技能目录：{previewSkills}</li>
       </ul>
       <p className="mt-2">{defaultNote}</p>
     </div>

@@ -37,6 +37,7 @@ import {
   createElectronPermissionUi,
 } from "./pi-permission-ui"
 import { resolveStoragePaths } from "./storage-paths"
+import { readSoul } from "./soul-store"
 import { log } from "./logger"
 import { listAllInstalledSkillDirs } from "./skill-install"
 
@@ -50,6 +51,8 @@ interface IpcAgentSession {
   session: AgentSession
   unsubscribe: () => void
   window: BrowserWindow
+  /** ResourceLoader/extension 提供的基础 systemPrompt，configure 时覆盖重建的基准 */
+  basePrompt: string
 }
 
 const ipcSessions = new Map<string, IpcAgentSession>()
@@ -253,21 +256,22 @@ export async function createAgentSession(
     session,
     unsubscribe,
     window,
+    basePrompt: session.agent.state.systemPrompt?.trim() ?? "",
   })
   return diskSessionId
 }
 
 /** 仅更新产品层 systemPrompt；对话正文由 SessionManager 持久化，勿再注入 messages。 */
-export function configureAgentSession(
+export async function configureAgentSession(
   diskSessionId: string,
   config: { systemPrompt: string }
-): void {
+): Promise<void> {
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) throw new Error("session not found")
-  const loaderPrompt = entry.session.agent.state.systemPrompt?.trim()
-  entry.session.agent.state.systemPrompt = loaderPrompt
-    ? `${loaderPrompt}\n\n${config.systemPrompt}`
-    : config.systemPrompt
+  const soul = await readSoul()
+  const parts = [entry.basePrompt, config.systemPrompt].filter(Boolean)
+  if (soul) parts.push(`【长期沉淀 soul.md】\n${soul}`)
+  entry.session.agent.state.systemPrompt = parts.join("\n\n")
   syncSessionChatRoute(entry.session)
 }
 

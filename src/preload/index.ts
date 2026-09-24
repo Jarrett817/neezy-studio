@@ -98,11 +98,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("app:save-agent-permission-settings", input),
   resetAgentPermissionSettings: () =>
     ipcRenderer.invoke("app:reset-agent-permission-settings"),
-  skillsCatalogSearch: (query?: string) =>
-    ipcRenderer.invoke("skills:catalog-search", { query }),
   skillsListInstalled: () => ipcRenderer.invoke("skills:list-installed"),
-  skillsInstall: (installKey: string) =>
-    ipcRenderer.invoke("skills:install", { installKey }),
   skillsUninstall: (installKey: string) =>
     ipcRenderer.invoke("skills:uninstall", { installKey }),
   skillsImportFromPath: (sourcePath: string) =>

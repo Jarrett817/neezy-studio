@@ -265,18 +265,6 @@ type ElectronApi = {
     sandbox: import("../../../shared/agent-permissions").SandboxPolicyConfig
   }) => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
   resetAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
-  skillsCatalogSearch: (query?: string) => Promise<
-    Array<{
-      id: string
-      publisher: import("../../../shared/skill-registry").SkillPublisherId
-      installKey: string
-      title?: string
-      subpath: string
-      description: string
-      source: "api" | "github"
-      installed: boolean
-    }>
-  >
   skillsListInstalled: () => Promise<
     Array<{
       id: string
@@ -288,15 +276,6 @@ type ElectronApi = {
       installedAt: number
     }>
   >
-  skillsInstall: (installKey: string) => Promise<{
-    id: string
-    publisher: import("../../../shared/skill-registry").SkillPublisherId
-    installKey: string
-    name: string
-    description: string
-    skillDir: string
-    installedAt: number
-  }>
   skillsUninstall: (installKey: string) => Promise<{ ok: true }>
   skillsImportFromPath: (sourcePath: string) => Promise<{
     id: string

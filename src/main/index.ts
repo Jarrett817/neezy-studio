@@ -26,7 +26,6 @@ import { getRuntimeMetrics } from "./runtime-metrics"
 import * as storagePaths from "./storage-paths"
 import { registerCoreIpcHandlers } from "./core-ipc"
 import { registerIpcHandlers } from "./ipc-handlers"
-import { warmSkillCatalog } from "./skill-install"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 import * as sqliteRuntime from "./sqlite-runtime"
 import type { ChatLoadPayload, ChatLoadResult, StoragePaths } from "./types"
@@ -189,13 +188,6 @@ app.whenReady().then(async () => {
     )
 
     await createWindow()
-
-    void warmSkillCatalog().catch((error) => {
-      log.warn(
-        "[main] Skill 目录预热失败:",
-        error instanceof Error ? error.message : error
-      )
-    })
 
     void ensurePlaywrightChromium().catch((error) => {
       log.warn(

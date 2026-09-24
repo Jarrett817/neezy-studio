@@ -8,10 +8,7 @@ import { getElectronApi } from "./electron-client"
 import {
   clearActiveChatSessionId,
   getActiveChatSessionId,
-  getChatSessionPlaybookId,
   setActiveChatSessionId,
-  setChatSessionPlaybookId,
-  clearChatSessionPlaybookId,
 } from "./storage/app-kv"
 
 export type { SessionInfoDto }
@@ -130,41 +127,8 @@ export async function ensurePiChatSessionForSend(): Promise<SessionInfoDto> {
 export async function startNewPiChatSession(): Promise<SessionInfoDto> {
   const session = await createPiChatSessionRecord()
   await setActiveSessionId(session.id)
-  await clearChatSessionPlaybookId(session.id)
   await pruneEmptyPiChatSessions(session.id)
   return session
-}
-
-export async function getChatSessionPlaybook(
-  sessionId: string
-): Promise<string | null> {
-  return getChatSessionPlaybookId(sessionId)
-}
-
-/**
- * 查找绑定了指定 playbook 且有消息的最近 session。
- * 用于场景入口优先复用已有 session 而非每次新建。
- */
-export async function findRecentSessionForPlaybook(
-  playbookId: string
-): Promise<SessionInfoDto | null> {
-  const sessions = await listPiChatSessionsWithMessages()
-  for (const session of sessions) {
-    const bound = await getChatSessionPlaybookId(session.id)
-    if (bound === playbookId) return session
-  }
-  return null
-}
-
-export async function bindChatSessionPlaybook(
-  sessionId: string,
-  playbookId: string
-): Promise<void> {
-  await setChatSessionPlaybookId(sessionId, playbookId)
-}
-
-export async function clearChatSessionPlaybook(sessionId: string): Promise<void> {
-  await clearChatSessionPlaybookId(sessionId)
 }
 
 export async function ensureActivePiChatSession(): Promise<SessionInfoDto> {

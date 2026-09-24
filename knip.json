@@ -21,16 +21,24 @@
     "resources/**",
     "src/renderer/app/components/ui/**"
   ],
-  "ignoreDependencies": ["electron-builder", "shadcn", "tailwindcss"],
+  "ignoreDependencies": [
+    "electron-builder",
+    "shadcn",
+    "tailwindcss",
+    "tw-animate-css",
+    "@fontsource-variable/sora",
+    "pi-chrome",
+    "pi-permission-system",
+    "pi-sandbox",
+    "pi-textbrowser",
+    "pi-web-access"
+  ],
   "ignoreExportsUsedInFile": {
     "interface": true,
     "type": true
   },
   "vite": {
     "config": ["electron.vite.config.ts"]
-  },
-  "drizzle": {
-    "config": ["drizzle.config.ts"]
   },
   "tags": ["-lintignore"]
 }

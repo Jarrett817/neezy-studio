@@ -6,7 +6,7 @@ import {
   type Message,
   type TextContent,
   type ThinkingContent,
-} from "@earendil-works/pi-ai"
+} from "@earendil-works/pi-ai/compat"
 
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { resolveActiveChatRoute } from "./model-routing"

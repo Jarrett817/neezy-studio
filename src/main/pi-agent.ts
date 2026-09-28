@@ -1,7 +1,6 @@
 import {
   createAgentSession as createPiAgentSession,
   DefaultResourceLoader,
-  ModelRegistry,
   SettingsManager,
   type ResourceLoader,
   type AgentSession,
@@ -22,7 +21,7 @@ import {
   getPiSessionsDir,
   openPiSessionManager,
 } from "./pi-disk-sessions"
-import { getPiAuthStorage, syncPiAuthForRoute } from "./pi-sdk-auth"
+import { getPiModelRuntime, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, applyDashScopeAgentFixes, resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 import { getNeezyCustomTools } from "./pi-tool-registry"
@@ -64,15 +63,6 @@ let bundledExtensionsLogged = false
 
 export function invalidatePiResourceLoaderCache(): void {
   resourceLoaderCache = null
-}
-
-let modelRegistry: ModelRegistry | null = null
-
-function getModelRegistry(): ModelRegistry {
-  if (!modelRegistry) {
-    modelRegistry = ModelRegistry.inMemory(getPiAuthStorage())
-  }
-  return modelRegistry
 }
 
 function getPiDirs() {
@@ -152,12 +142,12 @@ async function bindAgentSessionUi(
   session.setActiveToolsByName(session.getAllTools().map((t) => t.name))
 }
 
-function syncSessionChatRoute(session: AgentSession, userMessage?: string): void {
+async function syncSessionChatRoute(session: AgentSession, userMessage?: string): Promise<void> {
   const model = resolvePiChatModel(userMessage)
   session.agent.state.model = model
   session.setThinkingLevel(resolveAgentThinkingLevel(model))
   applyDashScopeAgentFixes(session)
-  syncPiAuthForRoute(userMessage)
+  await syncPiAuthForRoute(userMessage)
 }
 
 async function resolveSessionManager(
@@ -196,14 +186,14 @@ async function resolveSessionManager(
 async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
   const { cwd, agentDir } = getPiDirs()
   const model = resolvePiChatModel()
-  syncPiAuthForRoute()
+  const modelRuntime = await getPiModelRuntime()
+  await syncPiAuthForRoute()
   const settingsManager = buildSettingsManager(cwd, agentDir)
 
   const { session } = await createPiAgentSession({
     cwd,
     agentDir,
-    authStorage: getPiAuthStorage(),
-    modelRegistry: getModelRegistry(),
+    modelRuntime,
     model: model as Model<Api>,
     thinkingLevel: resolveAgentThinkingLevel(model),
     settingsManager,
@@ -227,7 +217,7 @@ export async function createAgentSession(
   if (existing && !existing.window.isDestroyed()) {
     existing.window = window
     await bindAgentSessionUi(existing.session, window, diskSessionId)
-    syncSessionChatRoute(existing.session)
+    await syncSessionChatRoute(existing.session)
     return diskSessionId
   }
   if (existing) {
@@ -236,7 +226,7 @@ export async function createAgentSession(
   }
 
   const session = await createPiSession(sm)
-  syncSessionChatRoute(session)
+  await syncSessionChatRoute(session)
   await bindAgentSessionUi(session, window, diskSessionId)
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -264,7 +254,7 @@ export async function configureAgentSession(
   const parts = [entry.basePrompt, config.systemPrompt].filter(Boolean)
   if (soul) parts.push(`【长期沉淀 soul.md】\n${soul}`)
   entry.session.agent.state.systemPrompt = parts.join("\n\n")
-  syncSessionChatRoute(entry.session)
+  await syncSessionChatRoute(entry.session)
 }
 
 function formatPromptError(error: unknown): string {
@@ -330,7 +320,7 @@ export async function promptAgent(
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) throw new Error("session not found")
   await ensureAgentChatReady(message)
-  syncSessionChatRoute(entry.session, message)
+  await syncSessionChatRoute(entry.session, message)
   const model = entry.session.agent.state.model
   const safeImages = sanitizePromptImages(images)
   log.info(

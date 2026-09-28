@@ -1,23 +1,15 @@
 import {
-
   getModel,
-
   getModels,
-
   getProviders,
-
-  type Api,
-
-  type AssistantMessage,
-
-  type AssistantMessageEvent,
-
-  type AssistantMessageEventStream,
-
-  type KnownProvider,
-
-  type Model,
-
+} from "@earendil-works/pi-ai/compat"
+import type {
+  Api,
+  AssistantMessage,
+  AssistantMessageEvent,
+  AssistantMessageEventStream,
+  KnownProvider,
+  Model,
 } from "@earendil-works/pi-ai"
 
 import type { Agent, StreamFn } from "@earendil-works/pi-agent-core"

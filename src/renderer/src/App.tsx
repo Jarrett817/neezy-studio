@@ -1,41 +1,46 @@
-﻿import { Component, Suspense, lazy, type ReactNode } from "react"
+﻿import { Component, type ComponentType, type ReactNode } from "react"
 import {
-  HashRouter,
+  createHashRouter,
   Navigate,
   Outlet,
-  Route,
-  Routes,
+  RouterProvider,
 } from "react-router"
 import { QueryClientProvider } from "@tanstack/react-query"
 
 import { AppShell } from "~/components/app-shell"
+import { Toaster } from "~/components/ui/sonner"
 import { queryClient } from "~/lib/query-client"
 
-const ChatRoute = lazy(() => import("~/routes/chat"))
-const ConnectRoute = lazy(() => import("~/routes/connect"))
-const SettingsRoute = lazy(() => import("~/routes/settings"))
-const SkillsRoute = lazy(() => import("~/routes/skills"))
-const Toaster = lazy(() =>
-  import("~/components/ui/sonner").then((m) => ({ default: m.Toaster }))
-)
-
-function RouteFallback() {
-  return (
-    <div className="flex h-full min-h-40 items-center justify-center text-sm text-muted-foreground">
-      加载中…
-    </div>
-  )
+function lazyPage(load: () => Promise<{ default: ComponentType }>) {
+  return {
+    lazy: async () => {
+      const mod = await load()
+      return { Component: mod.default }
+    },
+  }
 }
 
 function ShellLayout() {
   return (
     <AppShell>
-      <Suspense fallback={<RouteFallback />}>
-        <Outlet />
-      </Suspense>
+      <Outlet />
     </AppShell>
   )
 }
+
+const router = createHashRouter([
+  {
+    element: <ShellLayout />,
+    children: [
+      { index: true, element: <Navigate to="/chat" replace /> },
+      { path: "chat", ...lazyPage(() => import("~/routes/chat")) },
+      { path: "skills", ...lazyPage(() => import("~/routes/skills")) },
+      { path: "connect", ...lazyPage(() => import("~/routes/connect")) },
+      { path: "settings", ...lazyPage(() => import("~/routes/settings")) },
+      { path: "*", element: <Navigate to="/chat" replace /> },
+    ],
+  },
+])
 
 type ErrorBoundaryState = { error: Error | null }
 
@@ -68,21 +73,15 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppErrorBoundary>
-        <HashRouter>
-          <Routes>
-            <Route element={<ShellLayout />}>
-              <Route index element={<Navigate to="/chat" replace />} />
-              <Route path="chat" element={<ChatRoute />} />
-              <Route path="skills" element={<SkillsRoute />} />
-              <Route path="connect" element={<ConnectRoute />} />
-              <Route path="settings" element={<SettingsRoute />} />
-              <Route path="*" element={<Navigate to="/chat" replace />} />
-            </Route>
-          </Routes>
-        </HashRouter>
-        <Suspense fallback={null}>
-          <Toaster position="top-center" />
-        </Suspense>
+        <RouterProvider
+          router={router}
+          fallbackElement={
+            <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+              加载中…
+            </div>
+          }
+        />
+        <Toaster position="top-center" />
       </AppErrorBoundary>
     </QueryClientProvider>
   )

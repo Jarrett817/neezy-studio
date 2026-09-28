@@ -67,9 +67,7 @@ export function resolveEntryApiKey(
 }
 
 export function entryDisplayName(entry: ChatModelEntry): string {
-  if (entry.label.trim()) return entry.label.trim()
-  const preset = entry.preset ?? "API"
-  return `${entry.model} · ${preset}`
+  return entry.label.trim() || entry.model.trim() || "未命名模型"
 }
 
 export function isEntryConfigured(

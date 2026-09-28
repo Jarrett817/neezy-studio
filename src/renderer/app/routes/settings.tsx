@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FolderOpen, HardDrive, Settings2 } from "lucide-react"
 import { toast } from "sonner"
-import { useEffect, useState } from "react"
+import { useEffect, useState, lazy, Suspense } from "react"
 
 import { Link } from "react-router"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
-import { AgentPermissionsSection } from "~/components/settings/agent-permissions-section"
 import {
   getStoragePaths,
   pickStorageDirectory,
@@ -17,11 +16,19 @@ import {
   type StoragePathsInput,
 } from "~/services/storage-paths"
 
+const AgentPermissionsSection = lazy(() =>
+  import("~/components/settings/agent-permissions-section").then((m) => ({
+    default: m.AgentPermissionsSection,
+  }))
+)
+
 export default function SettingsRoute() {
   return (
     <div className="space-y-8 pt-4">
       <StoragePathsSection />
-      <AgentPermissionsSection />
+      <Suspense fallback={<p className="text-sm text-muted-foreground">加载权限设置…</p>}>
+        <AgentPermissionsSection />
+      </Suspense>
       <RuntimeSection />
     </div>
   )

@@ -1,4 +1,4 @@
-import type { AgentSessionEvent } from "../../../shared/pi-sdk"
+import type { AgentSessionEvent, ImageContent } from "../../../shared/pi-sdk"
 import { getElectronApi } from "./electron-client"
 
 export type AgentEventPayload = {
@@ -29,9 +29,10 @@ export async function configureAgentSession(
 
 export async function promptAgent(
   sessionId: string,
-  message: string
+  message: string,
+  images?: ImageContent[]
 ): Promise<{ ok: boolean }> {
-  return getElectronApi().invoke("agent:prompt", { sessionId, message })
+  return getElectronApi().invoke("agent:prompt", { sessionId, message, images })
 }
 
 export async function abortAgentSession(sessionId: string): Promise<{ ok: boolean }> {

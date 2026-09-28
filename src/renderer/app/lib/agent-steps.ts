@@ -9,7 +9,10 @@ export type AgentStep = {
   variant?: "error"
 }
 
-export type { ChatWireToolCall as ChatToolCall } from "../../../shared/chat-wire"
+export type {
+  ChatWireActivityItem as AssistantActivityItem,
+  ChatWireToolCall as ChatToolCall,
+} from "../../../shared/chat-wire"
 
 export const TOOL_LABELS: Record<string, string> = {
   memory_search: "查阅记忆",
@@ -60,12 +63,42 @@ const TOOL_ARG_KEYS: Record<string, string[]> = {
   browser_type: ["selector", "text", "value"],
 }
 
+/** 文件/路径类工具：UI 用图标 + 路径展示，而非整段 JSON */
+export const FILE_PATH_TOOLS = new Set([
+  "read",
+  "ls",
+  "find",
+  "grep",
+  "edit",
+  "write",
+])
+
 function pickArgString(args: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const v = args[key]
     if (typeof v === "string" && v.trim()) return v.trim()
   }
   return ""
+}
+
+/** 提取工具调用的主路径（read/ls/edit/write/find/grep） */
+export function pickToolPath(
+  toolName: string,
+  args: Record<string, unknown>
+): string {
+  if (toolName === "grep" || toolName === "find") {
+    return pickArgString(args, ["path"]) || pickArgString(args, ["file"]) || ""
+  }
+  return pickArgString(args, TOOL_ARG_KEYS[toolName] ?? ["path", "file"])
+}
+
+/** grep/find 的搜索模式 */
+export function pickToolPattern(
+  toolName: string,
+  args: Record<string, unknown>
+): string {
+  if (toolName !== "grep" && toolName !== "find") return ""
+  return pickArgString(args, ["pattern", "query", "glob"])
 }
 
 export function formatToolArgsSummary(

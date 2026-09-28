@@ -105,41 +105,6 @@ export function createPiSessionManager(app: App): SessionManager {
   return SessionManager.open(file, sessionDir, dataRoot)
 }
 
-function extractToolCallsFromAssistantContent(content: unknown): ChatWireToolCall[] {
-  if (!Array.isArray(content)) return []
-  const out: ChatWireToolCall[] = []
-  for (const block of content) {
-    if (
-      !block ||
-      typeof block !== "object" ||
-      !("type" in block) ||
-      block.type !== "toolCall"
-    ) {
-      continue
-    }
-    const record = block as {
-      id?: string
-      name?: string
-      arguments?: Record<string, unknown>
-    }
-    const toolCallId = typeof record.id === "string" ? record.id.trim() : ""
-    const name = typeof record.name === "string" ? record.name.trim() : ""
-    if (!toolCallId || !name) continue
-    const args =
-      record.arguments && typeof record.arguments === "object"
-        ? record.arguments
-        : {}
-    out.push({
-      toolCallId,
-      name,
-      args,
-      status: "running",
-      result: "",
-    })
-  }
-  return out
-}
-
 function textFromContent(content: unknown): { text: string; thinking: string } {
   if (typeof content === "string") {
     return { text: content, thinking: "" }
@@ -166,9 +131,72 @@ function textFromContent(content: unknown): { text: string; thinking: string } {
   return { text, thinking }
 }
 
+function applyToolResult(
+  messages: ChatWireMessage[],
+  toolCallId: string,
+  name: string,
+  result: string,
+  isError: boolean
+): void {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role === "user") break
+    const tool = m.toolCalls?.find((t) => t.toolCallId === toolCallId)
+    if (tool) {
+      tool.result = result
+      tool.status = isError ? "error" : "done"
+      if (!tool.name) tool.name = name
+      return
+    }
+  }
+}
+
+function activityFromAssistantContent(
+  content: unknown,
+  timestamp: number
+): { activity: ChatWireMessage["activity"]; toolCalls: ChatWireToolCall[] } {
+  if (typeof content === "string") {
+    const text = content.trim()
+    return {
+      activity: text ? [{ kind: "text", id: `text-${timestamp}`, text: content }] : [],
+      toolCalls: [],
+    }
+  }
+  if (!Array.isArray(content)) return { activity: [], toolCalls: [] }
+  const activity: NonNullable<ChatWireMessage["activity"]> = []
+  const toolCalls: ChatWireToolCall[] = []
+  let i = 0
+  for (const block of content) {
+    if (!block || typeof block !== "object" || !("type" in block)) continue
+    if (block.type === "thinking" && "thinking" in block && typeof block.thinking === "string") {
+      const text = block.thinking.trim()
+      if (text) activity.push({ kind: "thinking", id: `thinking-${timestamp}-${i}`, text })
+      i += 1
+      continue
+    }
+    if (block.type === "text" && "text" in block && typeof block.text === "string") {
+      const text = block.text.trim()
+      if (text) activity.push({ kind: "text", id: `text-${timestamp}-${i}`, text: block.text })
+      i += 1
+      continue
+    }
+    if (block.type === "toolCall") {
+      const record = block as { id?: string; name?: string; arguments?: Record<string, unknown> }
+      const toolCallId = typeof record.id === "string" ? record.id.trim() : ""
+      const name = typeof record.name === "string" ? record.name.trim() : ""
+      if (!toolCallId || !name) continue
+      const args =
+        record.arguments && typeof record.arguments === "object" ? record.arguments : {}
+      toolCalls.push({ toolCallId, name, args, status: "running", result: "" })
+      activity.push({ kind: "tool", toolCallId })
+      i += 1
+    }
+  }
+  return { activity, toolCalls }
+}
+
 function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
   const out: ChatWireMessage[] = []
-  const pendingTools: ChatWireToolCall[] = []
 
   for (const msg of messages) {
     if (msg.role === "toolResult") {
@@ -189,23 +217,10 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
                 .join("")
             : ""
       const isError = "isError" in msg && msg.isError === true
-      const existing = pendingTools.find((t) => t.toolCallId === toolCallId)
-      if (existing) {
-        existing.result = result
-        existing.status = isError ? "error" : "done"
-      } else {
-        pendingTools.push({
-          toolCallId,
-          name,
-          args: {},
-          status: isError ? "error" : "done",
-          result,
-        })
-      }
+      applyToolResult(out, toolCallId, name, result, isError)
       continue
     }
     if (msg.role === "user" && "timestamp" in msg) {
-      pendingTools.length = 0
       out.push({
         id: `pi-${msg.timestamp}`,
         role: "user",
@@ -218,25 +233,15 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
     }
     if (msg.role === "assistant" && "timestamp" in msg) {
       const { text, thinking } = textFromContent(msg.content)
-      const fromContent = extractToolCallsFromAssistantContent(msg.content)
-      for (const call of fromContent) {
-        const existing = pendingTools.find((t) => t.toolCallId === call.toolCallId)
-        if (existing) {
-          existing.name = call.name
-          existing.args = call.args
-        } else {
-          pendingTools.push(call)
-        }
-      }
-      const toolCalls = pendingTools.length > 0 ? [...pendingTools] : undefined
-      pendingTools.length = 0
-      if (!text.trim() && !thinking.trim() && !toolCalls) continue
+      const { activity, toolCalls } = activityFromAssistantContent(msg.content, msg.timestamp)
+      if (!text.trim() && !thinking.trim() && toolCalls.length === 0) continue
       out.push({
         id: `pi-${msg.timestamp}`,
         role: "assistant",
         content: text,
         thinking,
-        toolCalls,
+        activity: activity?.length ? activity : undefined,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         timestamp: msg.timestamp,
       })
     }

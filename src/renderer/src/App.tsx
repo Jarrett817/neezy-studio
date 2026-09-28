@@ -1,4 +1,4 @@
-﻿import { Component, type ReactNode } from "react"
+﻿import { Component, Suspense, lazy, type ReactNode } from "react"
 import {
   HashRouter,
   Navigate,
@@ -9,17 +9,30 @@ import {
 import { QueryClientProvider } from "@tanstack/react-query"
 
 import { AppShell } from "~/components/app-shell"
-import { Toaster } from "~/components/ui/sonner"
 import { queryClient } from "~/lib/query-client"
-import ChatRoute from "~/routes/chat"
-import ConnectRoute from "~/routes/connect"
-import SettingsRoute from "~/routes/settings"
-import SkillsRoute from "~/routes/skills"
+
+const ChatRoute = lazy(() => import("~/routes/chat"))
+const ConnectRoute = lazy(() => import("~/routes/connect"))
+const SettingsRoute = lazy(() => import("~/routes/settings"))
+const SkillsRoute = lazy(() => import("~/routes/skills"))
+const Toaster = lazy(() =>
+  import("~/components/ui/sonner").then((m) => ({ default: m.Toaster }))
+)
+
+function RouteFallback() {
+  return (
+    <div className="flex h-full min-h-40 items-center justify-center text-sm text-muted-foreground">
+      加载中…
+    </div>
+  )
+}
 
 function ShellLayout() {
   return (
     <AppShell>
-      <Outlet />
+      <Suspense fallback={<RouteFallback />}>
+        <Outlet />
+      </Suspense>
     </AppShell>
   )
 }
@@ -67,7 +80,9 @@ export default function App() {
             </Route>
           </Routes>
         </HashRouter>
-        <Toaster position="top-center" />
+        <Suspense fallback={null}>
+          <Toaster position="top-center" />
+        </Suspense>
       </AppErrorBoundary>
     </QueryClientProvider>
   )

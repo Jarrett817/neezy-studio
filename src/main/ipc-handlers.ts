@@ -148,16 +148,26 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   )
 
   // agent:prompt - 发送消息给 Agent
-  ipcMain.handle("agent:prompt", async (_event, { sessionId, message }: { sessionId: string; message: string }) => {
-    if (!agentSessionExists(sessionId)) throw new Error("session not found")
-    try {
-      await promptAgent(sessionId, message)
-      return { ok: true }
-    } catch (error) {
-      log.error("[agent:prompt]", error instanceof Error ? error.message : error)
-      throw error
+  ipcMain.handle(
+    "agent:prompt",
+    async (
+      _event,
+      {
+        sessionId,
+        message,
+        images,
+      }: { sessionId: string; message: string; images?: unknown }
+    ) => {
+      if (!agentSessionExists(sessionId)) throw new Error("session not found")
+      try {
+        await promptAgent(sessionId, message, images)
+        return { ok: true }
+      } catch (error) {
+        log.error("[agent:prompt]", error instanceof Error ? error.message : error)
+        throw error
+      }
     }
-  })
+  )
 
   // agent:destroy - 销毁 Agent 会话
   ipcMain.handle("agent:destroy", async (_event, { sessionId }: { sessionId: string }) => {

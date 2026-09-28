@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import type { ImageContent } from "../../../shared/pi-sdk"
 import { useAppStore } from "~/stores/app-store"
 import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
@@ -52,8 +53,12 @@ export function useChatSend({
   }, [updateMessage, abortPiAgent])
 
   const send = useCallback(
-    async (userContent: string, options?: { contentJson?: unknown }) => {
-      if (isGenerating || !userContent) return
+    async (
+      userContent: string,
+      options?: { contentJson?: unknown; images?: ImageContent[] }
+    ) => {
+      const images = options?.images?.length ? options.images : undefined
+      if (isGenerating || (!userContent && !images?.length)) return
 
       let sid = sessionIdRef.current
       let createdSession = false
@@ -74,7 +79,13 @@ export function useChatSend({
 
       setIsGenerating(true)
 
-      addMessage({ id: userId, role: "user", content: userContent, contentJson: options?.contentJson as never, thinking: "" })
+      addMessage({
+        id: userId,
+        role: "user",
+        content: userContent || (images?.length ? "[图片]" : ""),
+        contentJson: options?.contentJson as never,
+        thinking: "",
+      })
       addMessage({
         id: assistantId,
         role: "assistant",
@@ -97,9 +108,10 @@ export function useChatSend({
 
         const result = await runPrompt({
           userMessage: userForAgent,
+          images,
           assistantId,
-          onStream: ({ thinking, content }) => {
-            updateMessage(assistantId, { thinking, content })
+          onStream: ({ thinking, content, activity }) => {
+            updateMessage(assistantId, { thinking, content, activity })
           },
           onWorkflow: (steps) => {
             updateMessage(assistantId, { agentSteps: steps })

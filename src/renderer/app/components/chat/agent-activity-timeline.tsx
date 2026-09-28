@@ -1,11 +1,31 @@
-import { AlertCircle, Check, ChevronRight, Loader2 } from "lucide-react"
+import {
+  AlertCircle,
+  Check,
+  ChevronRight,
+  File,
+  FilePen,
+  FilePlus,
+  FileSearch,
+  FolderOpen,
+  Loader2,
+  Search,
+} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 import { MarkdownContent } from "~/components/markdown-content"
 import {
   buildAssistantTimeline,
   type TimelineItem,
 } from "~/lib/assistant-timeline"
-import { toolLabel, type AgentStep, type ChatToolCall } from "~/lib/agent-steps"
+import {
+  FILE_PATH_TOOLS,
+  pickToolPath,
+  pickToolPattern,
+  toolLabel,
+  type AgentStep,
+  type AssistantActivityItem,
+  type ChatToolCall,
+} from "~/lib/agent-steps"
 import { cn } from "~/lib/utils"
 
 function StreamCursor() {
@@ -74,8 +94,65 @@ function formatInvocationPayload(args: Record<string, unknown>): string {
   }
 }
 
+function fileToolIcon(name: string): LucideIcon {
+  switch (name) {
+    case "ls":
+      return FolderOpen
+    case "find":
+      return FileSearch
+    case "grep":
+      return Search
+    case "edit":
+      return FilePen
+    case "write":
+      return FilePlus
+    default:
+      return File
+  }
+}
+
+function FileToolBody({ tool }: { tool: ChatToolCall }) {
+  const Icon = fileToolIcon(tool.name)
+  const path = pickToolPath(tool.name, tool.args)
+  const pattern = pickToolPattern(tool.name, tool.args)
+  const extraKeys = Object.keys(tool.args).filter(
+    (k) => !["path", "file", "pattern", "query", "glob"].includes(k)
+  )
+
+  return (
+    <div className="bg-muted/15 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <Icon className="mt-0.5 size-4 shrink-0 text-foreground/55" aria-hidden />
+        <div className="min-w-0 flex-1 space-y-1">
+          {path ? (
+            <p className="font-mono text-[12px] leading-snug break-all text-foreground/90">
+              {path}
+            </p>
+          ) : (
+            <p className="text-[12px] text-muted-foreground">（未指定路径）</p>
+          )}
+          {pattern ? (
+            <p className="text-[11px] text-muted-foreground">
+              匹配{" "}
+              <span className="font-mono text-foreground/80">{pattern}</span>
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {extraKeys.length > 0 ? (
+        <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-muted/30 px-2 py-1.5 font-mono text-[10px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+          {formatInvocationPayload(
+            Object.fromEntries(extraKeys.map((k) => [k, tool.args[k]]))
+          )}
+        </pre>
+      ) : null}
+    </div>
+  )
+}
+
 function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
   const isBash = tool.name === "bash"
+  const isFileTool = FILE_PATH_TOOLS.has(tool.name)
   const command =
     typeof tool.args.command === "string" ? tool.args.command.trim() : ""
   const cwd =
@@ -85,6 +162,7 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
   const output = (tool.partialResult?.trim() || tool.result?.trim() || "").trim()
   const running = tool.status === "running"
   const failed = tool.status === "error"
+  const pathSummary = isFileTool ? pickToolPath(tool.name, tool.args) : ""
 
   return (
     <details
@@ -95,8 +173,15 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
       open={running || failed}
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-border/40 bg-muted/30 px-3 py-2 [&::-webkit-details-marker]:hidden">
-        <span className="font-medium text-foreground">{toolLabel(tool.name)}</span>
-        <span className="text-muted-foreground">
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {toolLabel(tool.name)}
+          {pathSummary ? (
+            <span className="ml-2 font-mono text-[11px] font-normal text-muted-foreground">
+              {pathSummary}
+            </span>
+          ) : null}
+        </span>
+        <span className="shrink-0 text-muted-foreground">
           {running ? "执行中" : failed ? "失败" : "已完成"}
         </span>
       </summary>
@@ -113,6 +198,8 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
             {command || "(空命令)"}
           </pre>
         </div>
+      ) : isFileTool ? (
+        <FileToolBody tool={tool} />
       ) : (
         <pre className="max-h-40 overflow-auto bg-muted/15 px-3 py-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-foreground/85">
           {formatInvocationPayload(tool.args)}
@@ -176,7 +263,7 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
 
   if (item.kind === "usage") {
     return (
-      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+      <p className="pt-1 text-[11px] tabular-nums tracking-wide text-muted-foreground">
         Token · {item.text}
       </p>
     )
@@ -199,6 +286,7 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
 export function AgentActivityTimeline({
   agentSteps,
   toolCalls,
+  activity,
   thinking,
   content,
   usageSummary,
@@ -207,6 +295,7 @@ export function AgentActivityTimeline({
 }: {
   agentSteps?: AgentStep[]
   toolCalls?: ChatToolCall[]
+  activity?: AssistantActivityItem[]
   thinking?: string
   content?: string
   usageSummary?: string
@@ -216,6 +305,7 @@ export function AgentActivityTimeline({
   const items = buildAssistantTimeline({
     agentSteps,
     toolCalls,
+    activity,
     thinking,
     content,
     usageSummary,

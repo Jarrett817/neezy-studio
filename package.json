@@ -21,9 +21,11 @@
     "knip:clean": "knip --fix --fix-type exports,types,dependencies,files --allow-remove-files"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-agent-core": "^0.87.1",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "jsonc-parser": "^3.3.1",
-    "pi-permission-system": "^0.6.0",
+    "pi-permission-system": "^0.8.0",
     "pi-sandbox": "^0.4.3",
     "pi-web-access": "^0.10.7",
     "typebox": "^1.1.38"
@@ -51,11 +53,15 @@
       "target": [
         {
           "target": "dir",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -74,7 +80,7 @@
     "@tiptap/extension-image": "^3.25.0",
     "@tiptap/extension-link": "^3.25.0",
     "@tiptap/extension-placeholder": "^3.25.0",
-    "@tiptap/html": "^3.24.0",
+    "@tiptap/html": "^3.25.0",
     "@tiptap/pm": "^3.25.0",
     "@tiptap/react": "^3.25.0",
     "@tiptap/starter-kit": "^3.25.0",
@@ -83,13 +89,14 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
+    "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
     "electron": "^42.2.0",
     "electron-builder": "^26.8.1",
     "electron-log": "^5.4.4",
     "electron-vite": "6.0.0-beta.0",
+    "framer-motion": "^13.4.4",
     "knip": "^6.14.2",
     "lucide-react": "^1.16.0",
     "nanoid": "^5.1.11",

@@ -1,7 +1,7 @@
 ﻿import type { JSONContent } from "@tiptap/react"
 import { create } from "zustand"
 
-import type { AgentStep, ChatToolCall } from "~/lib/agent-steps"
+import type { AgentStep, AssistantActivityItem, ChatToolCall } from "~/lib/agent-steps"
 
 export type ChatMessage = {
   id: string
@@ -11,6 +11,8 @@ export type ChatMessage = {
   /** Tiptap JSON 文档：可选，存在时使用 TiptapContent 渲染。 */
   contentJson?: JSONContent
   thinking: string
+  /** 按 Pi 消息块顺序：思考 / 正文 / 工具 */
+  activity?: AssistantActivityItem[]
   agentSteps?: AgentStep[]
   isStreaming?: boolean
   failed?: boolean

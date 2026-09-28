@@ -140,21 +140,21 @@ export function ChatSessionSidebar({
                             : "hover:bg-muted/50"
                         )}
                       >
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 text-left"
+                        <Button
+                          variant="ghost"
+                          className="h-auto min-w-0 flex-1 flex-col items-start gap-0.5 px-0 py-0 text-left hover:bg-transparent"
                           onClick={() => {
                             onSelectSession(session.id)
                             setOpen(false)
                           }}
                         >
-                          <p className="truncate text-sm font-medium">
+                          <span className="w-full truncate text-sm font-medium">
                             {sessionListTitle(session)}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          </span>
+                          <span className="w-full truncate text-xs font-normal text-muted-foreground">
                             {sessionListPreview(session) || timeLabel || "—"}
-                          </p>
-                        </button>
+                          </span>
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

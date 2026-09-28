@@ -1,20 +1,28 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, lazy, Suspense } from "react"
 import { flushSync } from "react-dom"
-import { useQuery } from "@tanstack/react-query"
-import { MoreHorizontal, Paperclip, Square, ArrowUp, X, Sparkles, FileText, Loader2 } from "lucide-react"
+import { motion } from "framer-motion"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { MoreHorizontal, Paperclip, Square, ArrowUp, X, FileText, Loader2, MessageSquarePlus } from "lucide-react"
 
+import { NomiFace } from "~/components/nomi-face"
 import { ChatModelStatus } from "~/components/chat/chat-model-status"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
 import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
 import { ChatMessageBubble } from "~/components/chat/chat-message"
 import { ChatEditor, type ChatEditorHandle } from "~/components/chat/chat-editor"
 import { Button } from "~/components/ui/button"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet"
 import { entryDisplayName } from "~/config/chat-models"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 import { useAppStore } from "~/stores/app-store"
 import { useChatSession } from "~/hooks/use-chat-session"
 import { useChatSend } from "~/hooks/use-chat-send"
+import { startNewPiChatSession } from "~/services/pi-chat-sessions"
+import {
+  extractImageContentsFromTiptap,
+  tiptapToPlainText,
+} from "~/services/chat-content"
+
+const ChatOptionsSheet = lazy(() => import("~/components/chat/chat-options-sheet"))
 
 const SYSTEM_PROMPT =
   `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd，可用 Pi 内置 read/bash/edit/write/grep/find/ls 操作文件；联网 web_search、fetch_content、code_search。已导入的 skill 会自动加载可直接使用。soul_write 用于把有长期价值的偏好、结论、约定沉淀到 soul.md。需要时直接调用工具，勿声称工具不存在。`.trim()
@@ -31,6 +39,7 @@ export default function ChatRoute() {
     handleSelectSession, handleNewSession,
   } = useChatSession()
 
+  const queryClient = useQueryClient()
   const messages = useAppStore((s) => s.conversationHistory)
   const editorRef = useRef<ChatEditorHandle>(null)
   const [hasText, setHasText] = useState(false)
@@ -39,6 +48,7 @@ export default function ChatRoute() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [optionsOpen, setOptionsOpen] = useState(false)
 
   const onScroll = () => {
     const el = scrollRef.current
@@ -76,9 +86,11 @@ export default function ChatRoute() {
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
   const doSend = () => {
-    const text = editorRef.current?.getText() ?? ""
+    const contentJson = editorRef.current?.getJSON() ?? null
+    const text = tiptapToPlainText(contentJson)
+    const images = extractImageContentsFromTiptap(contentJson)
     const hasFile = attachedFile !== null
-    if (!text && !hasFile) return
+    if (!text && !hasFile && images.length === 0) return
 
     stickToBottomRef.current = true
     const fileSnapshot = attachedFile
@@ -91,7 +103,19 @@ export default function ChatRoute() {
           ? `${text}\n\n[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
           : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`)
       : text
-    send(agentContent)
+    send(agentContent, {
+      contentJson: contentJson ?? undefined,
+      images: images.length > 0 ? images : undefined,
+    })
+  }
+
+  const doNewSession = async () => {
+    const session = await startNewPiChatSession()
+    await handleNewSession(session.id)
+    resetAgent([], session.id).catch(() => {})
+    queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+    editorRef.current?.focus()
   }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -127,44 +151,42 @@ export default function ChatRoute() {
               onSelectSession={async (id) => { await handleSelectSession(id); resetAgent([], id).catch(() => {}) }}
               onSessionCreated={async (id) => { await handleNewSession(id); resetAgent([], id).catch(() => {}) }}
             />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
+              aria-label="新对话"
+              title="新对话"
+              onClick={() => void doNewSession()}
+            >
+              <MessageSquarePlus className="size-4" />
+            </Button>
             <ChatModelStatus className="min-w-0 flex-1" />
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground">
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full border-l-border/30 sm:max-w-md">
-                <SheetHeader>
-                  <SheetTitle className="font-heading">对话选项</SheetTitle>
-                  <SheetDescription>工具 trace</SheetDescription>
-                </SheetHeader>
-                <div className="mt-6 space-y-6 px-1">
-                  {lastAssistant?.toolCalls?.length ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">工具 trace</p>
-                      <ul className="space-y-2 text-xs">
-                        {lastAssistant.toolCalls.map((tc) => (
-                          <li key={tc.toolCallId} className="rounded-xl border border-border/30 bg-background/50 p-2 font-mono">
-                            <span className="font-sans font-medium text-foreground">{tc.name}</span>
-                            {tc.result ? <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-muted-foreground">{tc.result.slice(0, 400)}</pre> : null}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              </SheetContent>
-            </Sheet>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
+              aria-label="对话选项"
+              onClick={() => setOptionsOpen(true)}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+            {optionsOpen ? (
+              <Suspense fallback={null}>
+                <ChatOptionsSheet
+                  open
+                  toolCalls={lastAssistant?.toolCalls}
+                  onOpenChange={setOptionsOpen}
+                />
+              </Suspense>
+            ) : null}
           </div>
         </div>
 
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
-              <div className="flex size-20 items-center justify-center rounded-[24px] bg-gradient-to-br from-primary/15 to-primary/5 shadow-sm ring-1 ring-primary/10">
-                <Sparkles className="size-9 text-primary" />
-              </div>
+              <NomiFace className="size-20" />
               <p className="font-heading text-xl font-semibold tracking-tight text-foreground/80">
                 说说你想做什么
               </p>
@@ -178,7 +200,7 @@ export default function ChatRoute() {
 
         <div className="shrink-0 px-6 pb-5">
           <div className="mx-auto max-w-3xl">
-            <div className="chat-input overflow-hidden rounded-[24px] transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25">
+            <div className="overflow-hidden rounded-[24px] border border-border/70 bg-background/70 shadow-sm backdrop-blur-sm transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25 dark:border-border/50 dark:bg-card/60">
               {attachedFile && (
                 <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">
                   <FileText className="size-4 shrink-0 text-primary" />
@@ -197,22 +219,30 @@ export default function ChatRoute() {
               />
               <div className="flex items-center justify-between gap-3 px-3 pb-2.5">
                 <div className="flex items-center gap-1">
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-                  <button className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-accent/40 hover:text-foreground disabled:opacity-40"
-                    onClick={() => fileInputRef.current?.click()} disabled={isGenerating || isReadingFile} title="附加文件">
+                  <input ref={fileInputRef} type="file" accept="image/*,.md,.txt,.csv,.json" className="hidden" onChange={handleFileSelect} />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 rounded-lg text-muted-foreground/50 hover:bg-accent/40 hover:text-foreground"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isGenerating || isReadingFile}
+                    title="附加文件"
+                  >
                     {isReadingFile ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
-                  </button>
+                  </Button>
                 </div>
                 {isGenerating ? (
                   <Button variant="outline" size="sm" className="gap-1.5 rounded-full border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground" onClick={abortSend}>
                     <Square className="size-3 fill-current" />停止
                   </Button>
                 ) : (
-                  <Button size="sm" className="gap-1.5 rounded-full px-5 shadow-sm"
-                    disabled={isGenerating || (!hasText && !attachedFile)}
-                    onClick={doSend}>
-                    <ArrowUp className="size-4" />发送
-                  </Button>
+                  <motion.div whileTap={{ scale: 0.94 }}>
+                    <Button size="sm" className="gap-1.5 rounded-full px-5 shadow-sm"
+                      disabled={isGenerating || (!hasText && !attachedFile)}
+                      onClick={doSend}>
+                      <ArrowUp className="size-4" />发送
+                    </Button>
+                  </motion.div>
                 )}
               </div>
             </div>

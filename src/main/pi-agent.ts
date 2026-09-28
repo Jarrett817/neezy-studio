@@ -8,7 +8,7 @@ import {
   type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent"
 import type { SessionManager } from "@earendil-works/pi-coding-agent"
-import type { Api, Model } from "@earendil-works/pi-ai"
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai"
 import type { BrowserWindow } from "electron"
 import { app } from "electron"
 import fs from "node:fs"
@@ -294,12 +294,45 @@ async function ensureAgentChatReady(userMessage?: string): Promise<void> {
   }
 }
 
-export async function promptAgent(diskSessionId: string, message: string): Promise<void> {
+const ALLOWED_IMAGE_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+])
+
+/** IPC 入参校验：只放行合法 ImageContent，非法项丢弃；全非法则视为无图。 */
+function sanitizePromptImages(images: unknown): ImageContent[] | undefined {
+  if (!Array.isArray(images) || images.length === 0) return undefined
+  const out: ImageContent[] = []
+  for (const item of images) {
+    if (!item || typeof item !== "object") continue
+    const rec = item as Record<string, unknown>
+    if (rec.type !== "image") continue
+    if (typeof rec.data !== "string" || !rec.data) continue
+    if (typeof rec.mimeType !== "string") continue
+    let mimeType = rec.mimeType.trim().toLowerCase()
+    if (mimeType === "image/jpg") mimeType = "image/jpeg"
+    if (!ALLOWED_IMAGE_MIME.has(mimeType)) continue
+    // 拒绝仍带 data URL 前缀或非 base64 字符的载荷
+    if (rec.data.startsWith("data:") || rec.data.includes(",")) continue
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(rec.data)) continue
+    out.push({ type: "image", data: rec.data.replace(/\s+/g, ""), mimeType })
+  }
+  return out.length > 0 ? out : undefined
+}
+
+export async function promptAgent(
+  diskSessionId: string,
+  message: string,
+  images?: unknown
+): Promise<void> {
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) throw new Error("session not found")
   await ensureAgentChatReady(message)
   syncSessionChatRoute(entry.session, message)
   const model = entry.session.agent.state.model
+  const safeImages = sanitizePromptImages(images)
   log.info(
     "[pi-agent] prompt",
     model.provider,
@@ -307,10 +340,11 @@ export async function promptAgent(diskSessionId: string, message: string): Promi
     model.api,
     model.baseUrl,
     "piSession",
-    diskSessionId
+    diskSessionId,
+    safeImages ? `images=${safeImages.length}` : "images=0"
   )
   try {
-    await entry.session.prompt(message)
+    await entry.session.prompt(message, safeImages ? { images: safeImages } : undefined)
   } catch (error) {
     const msg = formatPromptError(error)
     log.error("[pi-agent] prompt failed:", msg, model.baseUrl, model.id)

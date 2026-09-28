@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react"
 
+import type { ImageContent } from "../../../shared/pi-sdk"
 import {
   completeToolStep,
   createInitialAgentSteps,
@@ -17,6 +18,7 @@ import {
   startToolStep,
   updateToolStep,
   type AgentStep,
+  type AssistantActivityItem,
   type ChatToolCall,
 } from "~/lib/agent-steps"
 import { reduceAgentEvent } from "~/lib/pi-agent-events"
@@ -72,8 +74,15 @@ export function usePiAgentChat({
   const sessionOp = useRef<Promise<void>>(Promise.resolve())
   const activeAssistantId = useRef<string | null>(null)
   const streamState = useRef({ content: "", thinking: "" })
+  const activityRef = useRef<AssistantActivityItem[]>([])
+  const openThinkingIdRef = useRef<string | null>(null)
+  const openTextIdRef = useRef<string | null>(null)
   const onStreamRef = useRef<
-    ((patch: { thinking: string; content: string }) => void) | null
+    ((patch: {
+      thinking: string
+      content: string
+      activity: AssistantActivityItem[]
+    }) => void) | null
   >(null)
   const onToolStartRef = useRef<((item: ChatToolCall) => void) | null>(null)
   const onToolUpdateRef = useRef<
@@ -85,6 +94,7 @@ export function usePiAgentChat({
       ) => void)
     | null
   >(null)
+  const usageAccRef = useRef({ input: 0, output: 0, cost: 0 })
   const onUsageRef = useRef<((summary: string) => void) | null>(null)
   const onWorkflowRef = useRef<((steps: AgentStep[]) => void) | null>(null)
   const agentStepsRef = useRef<AgentStep[]>(createInitialAgentSteps())
@@ -165,8 +175,62 @@ export function usePiAgentChat({
       if (payload.sessionId !== agentSessionId.current) return
       const ev = payload.event
 
+      const emitStream = () => {
+        if (!activeAssistantId.current || !onStreamRef.current) return
+        const display = mergeStreamThinking(
+          streamState.current.thinking,
+          streamState.current.content
+        )
+        onStreamRef.current({
+          thinking: display.thinking,
+          content: display.visible,
+          activity: [...activityRef.current],
+        })
+      }
+
+      const appendThinking = (delta: string) => {
+        openTextIdRef.current = null
+        const openId = openThinkingIdRef.current
+        if (openId) {
+          activityRef.current = activityRef.current.map((item) =>
+            item.kind === "thinking" && item.id === openId
+              ? { ...item, text: item.text + delta }
+              : item
+          )
+          return
+        }
+        const id = `thinking-${activityRef.current.length}-${Date.now()}`
+        openThinkingIdRef.current = id
+        activityRef.current = [
+          ...activityRef.current,
+          { kind: "thinking", id, text: delta },
+        ]
+      }
+
+      const appendText = (delta: string) => {
+        openThinkingIdRef.current = null
+        const openId = openTextIdRef.current
+        if (openId) {
+          activityRef.current = activityRef.current.map((item) =>
+            item.kind === "text" && item.id === openId
+              ? { ...item, text: item.text + delta }
+              : item
+          )
+          return
+        }
+        const id = `text-${activityRef.current.length}-${Date.now()}`
+        openTextIdRef.current = id
+        activityRef.current = [
+          ...activityRef.current,
+          { kind: "text", id, text: delta },
+        ]
+      }
+
       if (ev.type === "agent_start") {
         agentStepsRef.current = createInitialAgentSteps()
+        activityRef.current = []
+        openThinkingIdRef.current = null
+        openTextIdRef.current = null
         pushWorkflow()
       }
 
@@ -180,10 +244,12 @@ export function usePiAgentChat({
         if (inner.type === "thinking_delta" && inner.delta) {
           agentStepsRef.current = setTurnThinking(agentStepsRef.current)
           pushWorkflow()
+          appendThinking(inner.delta)
         }
         if (inner.type === "text_delta" && inner.delta) {
           agentStepsRef.current = setTurnResponding(agentStepsRef.current)
           pushWorkflow()
+          appendText(inner.delta)
         }
       }
 
@@ -238,6 +304,23 @@ export function usePiAgentChat({
           argsDetail
         )
         pushWorkflow()
+        openThinkingIdRef.current = null
+        openTextIdRef.current = null
+        activityRef.current = [
+          ...activityRef.current,
+          { kind: "tool", toolCallId: ev.toolCallId },
+        ]
+        if (activeAssistantId.current && onStreamRef.current) {
+          const display = mergeStreamThinking(
+            streamState.current.thinking,
+            streamState.current.content
+          )
+          onStreamRef.current({
+            thinking: display.thinking,
+            content: display.visible,
+            activity: [...activityRef.current],
+          })
+        }
         onToolStartRef.current?.({
           toolCallId: ev.toolCallId,
           name: ev.toolName,
@@ -288,7 +371,21 @@ export function usePiAgentChat({
         if (failure) agentErrorRef.current = failure
         if (ev.message.role === "assistant") {
           if ("usage" in ev.message && ev.message.usage) {
-            onUsageRef.current?.(formatUsageSummary(ev.message.usage))
+            const u = ev.message.usage
+            usageAccRef.current = {
+              input: usageAccRef.current.input + (u.input ?? 0),
+              output: usageAccRef.current.output + (u.output ?? 0),
+              cost: usageAccRef.current.cost + (u.cost?.total ?? 0),
+            }
+            onUsageRef.current?.(
+              formatUsageSummary({
+                input: usageAccRef.current.input,
+                output: usageAccRef.current.output,
+                cost: usageAccRef.current.cost > 0
+                  ? { total: usageAccRef.current.cost }
+                  : undefined,
+              })
+            )
           }
           if (activeAssistantId.current) {
             agentStepsRef.current = setTurnResponding(agentStepsRef.current)
@@ -328,14 +425,7 @@ export function usePiAgentChat({
       if (!activeAssistantId.current || !onStreamRef.current) return
 
       streamState.current = reduceAgentEvent(ev, streamState.current)
-      const display = mergeStreamThinking(
-        streamState.current.thinking,
-        streamState.current.content
-      )
-      onStreamRef.current({
-        thinking: display.thinking,
-        content: display.visible,
-      })
+      emitStream()
     })
 
     void withSessionLock(async () => {
@@ -384,8 +474,13 @@ export function usePiAgentChat({
   const runPrompt = useCallback(
     async (params: {
       userMessage: string
+      images?: ImageContent[]
       assistantId: string
-      onStream: (patch: { thinking: string; content: string }) => void
+      onStream: (patch: {
+        thinking: string
+        content: string
+        activity: AssistantActivityItem[]
+      }) => void
       onToolStart?: (item: ChatToolCall) => void
       onToolUpdate?: (toolCallId: string, partialResult: string) => void
       onToolEnd?: (item: ChatToolCall) => void
@@ -409,6 +504,10 @@ export function usePiAgentChat({
         onWorkflowRef.current = params.onWorkflow ?? null
         activeAssistantId.current = params.assistantId
         streamState.current = { content: "", thinking: "" }
+        activityRef.current = []
+        openThinkingIdRef.current = null
+        openTextIdRef.current = null
+        usageAccRef.current = { input: 0, output: 0, cost: 0 }
         agentStepsRef.current = createInitialAgentSteps()
         pendingToolArgsRef.current.clear()
         params.onWorkflow?.(agentStepsRef.current)
@@ -443,7 +542,7 @@ export function usePiAgentChat({
           }, AGENT_PROMPT_TIMEOUT_MS)
 
           try {
-            await promptAgent(agentId, params.userMessage)
+            await promptAgent(agentId, params.userMessage, params.images)
           } catch (error) {
             agentEndResolve.current = null
             throw error
@@ -486,6 +585,9 @@ export function usePiAgentChat({
     onUsageRef.current = null
     onWorkflowRef.current = null
     streamState.current = { content: "", thinking: "" }
+    activityRef.current = []
+    openThinkingIdRef.current = null
+    openTextIdRef.current = null
   }, [])
 
   const resetAgent = useCallback(

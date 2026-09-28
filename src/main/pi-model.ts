@@ -100,6 +100,36 @@ function findPiCatalogModel(provider: KnownProvider, modelId: string): Model<Api
 
 
 
+/** 自定义端点时：按 modelId 在 pi-ai 全目录回查 context/maxTokens（供应商元数据来自目录，非运行时探测） */
+
+function lookupCatalogModelById(modelId: string): Model<Api> | undefined {
+
+  const needle = modelId.trim().toLowerCase()
+
+  if (!needle) return undefined
+
+  for (const provider of getProviders() as readonly string[]) {
+
+    if (!isKnownProvider(provider)) continue
+
+    const hit = getModels(provider).find((m) => {
+
+      const id = m.id.toLowerCase()
+
+      return id === needle || id.endsWith(`/${needle}`) || id.split("/").pop() === needle
+
+    })
+
+    if (hit) return hit as Model<Api>
+
+  }
+
+  return undefined
+
+}
+
+
+
 function fallbackAnthropicTemplate(provider: KnownProvider): Model<Api> | undefined {
 
   if (provider === "minimax-cn") {
@@ -130,6 +160,16 @@ function buildApiModel(
 
 ): Model<Api> {
 
+  // 优先用 pi-ai 内置目录里该模型的上限；目录没有才退保守默认（不假装探测到了供应商）
+
+  const catalog = lookupCatalogModelById(modelId)
+
+  const contextWindow = catalog?.contextWindow ?? 128_000
+
+  const maxTokens = catalog?.maxTokens ?? 16_384
+
+
+
   return {
 
     id: modelId,
@@ -142,15 +182,15 @@ function buildApiModel(
 
     baseUrl,
 
-    reasoning,
+    reasoning: reasoning || Boolean(catalog?.reasoning),
 
-    input: ["text"],
+    input: catalog?.input?.length ? [...catalog.input] : ["text"],
 
-    cost: EMPTY_COST,
+    cost: catalog?.cost ?? EMPTY_COST,
 
-    contextWindow: 204_800,
+    contextWindow,
 
-    maxTokens: 131_072,
+    maxTokens,
 
     ...(compat ? { compat } : {}),
 

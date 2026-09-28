@@ -1,8 +1,9 @@
 import * as React from "react"
 import { NavLink, Link, useLocation } from "react-router"
-import { MessagesSquare, Settings, SlidersHorizontal, Sparkles } from "lucide-react"
+import { MessagesSquare, Settings, SlidersHorizontal } from "lucide-react"
+import { motion } from "framer-motion"
 
-import { CommandPalette } from "~/components/shell/command-palette"
+import { NomiFace } from "~/components/nomi-face"
 import { ModelPill } from "~/components/shell/model-pill"
 import { cn } from "~/lib/utils"
 import { queryClient } from "~/lib/query-client"
@@ -43,18 +44,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <CommandPalette />
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        <aside className="z-30 flex w-48 shrink-0 flex-col border-r border-border/60 bg-card shadow-sm">
-          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4">
-            <Link
-              to="/"
-              className="inline-flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"
-              aria-label="Neezy"
-            >
-              <Sparkles className="size-4" />
+        <aside className="z-30 flex w-16 shrink-0 flex-col items-center border-r border-border/60 bg-card shadow-sm">
+          <div className="flex h-14 shrink-0 items-center justify-center">
+            <Link to="/" aria-label="Neezy" title="Neezy">
+              <NomiFace className="size-9" />
             </Link>
-            <span className="text-sm font-semibold tracking-tight">Neezy</span>
           </div>
 
           <nav className="flex-1 space-y-1 overflow-y-auto p-2">
@@ -65,17 +60,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={href}
                   to={href}
                   end={end}
+                  title={label}
                   className={({ isActive }) =>
                     cn(
-                      "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors hover:bg-muted/60",
-                      isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground/80"
+                      "relative flex h-14 w-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-medium transition-colors hover:bg-muted/60",
+                      isActive ? "text-primary" : "text-foreground/70"
                     )
                   }
                 >
-                  <Icon className="size-5 shrink-0" />
-                  {label}
+                  {({ isActive }) => (
+                    <>
+                      {isActive && (
+                        <motion.span
+                          layoutId="nav-active"
+                          className="absolute inset-0 rounded-xl bg-primary/12"
+                          transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <Icon className="relative size-5 shrink-0" />
+                      <span className="relative">{label}</span>
+                    </>
+                  )}
                 </NavLink>
               )
             })}
@@ -86,9 +91,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-border/60 bg-card px-6 shadow-sm">
             <h1 className="text-sm font-semibold tracking-tight">{headerTitle}</h1>
             <div className="flex items-center gap-2">
-              <kbd className="hidden rounded-lg border border-border/60 bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground sm:inline">
-                ⌘K
-              </kbd>
               <ModelPill />
               <ButtonLinkSettings />
             </div>

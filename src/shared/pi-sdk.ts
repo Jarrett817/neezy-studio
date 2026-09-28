@@ -10,4 +10,10 @@ export type {
 
 export type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core"
 
-export type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai"
+export type {
+  Api,
+  AssistantMessage,
+  ImageContent,
+  Message,
+  Model,
+} from "@earendil-works/pi-ai"

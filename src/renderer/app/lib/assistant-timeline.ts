@@ -2,6 +2,7 @@ import {
   formatToolArgsSummary,
   toolLabel,
   type AgentStep,
+  type AssistantActivityItem,
   type ChatToolCall,
 } from "~/lib/agent-steps"
 
@@ -11,14 +12,27 @@ export type TimelineItem =
   | { id: string; kind: "usage"; text: string }
   | { id: string; kind: "answer"; text: string; streaming?: boolean }
 
-/**
- * 构建线性工作流 timeline。
- * 顺序：thinking → 工具调用（按出现顺序）→ 最终回复。
- * 去掉抽象的 "规划中/分析中" 步骤，只展示实际动作。
- */
+function toolToStepItem(tool: ChatToolCall): TimelineItem {
+  const stepId = `tool-${tool.toolCallId}`
+  return {
+    id: stepId,
+    kind: "step",
+    step: {
+      id: stepId,
+      label: toolLabel(tool.name),
+      detail: formatToolArgsSummary(tool.name, tool.args),
+      status: tool.status === "running" ? "active" : "done",
+      variant: tool.status === "error" ? "error" : undefined,
+    },
+    tool,
+  }
+}
+
+/** 按 activity 原样罗列；无 activity 时回退 thinking → tools → answer。usage 始终在末尾。 */
 export function buildAssistantTimeline(input: {
   agentSteps?: AgentStep[]
   toolCalls?: ChatToolCall[]
+  activity?: AssistantActivityItem[]
   thinking?: string
   content?: string
   usageSummary?: string
@@ -26,56 +40,81 @@ export function buildAssistantTimeline(input: {
 }): TimelineItem[] {
   const items: TimelineItem[] = []
   const toolCalls = input.toolCalls ?? []
-  const answerText = input.content?.trim() ?? ""
+  const toolById = new Map(toolCalls.map((t) => [t.toolCallId, t]))
+  const activity = input.activity ?? []
+  const streaming = Boolean(input.isStreaming)
 
-  // 1. 思考过程（如果有）。仍在流式且尚无正式回复时，视为"思考进行中"
-  const thinkingText = input.thinking?.trim() ?? ""
-  if (thinkingText) {
-    items.push({
-      id: "thinking",
-      kind: "thinking",
-      text: thinkingText,
-      streaming: Boolean(input.isStreaming) && !answerText,
-    })
+  if (activity.length > 0) {
+    const seenTools = new Set<string>()
+    const last = activity.at(-1)
+    for (const entry of activity) {
+      const isLast = entry === last
+      if (entry.kind === "thinking") {
+        const text = entry.text.trim()
+        if (!text && !streaming) continue
+        items.push({
+          id: entry.id,
+          kind: "thinking",
+          text,
+          streaming: streaming && isLast,
+        })
+        continue
+      }
+      if (entry.kind === "text") {
+        items.push({
+          id: entry.id,
+          kind: "answer",
+          text: entry.text,
+          streaming: streaming && isLast,
+        })
+        continue
+      }
+      const tool = toolById.get(entry.toolCallId)
+      if (!tool) continue
+      seenTools.add(tool.toolCallId)
+      items.push(toolToStepItem(tool))
+    }
+    for (const tool of toolCalls) {
+      if (!seenTools.has(tool.toolCallId)) items.push(toolToStepItem(tool))
+    }
+    if (streaming) {
+      const lastItem = items.at(-1)
+      if (lastItem?.kind === "step") {
+        items.push({ id: "answer-pending", kind: "answer", text: "", streaming: true })
+      }
+    }
+  } else {
+    const thinkingText = input.thinking?.trim() ?? ""
+    if (thinkingText) {
+      items.push({
+        id: "thinking",
+        kind: "thinking",
+        text: thinkingText,
+        streaming,
+      })
+    }
+    for (const tool of toolCalls) {
+      items.push(toolToStepItem(tool))
+    }
+    const answerText = input.content?.trim() ?? ""
+    if (answerText || streaming) {
+      items.push({
+        id: "answer",
+        kind: "answer",
+        text: answerText,
+        streaming,
+      })
+    }
   }
 
-  // 2. 工具调用（按顺序，每个都是独立步骤）
-  for (const tool of toolCalls) {
-    const stepId = `tool-${tool.toolCallId}`
-    items.push({
-      id: stepId,
-      kind: "step",
-      step: {
-        id: stepId,
-        label: toolLabel(tool.name),
-        detail: formatToolArgsSummary(tool.name, tool.args),
-        status: tool.status === "running" ? "active" : "done",
-        variant: tool.status === "error" ? "error" : undefined,
-      },
-      tool,
-    })
-  }
-
-  // 3. Token 用量
   const usage = input.usageSummary?.trim()
   if (usage) {
     items.push({ id: "usage", kind: "usage", text: usage })
   }
 
-  // 4. 最终回复
-  if (answerText || input.isStreaming) {
-    items.push({
-      id: "answer",
-      kind: "answer",
-      text: answerText,
-      streaming: input.isStreaming,
-    })
-  }
-
   return items
 }
 
-// 兼容旧代码引用
 export function resolveWorkflowSteps(
   agentSteps: AgentStep[] | undefined,
   toolCalls: ChatToolCall[]

@@ -4,15 +4,17 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 
 import { toast } from "sonner"
 
 import type { Editor } from "@tiptap/core"
+import type { JSONContent } from "@tiptap/react"
 
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
 import { tiptapExtensions } from "~/lib/tiptap-extensions"
-import { fileToBase64DataUrl } from "~/services/chat-content"
+import { compressImageToDataUrl, isTiptapEmpty } from "~/services/chat-content"
 
 /** 命令式句柄：父组件通过 ref 取内容/清空，避免每次按键都 setState 触发页面重渲染 */
 export type ChatEditorHandle = {
   getText: () => string
+  getJSON: () => JSONContent | null
   clear: () => void
   focus: () => void
 }
@@ -40,12 +42,12 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
   const insertImage = useCallback(async (file: File) => {
     const ed = editorRef.current
     if (!ed) return
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("图片过大（>8MB）")
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("图片过大（>20MB）")
       return
     }
     try {
-      const dataUrl = await fileToBase64DataUrl(file)
+      const dataUrl = await compressImageToDataUrl(file)
       ed.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "读取图片失败")
@@ -57,7 +59,7 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
     content: "",
     editable: !disabled,
     onUpdate: ({ editor: ed }) => {
-      const empty = ed.isEmpty
+      const empty = isTiptapEmpty(ed.getJSON())
       if (empty !== wasEmptyRef.current) {
         wasEmptyRef.current = empty
         onEmptyChangeRef.current?.(empty)
@@ -117,9 +119,11 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
     ref,
     () => ({
       getText: () => editorRef.current?.getText().trim() ?? "",
+      getJSON: () => editorRef.current?.getJSON() ?? null,
       clear: () => {
         editorRef.current?.commands.clearContent()
         wasEmptyRef.current = true
+        onEmptyChangeRef.current?.(true)
       },
       focus: () => editorRef.current?.commands.focus(),
     }),

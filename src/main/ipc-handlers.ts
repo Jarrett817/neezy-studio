@@ -6,9 +6,12 @@ import {
   configureAgentSession,
   createAgentSession,
   destroyAgentSession,
+  getAgentContextUsage,
   getPiSessionsDirectory,
   invalidatePiResourceLoaderCache,
+  listAgentSkillCommands,
   promptAgent,
+  renameAgentSession,
   resolvePermissionPrompt,
 } from "./pi-agent"
 import {
@@ -130,6 +133,25 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     (_event, keepSessionId?: string | null) =>
       pruneEmptyPiChatSessions(app, keepSessionId ?? null)
   )
+  ipcMain.handle(
+    "pi-sessions:rename",
+    async (_event, payload: { sessionId?: string; name?: string }) => {
+      const sessionId = payload?.sessionId?.trim() ?? ""
+      if (!sessionId) throw new Error("无效会话 id")
+      await renameAgentSession(sessionId, payload?.name ?? "")
+      return { ok: true }
+    }
+  )
+  ipcMain.handle("agent:context-usage", (_event, payload: { sessionId?: string }) => {
+    const sessionId = payload?.sessionId?.trim() ?? ""
+    if (!sessionId) return null
+    return getAgentContextUsage(sessionId)
+  })
+  ipcMain.handle("agent:skill-commands", (_event, payload: { sessionId?: string }) => {
+    const sessionId = payload?.sessionId?.trim() ?? ""
+    if (!sessionId) return []
+    return listAgentSkillCommands(sessionId)
+  })
 
   ipcMain.handle(
     "agent:create",

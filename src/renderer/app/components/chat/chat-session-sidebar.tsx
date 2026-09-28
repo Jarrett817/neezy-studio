@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { History, MessageSquarePlus, Search, Trash2 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { History, MessageSquarePlus, Pencil, Search, Trash2 } from "lucide-react"
+import { useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
@@ -12,12 +12,14 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet"
+import { SESSION_NAME_MAX_LENGTH } from "../../../../shared/pi-session-dto"
 import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import {
   ensureActivePiChatSession,
   listPiChatSessions,
   removePiChatSession,
+  renamePiChatSession,
   sessionListPreview,
   sessionListTitle,
   startNewPiChatSession,
@@ -35,6 +37,9 @@ export function ChatSessionSidebar({
   const queryClient = useQueryClient()
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftName, setDraftName] = useState("")
+  const skipRenameBlur = useRef(false)
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["chat-sessions", "sidebar"],
@@ -64,6 +69,28 @@ export function ChatSessionSidebar({
       toast.error(error instanceof Error ? error.message : "新建失败")
     },
   })
+
+  const renameMutation = useMutation({
+    mutationFn: ({ sessionId, name }: { sessionId: string; name: string }) =>
+      renamePiChatSession(sessionId, name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      setEditingId(null)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "重命名失败")
+    },
+  })
+
+  const commitRename = (sessionId: string) => {
+    const name = draftName.trim()
+    if (!name) {
+      setEditingId(null)
+      return
+    }
+    renameMutation.mutate({ sessionId, name })
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (sessionId: string) => removePiChatSession(sessionId),
@@ -140,20 +167,60 @@ export function ChatSessionSidebar({
                             : "hover:bg-muted/50"
                         )}
                       >
+                        {editingId === session.id ? (
+                          <Input
+                            autoFocus
+                            className="h-8 min-w-0 flex-1 text-xs"
+                            maxLength={SESSION_NAME_MAX_LENGTH}
+                            value={draftName}
+                            onChange={(e) => setDraftName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                commitRename(session.id)
+                              }
+                              if (e.key === "Escape") {
+                                skipRenameBlur.current = true
+                                setEditingId(null)
+                              }
+                            }}
+                            onBlur={() => {
+                              if (skipRenameBlur.current) {
+                                skipRenameBlur.current = false
+                                return
+                              }
+                              commitRename(session.id)
+                            }}
+                          />
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            className="h-auto min-w-0 flex-1 flex-col items-start gap-0.5 px-0 py-0 text-left hover:bg-transparent"
+                            onClick={() => {
+                              onSelectSession(session.id)
+                              setOpen(false)
+                            }}
+                          >
+                            <span className="w-full truncate text-sm font-medium">
+                              {sessionListTitle(session)}
+                            </span>
+                            <span className="w-full truncate text-xs font-normal text-muted-foreground">
+                              {sessionListPreview(session) || timeLabel || "—"}
+                            </span>
+                          </Button>
+                        )}
                         <Button
+                          type="button"
                           variant="ghost"
-                          className="h-auto min-w-0 flex-1 flex-col items-start gap-0.5 px-0 py-0 text-left hover:bg-transparent"
+                          size="icon"
+                          className="size-8 shrink-0 opacity-0 group-hover:opacity-100"
                           onClick={() => {
-                            onSelectSession(session.id)
-                            setOpen(false)
+                            setDraftName(sessionListTitle(session))
+                            setEditingId(session.id)
                           }}
+                          aria-label="重命名对话"
                         >
-                          <span className="w-full truncate text-sm font-medium">
-                            {sessionListTitle(session)}
-                          </span>
-                          <span className="w-full truncate text-xs font-normal text-muted-foreground">
-                            {sessionListPreview(session) || timeLabel || "—"}
-                          </span>
+                          <Pencil className="size-3.5" />
                         </Button>
                         <Button
                           type="button"

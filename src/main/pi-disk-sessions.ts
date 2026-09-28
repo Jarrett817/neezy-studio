@@ -4,7 +4,7 @@ import fsSync from "node:fs"
 import fs from "node:fs/promises"
 
 import type { AgentMessage } from "../shared/pi-sdk"
-import type { ChatWireMessage, ChatWireToolCall } from "../shared/chat-wire"
+import { formatWireUsage, type ChatWireMessage, type ChatWireToolCall } from "../shared/chat-wire"
 import {
   sessionListPreview,
   sessionListTitle,
@@ -235,6 +235,9 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
       const { text, thinking } = textFromContent(msg.content)
       const { activity, toolCalls } = activityFromAssistantContent(msg.content, msg.timestamp)
       if (!text.trim() && !thinking.trim() && toolCalls.length === 0) continue
+      const usageSummary = formatWireUsage(
+        "usage" in msg ? msg.usage : undefined
+      )
       out.push({
         id: `pi-${msg.timestamp}`,
         role: "assistant",
@@ -242,6 +245,7 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
         thinking,
         activity: activity?.length ? activity : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        usageSummary,
         timestamp: msg.timestamp,
       })
     }

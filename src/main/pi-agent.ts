@@ -36,6 +36,8 @@ import {
 } from "./pi-permission-ui"
 import { resolveStoragePaths } from "./storage-paths"
 import { readSoul } from "./soul-store"
+import { SESSION_NAME_MAX_LENGTH } from "../shared/pi-session-dto"
+import type { ContextUsageWire } from "../shared/chat-wire"
 import { log } from "./logger"
 import { listAllInstalledSkillDirs } from "./skill-install"
 
@@ -49,11 +51,12 @@ interface IpcAgentSession {
   session: AgentSession
   unsubscribe: () => void
   window: BrowserWindow
-  /** ResourceLoader/extension 提供的基础 systemPrompt，configure 时覆盖重建的基准 */
-  basePrompt: string
 }
 
 const ipcSessions = new Map<string, IpcAgentSession>()
+
+/** 产品层 systemPrompt + soul，经 before_agent_start 写入 appendSystemPrompt（0.87+ systemPrompt 只读） */
+const productAppendBySessionId = new Map<string, string>()
 
 /** 同一陈旧 id 多次 agent:create 时复用已恢复的磁盘会话，避免疯狂新建 */
 const staleDiskSessionRecovery = new Map<string, string>()
@@ -91,7 +94,7 @@ async function getResourceLoader(
   settingsManager: SettingsManager
 ): Promise<ResourceLoader> {
   const skillKey = listAllInstalledSkillDirs(cwd).sort().join(",")
-  const key = `${cwd}\0${agentDir}\0${skillKey}`
+  const key = `${cwd}\0${agentDir}\0${skillKey}\0product-prompt`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader
   }
@@ -102,6 +105,22 @@ async function getResourceLoader(
     settingsManager,
     additionalExtensionPaths: getBundledPiExtensionPaths(),
     additionalSkillPaths: resolveAdditionalSkillPaths(cwd),
+    extensionFactories: [
+      {
+        name: "neezy-product-prompt",
+        hidden: true,
+        factory: (pi) => {
+          pi.on("before_agent_start", (event, ctx) => {
+            const append = productAppendBySessionId.get(ctx.sessionManager.getSessionId())
+            if (!append) return
+            const prev = event.systemPromptOptions.appendSystemPrompt.trim()
+            event.systemPromptOptions.appendSystemPrompt = prev
+              ? `${prev}\n\n${append}`
+              : append
+          })
+        },
+      },
+    ],
   })
   await loader.reload()
   const ext = loader.getExtensions()
@@ -238,7 +257,6 @@ export async function createAgentSession(
     session,
     unsubscribe,
     window,
-    basePrompt: session.agent.state.systemPrompt?.trim() ?? "",
   })
   return diskSessionId
 }
@@ -251,9 +269,11 @@ export async function configureAgentSession(
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) throw new Error("session not found")
   const soul = await readSoul()
-  const parts = [entry.basePrompt, config.systemPrompt].filter(Boolean)
-  if (soul) parts.push(`【长期沉淀 soul.md】\n${soul}`)
-  entry.session.agent.state.systemPrompt = parts.join("\n\n")
+  const parts = [
+    config.systemPrompt.trim(),
+    soul ? `【长期沉淀 soul.md】\n${soul}` : "",
+  ].filter(Boolean)
+  productAppendBySessionId.set(diskSessionId, parts.join("\n\n"))
   await syncSessionChatRoute(entry.session)
 }
 
@@ -346,6 +366,41 @@ export function abortAgentSession(diskSessionId: string): void {
   ipcSessions.get(diskSessionId)?.session.agent.abort()
 }
 
+export function getAgentContextUsage(diskSessionId: string): ContextUsageWire | null {
+  const usage = ipcSessions.get(diskSessionId)?.session.getContextUsage()
+  if (!usage) return null
+  return {
+    tokens: usage.tokens,
+    contextWindow: usage.contextWindow,
+    percent: usage.percent,
+  }
+}
+
+export function listAgentSkillCommands(
+  diskSessionId: string
+): Array<{ name: string; description: string }> {
+  const skills = ipcSessions.get(diskSessionId)?.session.resourceLoader.getSkills().skills
+  if (!skills) return []
+  return skills
+    .filter((skill) => skill.name.trim().length > 0)
+    .map((skill) => ({ name: skill.name, description: skill.description }))
+}
+
+export async function renameAgentSession(diskSessionId: string, name: string): Promise<void> {
+  const trimmed = name.trim().replace(/\s+/g, " ")
+  if (!trimmed || trimmed.length > SESSION_NAME_MAX_LENGTH || /[\u0000-\u001f]/.test(trimmed)) {
+    throw new Error("会话名称无效")
+  }
+  const live = ipcSessions.get(diskSessionId)
+  if (live) {
+    live.session.setSessionName(trimmed)
+    return
+  }
+  const meta = await findPiSessionById(app, diskSessionId)
+  if (!meta) throw new Error("session not found")
+  openPiSessionManager(app, meta.path).appendSessionInfo(trimmed)
+}
+
 export async function destroyAgentSession(diskSessionId: string): Promise<void> {
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) return
@@ -353,6 +408,7 @@ export async function destroyAgentSession(diskSessionId: string): Promise<void> 
   entry.session.agent.abort()
   entry.unsubscribe()
   ipcSessions.delete(diskSessionId)
+  productAppendBySessionId.delete(diskSessionId)
 }
 
 export function agentSessionExists(diskSessionId: string): boolean {

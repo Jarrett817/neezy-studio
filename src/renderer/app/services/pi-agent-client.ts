@@ -1,3 +1,4 @@
+import type { ContextUsageWire } from "../../../shared/chat-wire"
 import type { AgentSessionEvent, ImageContent } from "../../../shared/pi-sdk"
 import { getElectronApi } from "./electron-client"
 
@@ -33,6 +34,18 @@ export async function promptAgent(
   images?: ImageContent[]
 ): Promise<{ ok: boolean }> {
   return getElectronApi().invoke("agent:prompt", { sessionId, message, images })
+}
+
+export async function getAgentContextUsage(
+  sessionId: string
+): Promise<ContextUsageWire | null> {
+  return getElectronApi().invoke("agent:context-usage", { sessionId })
+}
+
+export async function listAgentSkillCommands(
+  sessionId: string
+): Promise<Array<{ name: string; description: string }>> {
+  return getElectronApi().invoke("agent:skill-commands", { sessionId })
 }
 
 export async function abortAgentSession(sessionId: string): Promise<{ ok: boolean }> {

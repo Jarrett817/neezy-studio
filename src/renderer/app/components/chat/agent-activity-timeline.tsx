@@ -263,8 +263,8 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
 
   if (item.kind === "usage") {
     return (
-      <p className="pt-1 text-[11px] tabular-nums tracking-wide text-muted-foreground">
-        Token · {item.text}
+      <p className="pt-1 text-[11px] tabular-nums text-muted-foreground">
+        {item.text}
       </p>
     )
   }

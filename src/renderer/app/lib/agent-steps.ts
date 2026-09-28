@@ -145,7 +145,7 @@ export function formatUsageSummary(usage: {
 }): string {
   const inTok = usage.input ?? 0
   const outTok = usage.output ?? 0
-  const parts = [`${inTok} 入 · ${outTok} 出`]
+  const parts = [`输入 ${inTok}`, `输出 ${outTok}`]
   if (usage.cost?.total != null && usage.cost.total > 0) {
     parts.push(`$${usage.cost.total.toFixed(4)}`)
   }

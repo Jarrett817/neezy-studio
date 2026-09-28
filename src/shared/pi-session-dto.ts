@@ -14,6 +14,8 @@ export function toSessionInfoDto(info: SessionInfo): SessionInfoDto {
   }
 }
 
+export const SESSION_NAME_MAX_LENGTH = 80
+
 export function sessionListTitle(info: SessionInfoDto): string {
   return info.name?.trim() || info.firstMessage?.trim().slice(0, 32) || "新对话"
 }

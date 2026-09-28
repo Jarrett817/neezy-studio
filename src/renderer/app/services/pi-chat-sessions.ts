@@ -33,6 +33,10 @@ export async function loadPiChatMessages(sessionId: string): Promise<ChatMessage
   return getElectronApi().invoke("pi-sessions:load-messages", sessionId)
 }
 
+export async function renamePiChatSession(sessionId: string, name: string): Promise<void> {
+  await getElectronApi().invoke("pi-sessions:rename", { sessionId, name })
+}
+
 export async function deletePiChatSession(sessionId: string): Promise<void> {
   await getElectronApi().invoke("pi-sessions:delete", sessionId)
 }

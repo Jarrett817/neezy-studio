@@ -1,6 +1,6 @@
 import { EditorContent, useEditor } from "@tiptap/react"
 import { ImagePlus, LinkIcon } from "lucide-react"
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { Editor } from "@tiptap/core"
@@ -19,25 +19,70 @@ export type ChatEditorHandle = {
   focus: () => void
 }
 
+export type SkillSlashItem = { name: string; description: string }
+
 export type ChatEditorProps = {
   placeholder?: string
   disabled?: boolean
   onSubmit?: () => void
   /** 仅在"空 ↔ 非空"切换时触发，用于发送按钮启用态，而非每次按键 */
   onEmptyChange?: (empty: boolean) => void
+  skills?: SkillSlashItem[]
   className?: string
 }
 
+type SlashState = { query: string; index: number } | null
+
+function matchSkillSlash(skills: SkillSlashItem[], query: string): SkillSlashItem[] {
+  const q = query.toLowerCase().replace(/^skill:/, "")
+  return skills
+    .filter((skill) => {
+      if (!q) return true
+      return [skill.name, skill.description].some((field) => field.toLowerCase().includes(q))
+    })
+    .slice(0, 8)
+}
+
 export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function ChatEditor(
-  { placeholder = "输入消息…", disabled, onSubmit, onEmptyChange, className },
+  { placeholder = "输入消息…", disabled, onSubmit, onEmptyChange, skills = [], className },
   ref
 ) {
   const editorRef = useRef<Editor | null>(null)
   const wasEmptyRef = useRef(true)
   const onSubmitRef = useRef(onSubmit)
   const onEmptyChangeRef = useRef(onEmptyChange)
+  const skillsRef = useRef(skills)
+  const slashRef = useRef<SlashState>(null)
+  const [slash, setSlash] = useState<SlashState>(null)
+  skillsRef.current = skills
+  slashRef.current = slash
   useEffect(() => { onSubmitRef.current = onSubmit }, [onSubmit])
   useEffect(() => { onEmptyChangeRef.current = onEmptyChange }, [onEmptyChange])
+
+  const setSlashState = useCallback((next: SlashState) => {
+    slashRef.current = next
+    setSlash(next)
+  }, [])
+
+  const applySkill = useCallback((skill: SkillSlashItem) => {
+    const ed = editorRef.current
+    if (!ed) return
+    ed.chain()
+      .focus()
+      .setContent({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: `/skill:${skill.name} ` }],
+          },
+        ],
+      })
+      .run()
+    wasEmptyRef.current = false
+    onEmptyChangeRef.current?.(false)
+    setSlashState(null)
+  }, [setSlashState])
 
   const insertImage = useCallback(async (file: File) => {
     const ed = editorRef.current
@@ -63,6 +108,14 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
       if (empty !== wasEmptyRef.current) {
         wasEmptyRef.current = empty
         onEmptyChangeRef.current?.(empty)
+      }
+      const text = ed.getText().trim()
+      if (text.startsWith("/") && !text.slice(1).includes(" ") && !text.includes("\n")) {
+        const query = text.slice(1)
+        const prev = slashRef.current
+        if (!prev || prev.query !== query) setSlashState({ query, index: 0 })
+      } else if (slashRef.current) {
+        setSlashState(null)
       }
     },
     editorProps: {
@@ -99,6 +152,27 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
         return true
       },
       handleKeyDown(_, event) {
+        const current = slashRef.current
+        const matches = current ? matchSkillSlash(skillsRef.current, current.query) : []
+        if (current && matches.length > 0) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault()
+            const delta = event.key === "ArrowDown" ? 1 : -1
+            const index = (current.index + delta + matches.length) % matches.length
+            setSlashState({ query: current.query, index })
+            return true
+          }
+          if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+            event.preventDefault()
+            const skill = matches[current.index] ?? matches[0]
+            if (skill) applySkill(skill)
+            return true
+          }
+        }
+        if (event.key === "Escape" && current) {
+          setSlashState(null)
+          return true
+        }
         if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
           if (onSubmitRef.current) {
             event.preventDefault()
@@ -166,8 +240,35 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
     return <div className={cn("rounded-xl min-h-[56px]", className)} />
   }
 
+  const slashMatches = slash ? matchSkillSlash(skills, slash.query) : []
+
   return (
-    <div className={cn("overflow-hidden rounded-xl", className)}>
+    <div className={cn("relative rounded-xl", className)}>
+      {slash && slashMatches.length > 0 ? (
+        <ul className="absolute bottom-full left-3 right-3 z-20 mb-1 max-h-56 overflow-y-auto rounded-xl border border-border/70 bg-popover p-1 shadow-lg">
+          {slashMatches.map((skill, index) => (
+            <li key={skill.name}>
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-1.5 text-left",
+                  index === slash.index ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
+                )}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setSlashState({ query: slash.query, index })}
+                onClick={() => applySkill(skill)}
+              >
+                <span className="font-mono text-xs">/skill:{skill.name}</span>
+                {skill.description ? (
+                  <span className="line-clamp-1 w-full text-xs text-muted-foreground">
+                    {skill.description}
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <EditorContent editor={editor} />
       <div className="flex items-center gap-1 px-3 pb-1.5">
         <ActionButton label="插入图片" onClick={pickImage}>

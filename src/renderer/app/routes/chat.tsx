@@ -21,6 +21,8 @@ import {
   extractImageContentsFromTiptap,
   tiptapToPlainText,
 } from "~/services/chat-content"
+import { getAgentContextUsage, listAgentSkillCommands } from "~/services/pi-agent-client"
+import { formatContextUsage } from "../../../shared/chat-wire"
 
 const ChatOptionsSheet = lazy(() => import("~/components/chat/chat-options-sheet"))
 
@@ -80,8 +82,23 @@ export default function ChatRoute() {
 
   useEffect(() => {
     if (!sessionsReady || !activeSessionId) return
-    void resetAgent([], activeSessionId).catch(() => {})
-  }, [activeSessionId, sessionsReady, resetAgent])
+    void resetAgent([], activeSessionId).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ["agent-context-usage", activeSessionId] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-skill-commands", activeSessionId] })
+    }).catch(() => {})
+  }, [activeSessionId, sessionsReady, resetAgent, queryClient])
+
+  const { data: contextUsage } = useQuery({
+    queryKey: ["agent-context-usage", activeSessionId],
+    queryFn: () => getAgentContextUsage(activeSessionId!),
+    enabled: Boolean(activeSessionId && sessionsReady && !isGenerating),
+  })
+
+  const { data: skillCommands = [] } = useQuery({
+    queryKey: ["agent-skill-commands", activeSessionId],
+    queryFn: () => listAgentSkillCommands(activeSessionId!),
+    enabled: Boolean(activeSessionId && sessionsReady),
+  })
 
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
@@ -162,6 +179,11 @@ export default function ChatRoute() {
               <MessageSquarePlus className="size-4" />
             </Button>
             <ChatModelStatus className="min-w-0 flex-1" />
+            {contextUsage ? (
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {formatContextUsage(contextUsage)}
+              </span>
+            ) : null}
             <Button
               variant="ghost"
               size="icon"
@@ -200,7 +222,7 @@ export default function ChatRoute() {
 
         <div className="shrink-0 px-6 pb-5">
           <div className="mx-auto max-w-3xl">
-            <div className="overflow-hidden rounded-[24px] border border-border/70 bg-background/70 shadow-sm backdrop-blur-sm transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25 dark:border-border/50 dark:bg-card/60">
+            <div className="overflow-visible rounded-[24px] border border-border/70 bg-background/70 shadow-sm backdrop-blur-sm transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25 dark:border-border/50 dark:bg-card/60">
               {attachedFile && (
                 <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">
                   <FileText className="size-4 shrink-0 text-primary" />
@@ -213,8 +235,9 @@ export default function ChatRoute() {
               <ChatEditor
                 ref={editorRef}
                 onEmptyChange={(empty) => setHasText(!empty)}
-                placeholder="输入消息…"
+                placeholder="输入消息，/ 调用技能"
                 disabled={isGenerating}
+                skills={skillCommands}
                 onSubmit={() => doSend()}
               />
               <div className="flex items-center justify-between gap-3 px-3 pb-2.5">

@@ -154,13 +154,6 @@ type ElectronApi = {
     title?: string
     defaultPath?: string
   }) => Promise<string | null>
-  pickDocuments?: () => Promise<string[]>
-  ingestDocument?: (filePath: string) => Promise<{
-    fileName: string
-    title: string
-    fullText: string
-    chunks: { index: number; title: string; content: string }[]
-  }>
   join: (...parts: string[]) => Promise<string>
   exists: (path: string) => Promise<boolean>
   mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>

@@ -1,6 +1,6 @@
 ﻿import { Component, type ReactNode } from "react"
 import {
-  BrowserRouter,
+  HashRouter,
   Navigate,
   Outlet,
   Route,
@@ -55,7 +55,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppErrorBoundary>
-        <BrowserRouter>
+        <HashRouter>
           <Routes>
             <Route element={<ShellLayout />}>
               <Route index element={<Navigate to="/chat" replace />} />
@@ -66,7 +66,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/chat" replace />} />
             </Route>
           </Routes>
-        </BrowserRouter>
+        </HashRouter>
         <Toaster position="top-center" />
       </AppErrorBoundary>
     </QueryClientProvider>

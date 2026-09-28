@@ -25,7 +25,6 @@ import {
 import { getPiAuthStorage, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, applyDashScopeAgentFixes, resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
-import { applyPlaywrightBrowsersPath } from "./playwright-browser-setup"
 import { getNeezyCustomTools } from "./pi-tool-registry"
 import {
   getBundledPiExtensionPaths,
@@ -122,7 +121,6 @@ async function getResourceLoader(
   const loaded = ext.extensions.map((e) => e.path)
   const hasPermissionSystem = loaded.some((p) => p.includes("pi-permission-system"))
   const hasWebAccess = loaded.some((p) => p.includes("pi-web-access"))
-  const hasTextBrowser = loaded.some((p) => p.includes("pi-textbrowser"))
   if (!hasPermissionSystem) {
     log.error(
       "[pi-agent] pi-permission-system 未加载，文件读写/bash 不会出现确认框。请查看上方 extension load failed 日志。"
@@ -131,11 +129,6 @@ async function getResourceLoader(
   if (!hasWebAccess) {
     log.error(
       "[pi-agent] pi-web-access 未加载，web_search / fetch_content 等不可用。请查看上方 extension load failed 日志。"
-    )
-  }
-  if (!hasTextBrowser) {
-    log.error(
-      "[pi-agent] pi-textbrowser 未加载，browser_navigate 等不可用。请查看上方 extension load failed 日志。"
     )
   }
   if (!bundledExtensionsLogged && loaded.length > 0) {
@@ -201,7 +194,6 @@ async function resolveSessionManager(
 }
 
 async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
-  applyPlaywrightBrowsersPath()
   const { cwd, agentDir } = getPiDirs()
   const model = resolvePiChatModel()
   syncPiAuthForRoute()

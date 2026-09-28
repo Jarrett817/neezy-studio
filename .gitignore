@@ -18,3 +18,12 @@
 
 /release
 /dist-*
+/build-*
+/release-*
+/out-*
+/v1
+/v2
+/w
+/pkg
+/pkg2
+/release*

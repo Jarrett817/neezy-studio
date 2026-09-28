@@ -2,12 +2,8 @@ import "./chromium-fetch"
 import "./core-ipc"
 
 import type { BrowserWindow } from "electron"
-import { app, BrowserWindow as BrowserWindowCtor, dialog, ipcMain } from "electron"
+import { app, BrowserWindow as BrowserWindowCtor, dialog, ipcMain, Menu } from "electron"
 
-import {
-  applyPlaywrightBrowsersPath,
-  ensurePlaywrightChromium,
-} from "./playwright-browser-setup"
 import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import os from "node:os"
@@ -104,21 +100,14 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    Menu.setApplicationMenu(null)
     await initMainLogger()
     const paths = getPaths()
     await storagePaths.ensureStorageDirs(paths)
     const appConfig = loadAppConfig(app)
     applyAppConfig(app, appConfig)
-    applyPlaywrightBrowsersPath()
 
     await createWindow()
-
-    void ensurePlaywrightChromium().catch((error) => {
-      log.warn(
-        "[main] Chromium 后台下载失败（使用 browser_* 时会重试）:",
-        error instanceof Error ? error.message : error
-      )
-    })
   } catch (error) {
     console.error("[main] startup failed:", error)
     dialog.showErrorBox(

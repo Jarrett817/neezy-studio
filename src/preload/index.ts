@@ -2,8 +2,6 @@ import { contextBridge, ipcRenderer, webUtils } from "electron"
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getBuildInfo: () => ipcRenderer.invoke("app:get-build-info"),
-  getPlaywrightBrowserStatus: () => ipcRenderer.invoke("app:get-playwright-browser-status"),
-  ensurePlaywrightBrowser: () => ipcRenderer.invoke("app:ensure-playwright-browser"),
   syncRuntimeSettings: (settings: unknown) =>
     ipcRenderer.invoke("app:sync-runtime-settings", settings),
   getAppConfig: () => ipcRenderer.invoke("app:get-app-config"),
@@ -18,9 +16,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   resetStoragePaths: () => ipcRenderer.invoke("app:reset-storage-paths"),
   pickDirectory: (options?: { title?: string; defaultPath?: string }) =>
     ipcRenderer.invoke("app:pick-directory", options),
-  pickDocuments: () => ipcRenderer.invoke("app:pick-documents"),
-  ingestDocument: (filePath: string) =>
-    ipcRenderer.invoke("knowledge:ingest-document", filePath),
   join: (...parts: string[]) => ipcRenderer.invoke("path:join", ...parts),
   exists: (targetPath: string) => ipcRenderer.invoke("fs:exists", targetPath),
   mkdir: (targetPath: string, options?: { recursive?: boolean }) =>

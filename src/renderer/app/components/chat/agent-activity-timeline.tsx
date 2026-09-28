@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Loader2 } from "lucide-react"
+import { AlertCircle, Check, ChevronRight, Loader2 } from "lucide-react"
 
 import { MarkdownContent } from "~/components/markdown-content"
 import {
@@ -137,6 +137,31 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
   )
 }
 
+function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  return (
+    <details
+      key={streaming ? "thinking-open" : "thinking-done"}
+      open={streaming}
+      className="group rounded-lg border border-border/40 bg-muted/15"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[11px] font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" />
+        {streaming ? (
+          <>
+            <span>思考中</span>
+            <Loader2 className="size-3 animate-spin" />
+          </>
+        ) : (
+          <span>思考过程</span>
+        )}
+      </summary>
+      <div className="border-t border-border/30 px-3 py-2.5 text-[12px] leading-relaxed text-foreground/75">
+        <MarkdownContent content={text} variant="chat" />
+      </div>
+    </details>
+  )
+}
+
 function TimelineBlock({ item }: { item: TimelineItem }) {
   if (item.kind === "step") {
     if (item.tool) {
@@ -146,16 +171,7 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
   }
 
   if (item.kind === "thinking") {
-    return (
-      <div className="rounded-lg border border-border/40 bg-muted/15 px-3 py-2.5">
-        <p className="mb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-          模型思考
-        </p>
-        <pre className="max-h-64 overflow-y-auto text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85">
-          {item.text}
-        </pre>
-      </div>
-    )
+    return <ThinkingBlock text={item.text} streaming={item.streaming} />
   }
 
   if (item.kind === "usage") {

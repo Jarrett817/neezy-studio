@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url"
 
 const BUNDLED_PI_PACKAGES = [
   "pi-web-access",
-  "pi-textbrowser",
   "pi-permission-system",
   ...(process.platform === "darwin" || process.platform === "linux" ? (["pi-sandbox"] as const) : []),
 ] as const

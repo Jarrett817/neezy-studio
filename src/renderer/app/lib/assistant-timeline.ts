@@ -7,7 +7,7 @@ import {
 
 export type TimelineItem =
   | { id: string; kind: "step"; step: AgentStep; tool?: ChatToolCall }
-  | { id: string; kind: "thinking"; text: string }
+  | { id: string; kind: "thinking"; text: string; streaming?: boolean }
   | { id: string; kind: "usage"; text: string }
   | { id: string; kind: "answer"; text: string; streaming?: boolean }
 
@@ -26,11 +26,17 @@ export function buildAssistantTimeline(input: {
 }): TimelineItem[] {
   const items: TimelineItem[] = []
   const toolCalls = input.toolCalls ?? []
+  const answerText = input.content?.trim() ?? ""
 
-  // 1. 思考过程（如果有）
+  // 1. 思考过程（如果有）。仍在流式且尚无正式回复时，视为"思考进行中"
   const thinkingText = input.thinking?.trim() ?? ""
   if (thinkingText) {
-    items.push({ id: "thinking", kind: "thinking", text: thinkingText })
+    items.push({
+      id: "thinking",
+      kind: "thinking",
+      text: thinkingText,
+      streaming: Boolean(input.isStreaming) && !answerText,
+    })
   }
 
   // 2. 工具调用（按顺序，每个都是独立步骤）
@@ -57,12 +63,11 @@ export function buildAssistantTimeline(input: {
   }
 
   // 4. 最终回复
-  const answer = input.content?.trim() ?? ""
-  if (answer || input.isStreaming) {
+  if (answerText || input.isStreaming) {
     items.push({
       id: "answer",
       kind: "answer",
-      text: answer,
+      text: answerText,
       streaming: input.isStreaming,
     })
   }

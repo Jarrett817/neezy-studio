@@ -39,20 +39,13 @@ import {
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
-import { ingestDocumentFile, INGEST_FILE_EXTENSIONS } from "./knowledge/document-ingest"
 import { log } from "./logger"
-import {
-  ensurePlaywrightChromium,
-  getPlaywrightBrowserStatus,
-} from "./playwright-browser-setup"
 import type { IpcContext } from "./types"
 
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
 export function registerIpcHandlers(ctx: IpcContext): void {
   const { ipcMain, app, dialog, storagePaths } = ctx
 
-  ipcMain.handle("app:get-playwright-browser-status", () => getPlaywrightBrowserStatus())
-  ipcMain.handle("app:ensure-playwright-browser", () => ensurePlaywrightChromium())
   ipcMain.handle("app:test-llm-connection", () => testPiConnection())
 
   ipcMain.handle("app:get-build-info", () => ({
@@ -81,26 +74,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
-  })
-  ipcMain.handle("app:pick-documents", async () => {
-    const result = await dialog.showOpenDialog(ctx.mainWindow ?? (undefined as never), {
-      properties: ["openFile", "multiSelections"],
-      title: "选择要导入的文档",
-      filters: [
-        {
-          name: "文档",
-          extensions: INGEST_FILE_EXTENSIONS,
-        },
-      ],
-    })
-    if (result.canceled) return []
-    return result.filePaths
-  })
-  ipcMain.handle("knowledge:ingest-document", async (_event, filePath: string) => {
-    if (typeof filePath !== "string" || !filePath.trim()) {
-      throw new Error("无效的文件路径")
-    }
-    return ingestDocumentFile(filePath.trim())
   })
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
   ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))

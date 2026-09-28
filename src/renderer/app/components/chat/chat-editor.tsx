@@ -1,6 +1,6 @@
-import { EditorContent, useEditor, type JSONContent } from "@tiptap/react"
+import { EditorContent, useEditor } from "@tiptap/react"
 import { ImagePlus, LinkIcon } from "lucide-react"
-import { useCallback, useEffect, useRef } from "react"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react"
 import { toast } from "sonner"
 
 import type { Editor } from "@tiptap/core"
@@ -10,24 +10,32 @@ import { cn } from "~/lib/utils"
 import { tiptapExtensions } from "~/lib/tiptap-extensions"
 import { fileToBase64DataUrl } from "~/services/chat-content"
 
+/** 命令式句柄：父组件通过 ref 取内容/清空，避免每次按键都 setState 触发页面重渲染 */
+export type ChatEditorHandle = {
+  getText: () => string
+  clear: () => void
+  focus: () => void
+}
+
 export type ChatEditorProps = {
-  value: JSONContent | null
-  onChange: (doc: JSONContent) => void
   placeholder?: string
   disabled?: boolean
   onSubmit?: () => void
+  /** 仅在"空 ↔ 非空"切换时触发，用于发送按钮启用态，而非每次按键 */
+  onEmptyChange?: (empty: boolean) => void
   className?: string
 }
 
-export function ChatEditor({
-  value,
-  onChange,
-  placeholder = "输入消息…",
-  disabled,
-  onSubmit,
-  className,
-}: ChatEditorProps) {
+export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function ChatEditor(
+  { placeholder = "输入消息…", disabled, onSubmit, onEmptyChange, className },
+  ref
+) {
   const editorRef = useRef<Editor | null>(null)
+  const wasEmptyRef = useRef(true)
+  const onSubmitRef = useRef(onSubmit)
+  const onEmptyChangeRef = useRef(onEmptyChange)
+  useEffect(() => { onSubmitRef.current = onSubmit }, [onSubmit])
+  useEffect(() => { onEmptyChangeRef.current = onEmptyChange }, [onEmptyChange])
 
   const insertImage = useCallback(async (file: File) => {
     const ed = editorRef.current
@@ -46,9 +54,15 @@ export function ChatEditor({
 
   const editor = useEditor({
     extensions: tiptapExtensions(placeholder),
-    content: value ?? "",
+    content: "",
     editable: !disabled,
-    onUpdate: ({ editor: ed }) => onChange(ed.getJSON()),
+    onUpdate: ({ editor: ed }) => {
+      const empty = ed.isEmpty
+      if (empty !== wasEmptyRef.current) {
+        wasEmptyRef.current = empty
+        onEmptyChangeRef.current?.(empty)
+      }
+    },
     editorProps: {
       attributes: {
         class: cn(
@@ -84,9 +98,9 @@ export function ChatEditor({
       },
       handleKeyDown(_, event) {
         if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-          if (onSubmit) {
+          if (onSubmitRef.current) {
             event.preventDefault()
-            onSubmit()
+            onSubmitRef.current()
             return true
           }
         }
@@ -98,6 +112,19 @@ export function ChatEditor({
   useEffect(() => {
     editorRef.current = editor
   }, [editor])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getText: () => editorRef.current?.getText().trim() ?? "",
+      clear: () => {
+        editorRef.current?.commands.clearContent()
+        wasEmptyRef.current = true
+      },
+      focus: () => editorRef.current?.commands.focus(),
+    }),
+    []
+  )
 
   const pickImage = useCallback(() => {
     const input = document.createElement("input")
@@ -148,7 +175,7 @@ export function ChatEditor({
       </div>
     </div>
   )
-}
+})
 
 function ActionButton({
   label,

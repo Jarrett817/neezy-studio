@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect, useCallback, useEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 import { useQuery } from "@tanstack/react-query"
 import { MoreHorizontal, Paperclip, Square, ArrowUp, X, Sparkles, FileText, Loader2 } from "lucide-react"
@@ -7,7 +7,7 @@ import { ChatModelStatus } from "~/components/chat/chat-model-status"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
 import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
 import { ChatMessageBubble } from "~/components/chat/chat-message"
-import { ChatEditor } from "~/components/chat/chat-editor"
+import { ChatEditor, type ChatEditorHandle } from "~/components/chat/chat-editor"
 import { Button } from "~/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet"
 import { entryDisplayName } from "~/config/chat-models"
@@ -15,31 +15,14 @@ import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 import { useAppStore } from "~/stores/app-store"
 import { useChatSession } from "~/hooks/use-chat-session"
 import { useChatSend } from "~/hooks/use-chat-send"
-import type { JSONContent } from "@tiptap/react"
 
 const SYSTEM_PROMPT =
-  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd，可用 Pi 内置 read/bash/edit/write/grep/find/ls 操作文件；联网 web_search、fetch_content、code_search；无头网页 browser_*（Chromium 由应用自动安装）。已导入的 skill 会自动加载可直接使用。soul_write 用于把有长期价值的偏好、结论、约定沉淀到 soul.md。需要时直接调用工具，勿声称工具不存在。`.trim()
+  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd，可用 Pi 内置 read/bash/edit/write/grep/find/ls 操作文件；联网 web_search、fetch_content、code_search。已导入的 skill 会自动加载可直接使用。soul_write 用于把有长期价值的偏好、结论、约定沉淀到 soul.md。需要时直接调用工具，勿声称工具不存在。`.trim()
 
 const SCROLL_NEAR_BOTTOM_PX = 80
 
 function isNearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_NEAR_BOTTOM_PX
-}
-
-function extractText(json: JSONContent | null): string {
-  if (!json?.content) return ""
-  let result = ""
-  for (const node of json.content) {
-    if (node.type === "paragraph") { result += (node.content?.map((c) => c.text ?? "").join("") ?? "") + "\n" }
-    else if (node.type === "heading") { result += (node.content?.map((c) => c.text ?? "").join("") ?? "") + "\n" }
-    else if (node.type === "bulletList" || node.type === "orderedList") {
-      for (const item of node.content ?? []) {
-        result += "- " + (item.content?.map((c) => c.content?.map((t) => t.text ?? "").join("") ?? "").join("") ?? "") + "\n"
-      }
-    } else if (node.type === "codeBlock") { result += "```\n" + (node.content?.map((c) => c.text ?? "").join("") ?? "") + "\n```\n" }
-    else if (node.text) result += node.text
-  }
-  return result.trim()
 }
 
 export default function ChatRoute() {
@@ -49,27 +32,24 @@ export default function ChatRoute() {
   } = useChatSession()
 
   const messages = useAppStore((s) => s.conversationHistory)
-  const [editorContent, setEditorContent] = useState<JSONContent | null>(null)
+  const editorRef = useRef<ChatEditorHandle>(null)
+  const [hasText, setHasText] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null)
   const [isReadingFile, setIsReadingFile] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const scrollToBottom = useCallback(() => {
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [])
-
-  const onScroll = useCallback(() => {
+  const onScroll = () => {
     const el = scrollRef.current
     if (el) stickToBottomRef.current = isNearBottom(el)
-  }, [])
+  }
 
   useLayoutEffect(() => {
     if (messages.length === 0) return
-    if (stickToBottomRef.current) scrollToBottom()
-  }, [messages, scrollToBottom])
+    const el = scrollRef.current
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [messages])
 
   const { data: runtimeSettings } = useQuery({
     queryKey: ["runtime-settings"],
@@ -95,14 +75,15 @@ export default function ChatRoute() {
 
   const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
-  const doSend = useCallback(() => {
-    const text = extractText(editorContent).trim()
+  const doSend = () => {
+    const text = editorRef.current?.getText() ?? ""
     const hasFile = attachedFile !== null
     if (!text && !hasFile) return
 
     stickToBottomRef.current = true
     const fileSnapshot = attachedFile
-    setEditorContent(null)
+    editorRef.current?.clear()
+    setHasText(false)
     setAttachedFile(null)
 
     const agentContent = fileSnapshot
@@ -111,7 +92,7 @@ export default function ChatRoute() {
           : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`)
       : text
     send(agentContent)
-  }, [editorContent, attachedFile, send])
+  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -127,8 +108,8 @@ export default function ChatRoute() {
     e.target.value = ""
   }
 
-  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
   const chatModelName = chatEntry ? entryDisplayName(chatEntry) : "未配置"
+  const lastAssistant = messages.findLast((m) => m.role === "assistant")
 
   if (!sessionsReady) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -208,8 +189,8 @@ export default function ChatRoute() {
                 </div>
               )}
               <ChatEditor
-                value={editorContent}
-                onChange={setEditorContent}
+                ref={editorRef}
+                onEmptyChange={(empty) => setHasText(!empty)}
                 placeholder="输入消息…"
                 disabled={isGenerating}
                 onSubmit={() => doSend()}
@@ -228,7 +209,7 @@ export default function ChatRoute() {
                   </Button>
                 ) : (
                   <Button size="sm" className="gap-1.5 rounded-full px-5 shadow-sm"
-                    disabled={isGenerating || (!editorContent && !attachedFile)}
+                    disabled={isGenerating || (!hasText && !attachedFile)}
                     onClick={doSend}>
                     <ArrowUp className="size-4" />发送
                   </Button>

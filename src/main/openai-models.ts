@@ -7,7 +7,11 @@ function formatFetchError(error: unknown): string {
   if (!(error instanceof Error)) return String(error)
   const parts = [error.message]
   const cause = error.cause
-  if (cause instanceof Error && cause.message && cause.message !== error.message) {
+  if (
+    cause instanceof Error &&
+    cause.message &&
+    cause.message !== error.message
+  ) {
     parts.push(cause.message)
   }
   const joined = parts.join(" — ")
@@ -68,7 +72,11 @@ export async function listOpenAiCompatibleModels(
       }
     }
     const data = (await res.json()) as { data?: { id?: string }[] }
-    const models = [...new Set((data.data ?? []).map((m) => m.id?.trim()).filter(Boolean) as string[])].sort()
+    const models = [
+      ...new Set(
+        (data.data ?? []).map((m) => m.id?.trim()).filter(Boolean) as string[]
+      ),
+    ].sort()
     if (!models.length) return { ok: false, error: "接口未返回模型列表" }
     return { ok: true, models }
   } catch (error) {

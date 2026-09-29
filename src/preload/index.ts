@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   syncRuntimeSettings: (settings: unknown) =>
     ipcRenderer.invoke("app:sync-runtime-settings", settings),
   getAppConfig: () => ipcRenderer.invoke("app:get-app-config"),
-  saveAppConfig: (config: unknown) => ipcRenderer.invoke("app:save-app-config", config),
+  saveAppConfig: (config: unknown) =>
+    ipcRenderer.invoke("app:save-app-config", config),
   testLlmConnection: () => ipcRenderer.invoke("app:test-llm-connection"),
   listOpenAiModels: (payload: { baseUrl: string; apiKey: string }) =>
     ipcRenderer.invoke("app:list-openai-models", payload),
@@ -22,11 +23,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   exists: (targetPath: string) => ipcRenderer.invoke("fs:exists", targetPath),
   mkdir: (targetPath: string, options?: { recursive?: boolean }) =>
     ipcRenderer.invoke("fs:mkdir", targetPath, options),
-  readTextFile: (targetPath: string) => ipcRenderer.invoke("fs:read-text-file", targetPath),
+  readTextFile: (targetPath: string) =>
+    ipcRenderer.invoke("fs:read-text-file", targetPath),
   writeTextFile: (targetPath: string, content: string) =>
     ipcRenderer.invoke("fs:write-text-file", targetPath, content),
   remove: (targetPath: string) => ipcRenderer.invoke("fs:remove", targetPath),
-  readDir: (targetPath: string) => ipcRenderer.invoke("fs:read-dir", targetPath),
+  readDir: (targetPath: string) =>
+    ipcRenderer.invoke("fs:read-dir", targetPath),
   getAgentPermissionSettings: () =>
     ipcRenderer.invoke("app:get-agent-permission-settings"),
   saveAgentPermissionSettings: (input: unknown) =>
@@ -39,7 +42,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   skillsImportFromPath: (sourcePath: string) =>
     ipcRenderer.invoke("skills:import-from-path", { sourcePath }),
   getMcpConfig: () => ipcRenderer.invoke("mcp:get-config"),
-  saveMcpConfig: (servers: unknown) => ipcRenderer.invoke("mcp:save-config", servers),
+  saveMcpConfig: (servers: unknown) =>
+    ipcRenderer.invoke("mcp:save-config", servers),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // ---- Agent ----
@@ -50,8 +54,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   }) => ipcRenderer.invoke("agent:create", options),
   agentConfigure: (payload: { sessionId: string; systemPrompt: string }) =>
     ipcRenderer.invoke("agent:configure", payload),
-  agentPrompt: (payload: { sessionId: string; message: string; images?: unknown }) =>
-    ipcRenderer.invoke("agent:prompt", payload),
+  agentPrompt: (payload: {
+    sessionId: string
+    message: string
+    images?: unknown
+  }) => ipcRenderer.invoke("agent:prompt", payload),
   agentAbort: (sessionId: string) =>
     ipcRenderer.invoke("agent:abort", { sessionId }),
   agentDestroy: (sessionId: string) =>
@@ -70,7 +77,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // ---- Pi sessions ----
   piSessionsGetDir: () => ipcRenderer.invoke("pi-sessions:get-dir"),
   piSessionsList: () => ipcRenderer.invoke("pi-sessions:list"),
-  piSessionsListWithMessages: () => ipcRenderer.invoke("pi-sessions:list-with-messages"),
+  piSessionsListWithMessages: () =>
+    ipcRenderer.invoke("pi-sessions:list-with-messages"),
   piSessionsCreate: () => ipcRenderer.invoke("pi-sessions:create"),
   piSessionsLoadMessages: (sessionId: string) =>
     ipcRenderer.invoke("pi-sessions:load-messages", sessionId),

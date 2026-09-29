@@ -1,13 +1,13 @@
 import {
+  type ChatModelEntry,
   enforceChatModelRules,
   isEntryConfigured,
-  type ChatModelEntry,
 } from "~/config/chat-models"
 import {
   getRuntimeSettings,
   listConfiguredChatModels,
-  saveRuntimeSettings,
   type RuntimeSettings,
+  saveRuntimeSettings,
 } from "~/services/settings"
 
 export interface ModelRegistrySnapshot {

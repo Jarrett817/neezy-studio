@@ -1,5 +1,17 @@
 import { BrowserWindow } from "electron"
-import path from "node:path"
+import type { McpServerDraft } from "../shared/mcp-config"
+import {
+  applyPermissionGrantToGlobalPolicy,
+  loadAgentPermissionSettings,
+  resetAgentPermissionSettings,
+  type SaveAgentPermissionInput,
+  saveAgentPermissionSettings,
+} from "./agent-permissions-store"
+import { loadAppConfig } from "./app-config"
+import { applyAppConfig } from "./app-config-sync"
+import { log } from "./logger"
+import { loadMcpConfig, saveMcpConfig } from "./mcp-config-store"
+import { assertPathAllowed } from "./path-guard"
 import {
   abortAgentSession,
   agentSessionExists,
@@ -16,11 +28,6 @@ import {
   resolvePermissionPrompt,
 } from "./pi-agent"
 import {
-  takePendingPermissionGrant,
-  type PermissionDialogAction,
-  type PermissionRespondPayload,
-} from "./pi-permission-ui"
-import {
   createPiChatSession,
   deletePiChatSession,
   listPiChatSessions,
@@ -28,25 +35,17 @@ import {
   loadPiChatMessages,
   pruneEmptyPiChatSessions,
 } from "./pi-disk-sessions"
+import { testPiConnection } from "./pi-llm"
 import {
-  applyPermissionGrantToGlobalPolicy,
-  loadAgentPermissionSettings,
-  resetAgentPermissionSettings,
-  saveAgentPermissionSettings,
-  type SaveAgentPermissionInput,
-} from "./agent-permissions-store"
+  type PermissionDialogAction,
+  type PermissionRespondPayload,
+  takePendingPermissionGrant,
+} from "./pi-permission-ui"
 import {
   importSkillFromPath,
   listInstalledSkills,
   uninstallSkillByKey,
 } from "./skill-install"
-import { loadMcpConfig, saveMcpConfig } from "./mcp-config-store"
-import type { McpServerDraft } from "../shared/mcp-config"
-import { applyAppConfig } from "./app-config-sync"
-import { loadAppConfig } from "./app-config"
-import { testPiConnection } from "./pi-llm"
-import { assertPathAllowed } from "./path-guard"
-import { log } from "./logger"
 import type { IpcContext } from "./types"
 
 /** 尽早注册 IPC，避免主进程顶部 native 模块加载失败时 handler 未注册。 */
@@ -73,39 +72,56 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     applyAppConfig(app, loadAppConfig(app))
     return paths
   })
-  ipcMain.handle("app:save-workspace-dir", async (_event, workspaceDir: string | null) => {
-    const paths = await storagePaths.saveWorkspaceDir(app, workspaceDir)
-    await destroyAllAgentSessions()
-    return paths
-  })
-  ipcMain.handle("app:pick-directory", async (_event, options: { title?: string; defaultPath?: string } = {}) => {
-    const result = await dialog.showOpenDialog(ctx.mainWindow ?? (undefined as never), {
-      properties: ["openDirectory", "createDirectory"],
-      title: options.title ?? "选择文件夹",
-      defaultPath: options.defaultPath,
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
-  })
+  ipcMain.handle(
+    "app:save-workspace-dir",
+    async (_event, workspaceDir: string | null) => {
+      const paths = await storagePaths.saveWorkspaceDir(app, workspaceDir)
+      await destroyAllAgentSessions()
+      return paths
+    }
+  )
+  ipcMain.handle(
+    "app:pick-directory",
+    async (_event, options: { title?: string; defaultPath?: string } = {}) => {
+      const result = await dialog.showOpenDialog(
+        ctx.mainWindow ?? (undefined as never),
+        {
+          properties: ["openDirectory", "createDirectory"],
+          title: options.title ?? "选择文件夹",
+          defaultPath: options.defaultPath,
+        }
+      )
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
+    }
+  )
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
-  ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))
+  ipcMain.handle("path:join", (_event, ...parts: string[]) =>
+    ctx.path.join(...parts)
+  )
   ipcMain.handle("fs:exists", async (event, targetPath: string) => {
     await assertPathAllowed(ctx, event, targetPath, "检查")
     return ctx.fsSync.existsSync(targetPath)
   })
-  ipcMain.handle("fs:mkdir", async (event, targetPath: string, options?: { recursive?: boolean }) => {
-    await assertPathAllowed(ctx, event, targetPath, "创建目录")
-    return ctx.fs.mkdir(targetPath, options)
-  })
+  ipcMain.handle(
+    "fs:mkdir",
+    async (event, targetPath: string, options?: { recursive?: boolean }) => {
+      await assertPathAllowed(ctx, event, targetPath, "创建目录")
+      return ctx.fs.mkdir(targetPath, options)
+    }
+  )
   ipcMain.handle("fs:read-text-file", async (event, targetPath: string) => {
     await assertPathAllowed(ctx, event, targetPath, "读取")
     return ctx.fs.readFile(targetPath, "utf8")
   })
-  ipcMain.handle("fs:write-text-file", async (event, targetPath: string, content: string) => {
-    await assertPathAllowed(ctx, event, targetPath, "写入")
-    await ctx.fs.mkdir(ctx.path.dirname(targetPath), { recursive: true })
-    await ctx.fs.writeFile(targetPath, content, "utf8")
-  })
+  ipcMain.handle(
+    "fs:write-text-file",
+    async (event, targetPath: string, content: string) => {
+      await assertPathAllowed(ctx, event, targetPath, "写入")
+      await ctx.fs.mkdir(ctx.path.dirname(targetPath), { recursive: true })
+      await ctx.fs.writeFile(targetPath, content, "utf8")
+    }
+  )
   ipcMain.handle("fs:remove", async (event, targetPath: string) => {
     await assertPathAllowed(ctx, event, targetPath, "删除")
     return ctx.fs.rm(targetPath, { recursive: true, force: true })
@@ -157,16 +173,22 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return { ok: true }
     }
   )
-  ipcMain.handle("agent:context-usage", (_event, payload: { sessionId?: string }) => {
-    const sessionId = payload?.sessionId?.trim() ?? ""
-    if (!sessionId) return null
-    return getAgentContextUsage(sessionId)
-  })
-  ipcMain.handle("agent:skill-commands", (_event, payload: { sessionId?: string }) => {
-    const sessionId = payload?.sessionId?.trim() ?? ""
-    if (!sessionId) return []
-    return listAgentSkillCommands(sessionId)
-  })
+  ipcMain.handle(
+    "agent:context-usage",
+    (_event, payload: { sessionId?: string }) => {
+      const sessionId = payload?.sessionId?.trim() ?? ""
+      if (!sessionId) return null
+      return getAgentContextUsage(sessionId)
+    }
+  )
+  ipcMain.handle(
+    "agent:skill-commands",
+    (_event, payload: { sessionId?: string }) => {
+      const sessionId = payload?.sessionId?.trim() ?? ""
+      if (!sessionId) return []
+      return listAgentSkillCommands(sessionId)
+    }
+  )
 
   ipcMain.handle(
     "agent:create",
@@ -200,17 +222,23 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         await promptAgent(sessionId, message, images)
         return { ok: true }
       } catch (error) {
-        log.error("[agent:prompt]", error instanceof Error ? error.message : error)
+        log.error(
+          "[agent:prompt]",
+          error instanceof Error ? error.message : error
+        )
         throw error
       }
     }
   )
 
   // agent:destroy - 销毁 Agent 会话
-  ipcMain.handle("agent:destroy", async (_event, { sessionId }: { sessionId: string }) => {
-    await destroyAgentSession(sessionId)
-    return { ok: true }
-  })
+  ipcMain.handle(
+    "agent:destroy",
+    async (_event, { sessionId }: { sessionId: string }) => {
+      await destroyAgentSession(sessionId)
+      return { ok: true }
+    }
+  )
 
   ipcMain.handle(
     "agent:configure",
@@ -222,10 +250,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   )
 
-  ipcMain.handle("agent:abort", (_event, { sessionId }: { sessionId: string }) => {
-    abortAgentSession(sessionId)
-    return { ok: true }
-  })
+  ipcMain.handle(
+    "agent:abort",
+    (_event, { sessionId }: { sessionId: string }) => {
+      abortAgentSession(sessionId)
+      return { ok: true }
+    }
+  )
 
   ipcMain.handle(
     "agent:permission-respond",
@@ -286,20 +317,29 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     return listInstalledSkills(ctx.getPaths().dataRoot)
   })
 
-  ipcMain.handle("skills:uninstall", async (_event, { installKey }: { installKey: string }) => {
-    await uninstallSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
-    return { ok: true as const }
-  })
+  ipcMain.handle(
+    "skills:uninstall",
+    async (_event, { installKey }: { installKey: string }) => {
+      await uninstallSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
+      return { ok: true as const }
+    }
+  )
 
-  ipcMain.handle("skills:import-from-path", async (_event, { sourcePath }: { sourcePath: string }) => {
-    return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
-  })
+  ipcMain.handle(
+    "skills:import-from-path",
+    async (_event, { sourcePath }: { sourcePath: string }) => {
+      return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
+    }
+  )
 
   ipcMain.handle("mcp:get-config", () => loadMcpConfig(app))
 
-  ipcMain.handle("mcp:save-config", async (_event, servers: McpServerDraft[]) => {
-    const saved = saveMcpConfig(app, servers)
-    await destroyAllAgentSessions()
-    return saved
-  })
+  ipcMain.handle(
+    "mcp:save-config",
+    async (_event, servers: McpServerDraft[]) => {
+      const saved = saveMcpConfig(app, servers)
+      await destroyAllAgentSessions()
+      return saved
+    }
+  )
 }

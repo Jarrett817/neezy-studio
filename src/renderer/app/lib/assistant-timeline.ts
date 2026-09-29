@@ -1,9 +1,9 @@
 import {
-  formatToolArgsSummary,
-  toolLabel,
   type AgentStep,
   type AssistantActivityItem,
   type ChatToolCall,
+  formatToolArgsSummary,
+  toolLabel,
 } from "~/lib/agent-steps"
 
 export type TimelineItem =
@@ -28,7 +28,9 @@ function toolToStepItem(tool: ChatToolCall): TimelineItem {
   }
 }
 
-function workflowToStepItem(entry: Extract<AssistantActivityItem, { kind: "workflow" }>): TimelineItem {
+function workflowToStepItem(
+  entry: Extract<AssistantActivityItem, { kind: "workflow" }>
+): TimelineItem {
   return {
     id: entry.id,
     kind: "step",
@@ -50,7 +52,9 @@ export function buildAssistantTimeline(input: {
   isStreaming?: boolean
 }): TimelineItem[] {
   const items: TimelineItem[] = []
-  const toolById = new Map((input.toolCalls ?? []).map((t) => [t.toolCallId, t]))
+  const toolById = new Map(
+    (input.toolCalls ?? []).map((t) => [t.toolCallId, t])
+  )
   const activity = input.activity ?? []
   const streaming = Boolean(input.isStreaming)
   const last = activity.at(-1)
@@ -88,7 +92,12 @@ export function buildAssistantTimeline(input: {
   if (streaming) {
     const lastItem = items.at(-1)
     if (lastItem?.kind === "step" && lastItem.tool) {
-      items.push({ id: "answer-pending", kind: "answer", text: "", streaming: true })
+      items.push({
+        id: "answer-pending",
+        kind: "answer",
+        text: "",
+        streaming: true,
+      })
     }
   }
 

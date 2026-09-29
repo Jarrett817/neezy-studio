@@ -1,12 +1,12 @@
-import type { App } from "electron"
 import fs from "node:fs"
 import path from "node:path"
+import type { App } from "electron"
 
 import {
   isValidMcpServerName,
-  normalizeMcpServerName,
   type McpConfigSnapshot,
   type McpServerDraft,
+  normalizeMcpServerName,
 } from "../shared/mcp-config"
 import { getPiAgentDir } from "./pi-agent-env"
 
@@ -72,14 +72,18 @@ function draftToEntry(draft: McpServerDraft): StoredServerEntry {
     return {
       url: draft.url?.trim() || "",
       httpTransport: "streamable-http",
-      ...(draft.env && Object.keys(draft.env).length > 0 ? { env: draft.env } : {}),
+      ...(draft.env && Object.keys(draft.env).length > 0
+        ? { env: draft.env }
+        : {}),
       ...(draft.disabled ? { disabled: true } : {}),
     }
   }
   return {
     command: draft.command?.trim() || "",
     args: draft.args?.length ? draft.args : [],
-    ...(draft.env && Object.keys(draft.env).length > 0 ? { env: draft.env } : {}),
+    ...(draft.env && Object.keys(draft.env).length > 0
+      ? { env: draft.env }
+      : {}),
     ...(draft.disabled ? { disabled: true } : {}),
   }
 }
@@ -106,7 +110,10 @@ export function loadMcpConfig(app: App): McpConfigSnapshot {
   return { configPath, servers }
 }
 
-export function saveMcpConfig(app: App, servers: McpServerDraft[]): McpConfigSnapshot {
+export function saveMcpConfig(
+  app: App,
+  servers: McpServerDraft[]
+): McpConfigSnapshot {
   const agentDir = getPiAgentDir(app)
   const adapterPath = getAdapterConfigPath(agentDir)
   const permissionPath = getPermissionMcpPath(agentDir)

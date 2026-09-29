@@ -30,7 +30,8 @@ function estimatePayloadInputTokens(messages: unknown, tools: unknown): number {
       if (!raw || typeof raw !== "object") continue
       const m = raw as Record<string, unknown>
       chars += contentChars(m.content)
-      if (m.tool_calls !== undefined) chars += JSON.stringify(m.tool_calls).length
+      if (m.tool_calls !== undefined)
+        chars += JSON.stringify(m.tool_calls).length
       if (typeof m.name === "string") chars += m.name.length
     }
   }
@@ -40,7 +41,9 @@ function estimatePayloadInputTokens(messages: unknown, tools: unknown): number {
   return Math.ceil(chars / 4)
 }
 
-function maxTokensField(model: Model<Api>): "max_tokens" | "max_completion_tokens" {
+function maxTokensField(
+  model: Model<Api>
+): "max_tokens" | "max_completion_tokens" {
   const compat = model.compat
   if (
     compat &&

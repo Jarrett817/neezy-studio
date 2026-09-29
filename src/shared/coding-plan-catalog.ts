@@ -98,25 +98,24 @@ export const CODING_PLAN_VENDOR_CATALOG: CodingPlanVendor[] = [
       "deepseek-v4-pro",
       "qwq-plus",
     ],
-    docsUrl: "https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope",
+    docsUrl:
+      "https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope",
   },
   {
     id: "dashscope-intl",
     label: "阿里云百炼（国际）",
     baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    modelHints: [
-      "qwen-plus",
-      "qwen3-max",
-      "qwen3.5-plus",
-      "deepseek-v4-pro",
-    ],
-    docsUrl: "https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope",
+    modelHints: ["qwen-plus", "qwen3-max", "qwen3.5-plus", "deepseek-v4-pro"],
+    docsUrl:
+      "https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope",
   },
 ]
 
 const CATALOG_BY_ID = new Map(CODING_PLAN_VENDOR_CATALOG.map((v) => [v.id, v]))
 
-export type CodingPlanPresetId = (typeof CODING_PLAN_VENDOR_CATALOG)[number]["id"] | "custom"
+export type CodingPlanPresetId =
+  | (typeof CODING_PLAN_VENDOR_CATALOG)[number]["id"]
+  | "custom"
 
 export function isKnownCodingPlanPreset(id: string): id is CodingPlanPresetId {
   return id === "custom" || CATALOG_BY_ID.has(id)
@@ -126,7 +125,10 @@ export function getCodingPlanVendor(id: string): CodingPlanVendor | undefined {
   return CATALOG_BY_ID.get(id)
 }
 
-export function resolveCatalogBaseUrl(preset: string, customUrl: string): string {
+export function resolveCatalogBaseUrl(
+  preset: string,
+  customUrl: string
+): string {
   if (preset === "custom") return customUrl.trim().replace(/\/$/, "")
   const vendor = CATALOG_BY_ID.get(preset)
   return vendor?.baseUrl ?? customUrl.trim().replace(/\/$/, "")
@@ -137,7 +139,10 @@ export function getPresetLabel(preset: string): string {
   return CATALOG_BY_ID.get(preset)?.label ?? preset
 }
 
-export function defaultModelForPreset(preset: string, fallback: string): string {
+export function defaultModelForPreset(
+  preset: string,
+  fallback: string
+): string {
   if (preset === "custom") return fallback
   const hints = CATALOG_BY_ID.get(preset)?.modelHints
   return hints?.[0] ?? fallback
@@ -178,7 +183,9 @@ export function dashScopeThinkingFormat(): "qwen" {
 }
 
 /** 从 jqknono/coding-plans-for-copilot 的 package.json 拉取默认 vendors 并合并 */
-export async function refreshCodingPlanCatalogFromUpstream(): Promise<CodingPlanVendor[]> {
+export async function refreshCodingPlanCatalogFromUpstream(): Promise<
+  CodingPlanVendor[]
+> {
   const res = await fetch(
     "https://raw.githubusercontent.com/jqknono/coding-plans-for-copilot/main/package.json",
     { signal: AbortSignal.timeout(12_000) }
@@ -193,7 +200,9 @@ export async function refreshCodingPlanCatalogFromUpstream(): Promise<CodingPlan
       }
     }
   }
-  const upstream = pkg.contributes?.configuration?.properties?.["coding-plans.vendors"]?.default
+  const upstream =
+    pkg.contributes?.configuration?.properties?.["coding-plans.vendors"]
+      ?.default
   if (!Array.isArray(upstream) || upstream.length === 0) {
     throw new Error("上游目录为空")
   }
@@ -238,5 +247,7 @@ export function mergeCatalogVendors(
     if (!v.baseUrl) continue
     map.set(v.id, { ...map.get(v.id), ...v })
   }
-  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "zh-CN"))
+  return [...map.values()].sort((a, b) =>
+    a.label.localeCompare(b.label, "zh-CN")
+  )
 }

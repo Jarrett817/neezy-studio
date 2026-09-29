@@ -1,17 +1,16 @@
-import { useState, useRef, useEffect, useCallback } from "react"
-import { flushSync } from "react-dom"
 import { useQueryClient } from "@tanstack/react-query"
-
-import { useAppStore } from "~/stores/app-store"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { flushSync } from "react-dom"
 import {
   getActiveSessionId,
   loadActivePiChatSession,
   loadPiChatMessages,
+  setActiveSessionId as persistActiveSessionId,
   pruneEmptyPiChatSessions,
   reconcileActivePiSession,
-  setActiveSessionId as persistActiveSessionId,
 } from "~/services/pi-chat-sessions"
 import { clearActiveChatSessionId } from "~/services/storage/app-kv"
+import { useAppStore } from "~/stores/app-store"
 
 export function useChatSession() {
   const queryClient = useQueryClient()
@@ -53,8 +52,10 @@ export function useChatSession() {
         if (!cancelled) setSessionsReady(true)
       }
     })()
-    return () => { cancelled = true }
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [setConversationHistory, queryClient.invalidateQueries, clearConversation])
 
   const handleSelectSession = useCallback(
     async (sessionId: string) => {

@@ -1,11 +1,11 @@
 import {
   CODING_PLAN_VENDOR_CATALOG,
+  type CodingPlanPresetId,
+  type CodingPlanVendor,
   defaultModelForPreset,
   getPresetLabel,
   isKnownCodingPlanPreset,
   resolveCatalogBaseUrl,
-  type CodingPlanPresetId,
-  type CodingPlanVendor,
 } from "~/config/llm-presets"
 
 /** 内置目录 id 或 custom；亦兼容上游合并后的动态 id */

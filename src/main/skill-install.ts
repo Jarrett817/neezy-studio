@@ -2,7 +2,10 @@ import fs from "node:fs"
 import fsPromises from "node:fs/promises"
 import path from "node:path"
 
-import { skillInstallKey, type SkillPublisherId } from "../shared/skill-registry"
+import {
+  type SkillPublisherId,
+  skillInstallKey,
+} from "../shared/skill-registry"
 import { invalidatePiResourceLoaderCache } from "./pi-agent"
 
 export interface InstalledSkill {
@@ -23,15 +26,25 @@ function getPublisherSkillsRoot(dataRoot: string): string {
   return path.join(getSkillsRoot(dataRoot), "local")
 }
 
-function parseSkillFrontmatter(content: string): { name: string; description: string } {
+function parseSkillFrontmatter(content: string): {
+  name: string
+  description: string
+} {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (!match) {
     return { name: "", description: content.slice(0, 200).trim() }
   }
   const block = match[1]
-  const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? ""
+  const name =
+    block
+      .match(/^name:\s*(.+)$/m)?.[1]
+      ?.trim()
+      .replace(/^["']|["']$/g, "") ?? ""
   const descRaw = block.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? ""
-  const description = descRaw.replace(/^["']|["']$/g, "").replace(/^>\s*/gm, "").trim()
+  const description = descRaw
+    .replace(/^["']|["']$/g, "")
+    .replace(/^>\s*/gm, "")
+    .trim()
   return { name, description }
 }
 
@@ -89,7 +102,9 @@ export async function importSkillFromPath(
   }
 }
 
-export async function listInstalledSkills(dataRoot: string): Promise<InstalledSkill[]> {
+export async function listInstalledSkills(
+  dataRoot: string
+): Promise<InstalledSkill[]> {
   const root = getPublisherSkillsRoot(dataRoot)
   let ids: string[] = []
   try {
@@ -138,7 +153,10 @@ export function listAllInstalledSkillDirs(dataRoot: string): string[] {
   }
 }
 
-export async function uninstallSkillByKey(dataRoot: string, key: string): Promise<void> {
+export async function uninstallSkillByKey(
+  dataRoot: string,
+  key: string
+): Promise<void> {
   const id = key.includes(":") ? key.slice(key.indexOf(":") + 1) : key
   const skillDir = path.join(getPublisherSkillsRoot(dataRoot), id)
   await fsPromises.rm(skillDir, { recursive: true, force: true })

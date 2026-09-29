@@ -1,10 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
-import {
-  getRuntimeSettings,
-  resolveChatModelEntry,
-} from "~/services/settings"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 
 export type ActiveModelChip = {
   label: string
@@ -23,7 +20,9 @@ export function useActiveModels() {
   const chat: ActiveModelChip = entry
     ? {
         label: entryDisplayName(entry),
-        status: isEntryConfigured(entry, settings!.llmProvider) ? "ready" : "idle",
+        status: isEntryConfigured(entry, settings?.llmProvider)
+          ? "ready"
+          : "idle",
       }
     : { label: "未配置", status: "idle" }
 

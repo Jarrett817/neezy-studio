@@ -56,7 +56,9 @@ function resolveBundledExtensionEntry(root: string, pkg: string): string {
 /** npm 依赖的 Pi extension 入口绝对路径，供 jiti 加载 */
 export function getBundledPiExtensionPaths(): string[] {
   const root = resolveAppPackageRoot()
-  return BUNDLED_PI_PACKAGES.map((pkg) => resolveBundledExtensionEntry(root, pkg))
+  return BUNDLED_PI_PACKAGES.map((pkg) =>
+    resolveBundledExtensionEntry(root, pkg)
+  )
 }
 
 const BUNDLED_PI_SKILL_PACKAGES = ["pi-web-access"] as const
@@ -66,7 +68,9 @@ export function getBundledPiSkillPaths(): string[] {
   return BUNDLED_PI_SKILL_PACKAGES.map((pkg) => {
     const skillsDir = path.join(root, "node_modules", pkg, "skills")
     if (!fs.existsSync(skillsDir)) {
-      throw new Error(`未找到 ${pkg} skills（${skillsDir}）。请在项目根执行 bun install。`)
+      throw new Error(
+        `未找到 ${pkg} skills（${skillsDir}）。请在项目根执行 bun install。`
+      )
     }
     return skillsDir
   })

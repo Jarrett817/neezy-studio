@@ -1,15 +1,18 @@
-import type { AppConfig } from "../../../shared/app-config"
+import { type BuildInfo, buildInfoSchema } from "~/schemas/bootstrap"
+import type { ChatMessage } from "~/stores/app-store"
 import type {
   AgentPermissionPolicy,
   AgentPermissionSettings,
   PermissionExtensionConfig,
 } from "../../../shared/agent-permissions"
-import type { McpConfigSnapshot, McpServerDraft } from "../../../shared/mcp-config"
-import type { SkillPublisherId } from "../../../shared/skill-registry"
+import type { AppConfig } from "../../../shared/app-config"
 import type { ContextUsageWire } from "../../../shared/chat-wire"
+import type {
+  McpConfigSnapshot,
+  McpServerDraft,
+} from "../../../shared/mcp-config"
 import type { SessionInfoDto } from "../../../shared/pi-session-dto"
-import type { ChatMessage } from "~/stores/app-store"
-import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
+import type { SkillPublisherId } from "../../../shared/skill-registry"
 
 export type ModelTier = "light" | "balanced" | "performance"
 export type ModelKind = "chat" | "embedding"
@@ -121,8 +124,6 @@ export type StoragePaths = {
   memoriesDir: string
   personasDir: string
   skillsDir: string
-  playbooksDir: string
-  inputProfilesDir: string
   configFile: string
   defaultDataRoot: string
   defaultModelsDir: string

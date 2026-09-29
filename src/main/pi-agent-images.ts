@@ -4,7 +4,11 @@ import type { ImageContent } from "@earendil-works/pi-ai"
 export function formatPromptError(error: unknown): string {
   if (!(error instanceof Error)) return String(error)
   const cause = error.cause
-  if (cause instanceof Error && cause.message && cause.message !== error.message) {
+  if (
+    cause instanceof Error &&
+    cause.message &&
+    cause.message !== error.message
+  ) {
     return `${error.message} (${cause.message})`
   }
   return error.message

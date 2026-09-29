@@ -1,11 +1,14 @@
-import { app, net } from "electron"
 import path from "node:path"
+import { app, net } from "electron"
 
 /**
  * tools-manager 在模块加载时固化 getBinDir()；须在任何 pi-coding-agent import 之前设好。
  * 本文件是 main 入口第一个 import。
  */
-process.env.PI_CODING_AGENT_DIR ??= path.join(app.getPath("userData"), "pi-agent")
+process.env.PI_CODING_AGENT_DIR ??= path.join(
+  app.getPath("userData"),
+  "pi-agent"
+)
 
 const nodeFetch = globalThis.fetch.bind(globalThis)
 
@@ -38,6 +41,7 @@ function useNodeFetch(input: RequestInfo | URL): boolean {
  */
 globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
   if (useNodeFetch(input)) return nodeFetch(input, init)
-  const request = input instanceof URL ? input.href : (input as string | Request)
+  const request =
+    input instanceof URL ? input.href : (input as string | Request)
   return net.fetch(request, init)
 }) as typeof fetch

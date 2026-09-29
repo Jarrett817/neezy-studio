@@ -31,8 +31,9 @@ export function ConnectStatusHero() {
   return (
     <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
       <p className="text-xs text-muted-foreground">
-        已就绪 <span className="font-medium text-foreground">{enabledCount}</span>{" "}
-        条 · 下次对话预计：{" "}
+        已就绪{" "}
+        <span className="font-medium text-foreground">{enabledCount}</span> 条 ·
+        下次对话预计：{" "}
         <span className="font-medium text-foreground">{preview}</span>
       </p>
       <HealthChip
@@ -63,10 +64,17 @@ function HealthChip({
         ok ? "border-border/60 bg-card" : "border-border/40 bg-muted/30"
       )}
     >
-      <Icon className={cn("size-4 shrink-0", ok ? "text-primary" : "text-muted-foreground")} />
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          ok ? "text-primary" : "text-muted-foreground"
+        )}
+      />
       <div className="min-w-0">
         <p className="text-xs font-medium">{label}</p>
-        <p className="truncate font-mono text-[10px] text-muted-foreground">{detail}</p>
+        <p className="truncate font-mono text-[10px] text-muted-foreground">
+          {detail}
+        </p>
       </div>
     </div>
   )

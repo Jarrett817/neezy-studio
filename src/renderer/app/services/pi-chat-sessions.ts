@@ -1,9 +1,9 @@
+import type { ChatMessage } from "~/stores/app-store"
 import {
+  type SessionInfoDto,
   sessionListPreview,
   sessionListTitle,
-  type SessionInfoDto,
 } from "../../../shared/pi-session-dto"
-import type { ChatMessage } from "~/stores/app-store"
 import { getElectronApi } from "./electron-client"
 import {
   clearActiveChatSessionId,
@@ -21,7 +21,9 @@ export async function listPiChatSessions(): Promise<SessionInfoDto[]> {
   return getElectronApi().piSessionsList()
 }
 
-export async function listPiChatSessionsWithMessages(): Promise<SessionInfoDto[]> {
+export async function listPiChatSessionsWithMessages(): Promise<
+  SessionInfoDto[]
+> {
   return getElectronApi().piSessionsListWithMessages()
 }
 
@@ -29,11 +31,16 @@ export async function createPiChatSessionRecord(): Promise<SessionInfoDto> {
   return getElectronApi().piSessionsCreate()
 }
 
-export async function loadPiChatMessages(sessionId: string): Promise<ChatMessage[]> {
+export async function loadPiChatMessages(
+  sessionId: string
+): Promise<ChatMessage[]> {
   return getElectronApi().piSessionsLoadMessages(sessionId)
 }
 
-export async function renamePiChatSession(sessionId: string, name: string): Promise<void> {
+export async function renamePiChatSession(
+  sessionId: string,
+  name: string
+): Promise<void> {
   await getElectronApi().piSessionsRename({ sessionId, name })
 }
 
@@ -70,7 +77,7 @@ export async function setActiveSessionId(sessionId: string): Promise<void> {
   await setActiveChatSessionId(sessionId)
 }
 
-export { sessionListTitle, sessionListPreview }
+export { sessionListPreview, sessionListTitle }
 
 export async function loadActivePiChatSession(): Promise<{
   session: SessionInfoDto | null

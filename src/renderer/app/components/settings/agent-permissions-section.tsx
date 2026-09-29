@@ -13,14 +13,14 @@ import {
   SelectValue,
 } from "~/components/ui/select"
 import {
-  getAgentPermissionSettings,
-  resetAgentPermissionSettings,
-  saveAgentPermissionSettings,
-  PI_BUILTIN_TOOL_NAMES,
-  PERMISSION_PRESETS,
   type AgentPermissionSettings,
+  getAgentPermissionSettings,
+  PERMISSION_PRESETS,
   type PermissionPresetId,
   type PermissionState,
+  PI_BUILTIN_TOOL_NAMES,
+  resetAgentPermissionSettings,
+  saveAgentPermissionSettings,
 } from "~/services/agent-permissions"
 
 const PERMISSION_STATE_LABELS: Record<PermissionState, string> = {
@@ -34,11 +34,19 @@ const DEFAULT_POLICY_FIELDS = [
   { key: "bash" as const, label: "Bash 默认", hint: "未匹配到具体命令模式时" },
   { key: "mcp" as const, label: "MCP 默认", hint: "MCP 代理目标" },
   { key: "skills" as const, label: "Skill 默认", hint: "技能加载与读取" },
-  { key: "special" as const, label: "特殊项默认", hint: "未单独列出的 special 规则" },
+  {
+    key: "special" as const,
+    label: "特殊项默认",
+    hint: "未单独列出的 special 规则",
+  },
 ]
 
 const SPECIAL_FIELDS = [
-  { key: "external_directory", label: "工作区外路径", hint: "read/write 等访问 cwd 之外的路径" },
+  {
+    key: "external_directory",
+    label: "工作区外路径",
+    hint: "read/write 等访问 cwd 之外的路径",
+  },
   { key: "doom_loop", label: "死循环防护", hint: "检测到重复工具调用时" },
 ]
 
@@ -63,11 +71,13 @@ function PermissionStateSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {(Object.keys(PERMISSION_STATE_LABELS) as PermissionState[]).map((state) => (
-          <SelectItem key={state} value={state}>
-            {PERMISSION_STATE_LABELS[state]}
-          </SelectItem>
-        ))}
+        {(Object.keys(PERMISSION_STATE_LABELS) as PermissionState[]).map(
+          (state) => (
+            <SelectItem key={state} value={state}>
+              {PERMISSION_STATE_LABELS[state]}
+            </SelectItem>
+          )
+        )}
       </SelectContent>
     </Select>
   )
@@ -193,23 +203,26 @@ export function AgentPermissionsSection() {
         <h2 className="text-2xl font-semibold tracking-tight">Agent 权限</h2>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        由 pi-permission-system 在工具调用前拦截；策略为「询问」时会在对话页弹出确认框。
+        由 pi-permission-system
+        在工具调用前拦截；策略为「询问」时会在对话页弹出确认框。
       </p>
 
       <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          {(Object.keys(PRESET_LABELS) as PermissionPresetId[]).map((preset) => (
-            <Button
-              key={preset}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-xl"
-              onClick={() => applyPreset(preset)}
-            >
-              {PRESET_LABELS[preset]}
-            </Button>
-          ))}
+          {(Object.keys(PRESET_LABELS) as PermissionPresetId[]).map(
+            (preset) => (
+              <Button
+                key={preset}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => applyPreset(preset)}
+              >
+                {PRESET_LABELS[preset]}
+              </Button>
+            )
+          )}
         </div>
 
         <div className="space-y-3 rounded-xl border border-border/50 p-3">
@@ -237,7 +250,9 @@ export function AgentPermissionsSection() {
                 <Label htmlFor={`tool-${tool}`}>{tool}</Label>
                 <PermissionStateSelect
                   id={`tool-${tool}`}
-                  value={draft.policy.tools[tool] ?? draft.policy.defaultPolicy.tools}
+                  value={
+                    draft.policy.tools[tool] ?? draft.policy.defaultPolicy.tools
+                  }
                   onChange={(state) => patchTool(tool, state)}
                 />
               </div>
@@ -264,7 +279,8 @@ export function AgentPermissionsSection() {
                 <PermissionStateSelect
                   id={`special-${field.key}`}
                   value={
-                    draft.policy.special[field.key] ?? draft.policy.defaultPolicy.special
+                    draft.policy.special[field.key] ??
+                    draft.policy.defaultPolicy.special
                   }
                   onChange={(state) => patchSpecial(field.key, state)}
                 />
@@ -290,7 +306,8 @@ export function AgentPermissionsSection() {
             <div>
               <Label htmlFor="yoloMode">自动批准「询问」项（YOLO）</Label>
               <p className="text-xs text-muted-foreground">
-                开启后不再弹出确认框，等同于全部放行 ask 规则。仅建议在可信环境使用。
+                开启后不再弹出确认框，等同于全部放行 ask
+                规则。仅建议在可信环境使用。
               </p>
             </div>
           </div>

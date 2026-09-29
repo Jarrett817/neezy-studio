@@ -1,48 +1,45 @@
+import type { Api, Model } from "@earendil-works/pi-ai"
+import type { SessionManager } from "@earendil-works/pi-coding-agent"
 import {
-  createAgentSession as createPiAgentSession,
-  DefaultResourceLoader,
-  SettingsManager,
-  type ResourceLoader,
   type AgentSession,
   type AgentSessionEvent,
+  createAgentSession as createPiAgentSession,
+  DefaultResourceLoader,
+  type ResourceLoader,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent"
-import type { SessionManager } from "@earendil-works/pi-coding-agent"
-import type { Api, Model } from "@earendil-works/pi-ai"
 import type { BrowserWindow } from "electron"
 import { app } from "electron"
-import fs from "node:fs"
-import path from "node:path"
-
+import type { ContextUsageWire } from "../shared/chat-wire"
+import { SESSION_NAME_MAX_LENGTH } from "../shared/pi-session-dto"
 import { normalizeMainChatModels, resolveEntryApiKey } from "./chat-model-entry"
+import { applyRequestMaxTokensClamp } from "./clamp-request-max-tokens"
+import { applyDashScopeAgentFixes } from "./dashscope-compat"
+import { log } from "./logger"
 import { resolveActiveChatRoute } from "./model-routing"
+import { ensurePiAgentEnvironment } from "./pi-agent-env"
+import { formatPromptError, sanitizePromptImages } from "./pi-agent-images"
+import {
+  getBundledPiExtensionPaths,
+  getBundledPiSkillPaths,
+} from "./pi-bundled-extensions"
 import {
   createPiSessionManager,
   findPiSessionById,
   getPiSessionsDir,
   openPiSessionManager,
 } from "./pi-disk-sessions"
-import { getPiModelRuntime, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
-import { applyDashScopeAgentFixes } from "./dashscope-compat"
-import { applyRequestMaxTokensClamp } from "./clamp-request-max-tokens"
-import { getSyncedRuntimeSettings } from "./runtime-settings"
-import { getNeezyCustomTools } from "./pi-tool-registry"
-import {
-  getBundledPiExtensionPaths,
-  getBundledPiSkillPaths,
-} from "./pi-bundled-extensions"
-import { ensurePiAgentEnvironment, getPiAgentDir } from "./pi-agent-env"
 import {
   clearPermissionPromptsForSession,
   createElectronPermissionUi,
 } from "./pi-permission-ui"
-import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
-import { readSoul } from "./soul-store"
-import { SESSION_NAME_MAX_LENGTH } from "../shared/pi-session-dto"
-import type { ContextUsageWire } from "../shared/chat-wire"
-import { log } from "./logger"
+import { getPiModelRuntime, syncPiAuthForRoute } from "./pi-sdk-auth"
+import { getNeezyCustomTools } from "./pi-tool-registry"
+import { getSyncedRuntimeSettings } from "./runtime-settings"
 import { listAllInstalledSkillDirs } from "./skill-install"
-import { formatPromptError, sanitizePromptImages } from "./pi-agent-images"
+import { readSoul } from "./soul-store"
+import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
 
 export interface CreateDiskAgentOptions {
   diskSessionId?: string
@@ -71,6 +68,13 @@ export function invalidatePiResourceLoaderCache(): void {
   resourceLoaderCache = null
 }
 
+export function applyRuntimeThinkingToOpenSessions(): void {
+  for (const entry of ipcSessions.values()) {
+    const model = entry.session.agent.state.model as Model<Api>
+    entry.session.setThinkingLevel(resolveAgentThinkingLevel(model))
+  }
+}
+
 function getPiDirs() {
   const paths = resolveStoragePaths(app)
   return {
@@ -84,7 +88,7 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   const sm = SettingsManager.create(cwd, agentDir)
   const level = resolveAgentThinkingLevel(resolvePiChatModel())
   sm.applyOverrides({
-    defaultThinkingLevel: level === "off" ? "off" : level,
+    defaultThinkingLevel: level,
     compaction: { enabled: true },
     retry: { enabled: true, maxRetries: 3 },
   })
@@ -119,7 +123,9 @@ async function getResourceLoader(
         hidden: true,
         factory: (pi) => {
           pi.on("before_agent_start", (event, ctx) => {
-            const append = productAppendBySessionId.get(ctx.sessionManager.getSessionId())
+            const append = productAppendBySessionId.get(
+              ctx.sessionManager.getSessionId()
+            )
             if (!append) return
             const prev = event.systemPromptOptions.appendSystemPrompt.trim()
             event.systemPromptOptions.appendSystemPrompt = prev
@@ -136,7 +142,9 @@ async function getResourceLoader(
     log.warn("[pi-agent] extension load failed:", err.path, err.error)
   }
   const loaded = ext.extensions.map((e) => e.path)
-  const hasPermissionSystem = loaded.some((p) => p.includes("pi-permission-system"))
+  const hasPermissionSystem = loaded.some((p) =>
+    p.includes("pi-permission-system")
+  )
   const hasWebAccess = loaded.some((p) => p.includes("pi-web-access"))
   if (!hasPermissionSystem) {
     log.error(
@@ -169,7 +177,10 @@ async function bindAgentSessionUi(
   log.info("[pi-agent] active tools:", session.getActiveToolNames().join(", "))
 }
 
-async function syncSessionChatRoute(session: AgentSession, userMessage?: string): Promise<void> {
+async function syncSessionChatRoute(
+  session: AgentSession,
+  userMessage?: string
+): Promise<void> {
   const model = resolvePiChatModel(userMessage)
   session.agent.state.model = model
   session.setThinkingLevel(resolveAgentThinkingLevel(model))
@@ -204,13 +215,20 @@ async function resolveSessionManager(
     const sm = createPiSessionManager(app)
     const newId = sm.getSessionId()
     staleDiskSessionRecovery.set(options.diskSessionId, newId)
-    log.warn("[pi-agent] 磁盘会话缺失，已恢复新建:", options.diskSessionId, "→", newId)
+    log.warn(
+      "[pi-agent] 磁盘会话缺失，已恢复新建:",
+      options.diskSessionId,
+      "→",
+      newId
+    )
     return { sm, diskSessionId: newId }
   }
   throw new Error("缺少 diskSessionId，请先创建或选择 Pi 磁盘会话")
 }
 
-async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
+async function createPiSession(
+  sessionManager: SessionManager
+): Promise<AgentSession> {
   const { cwd, agentDir, dataRoot } = getPiDirs()
   const model = resolvePiChatModel()
   const modelRuntime = await getPiModelRuntime()
@@ -228,7 +246,12 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
     excludeTools: ["grep", "find", "ls", "powershell"],
     customTools: getNeezyCustomTools(),
     sessionManager,
-    resourceLoader: await getResourceLoader(cwd, agentDir, dataRoot, settingsManager),
+    resourceLoader: await getResourceLoader(
+      cwd,
+      agentDir,
+      dataRoot,
+      settingsManager
+    ),
   })
 
   session.agent.toolExecution = "parallel"
@@ -287,7 +310,7 @@ export async function configureAgentSession(
   await syncSessionChatRoute(entry.session)
 }
 
-async function ensureAgentChatReady(userMessage?: string): Promise<void> {
+async function ensureAgentChatReady(_userMessage?: string): Promise<void> {
   const settings = getSyncedRuntimeSettings()
   const route = resolveActiveChatRoute()
   if (!route.entry?.model.trim()) {
@@ -327,7 +350,10 @@ export async function promptAgent(
     safeImages ? `images=${safeImages.length}` : "images=0"
   )
   try {
-    await entry.session.prompt(message, safeImages ? { images: safeImages } : undefined)
+    await entry.session.prompt(
+      message,
+      safeImages ? { images: safeImages } : undefined
+    )
   } catch (error) {
     const msg = formatPromptError(error)
     log.error("[pi-agent] prompt failed:", msg, model.baseUrl, model.id)
@@ -339,7 +365,9 @@ export function abortAgentSession(diskSessionId: string): void {
   ipcSessions.get(diskSessionId)?.session.agent.abort()
 }
 
-export function getAgentContextUsage(diskSessionId: string): ContextUsageWire | null {
+export function getAgentContextUsage(
+  diskSessionId: string
+): ContextUsageWire | null {
   const usage = ipcSessions.get(diskSessionId)?.session.getContextUsage()
   if (!usage) return null
   return {
@@ -352,16 +380,25 @@ export function getAgentContextUsage(diskSessionId: string): ContextUsageWire | 
 export function listAgentSkillCommands(
   diskSessionId: string
 ): Array<{ name: string; description: string }> {
-  const skills = ipcSessions.get(diskSessionId)?.session.resourceLoader.getSkills().skills
+  const skills = ipcSessions
+    .get(diskSessionId)
+    ?.session.resourceLoader.getSkills().skills
   if (!skills) return []
   return skills
     .filter((skill) => skill.name.trim().length > 0)
     .map((skill) => ({ name: skill.name, description: skill.description }))
 }
 
-export async function renameAgentSession(diskSessionId: string, name: string): Promise<void> {
+export async function renameAgentSession(
+  diskSessionId: string,
+  name: string
+): Promise<void> {
   const trimmed = name.trim().replace(/\s+/g, " ")
-  if (!trimmed || trimmed.length > SESSION_NAME_MAX_LENGTH || /[\u0000-\u001f]/.test(trimmed)) {
+  const hasControlChar = [...trimmed].some((ch) => {
+    const code = ch.charCodeAt(0)
+    return code >= 0 && code <= 0x1f
+  })
+  if (!trimmed || trimmed.length > SESSION_NAME_MAX_LENGTH || hasControlChar) {
     throw new Error("会话名称无效")
   }
   const live = ipcSessions.get(diskSessionId)
@@ -374,7 +411,9 @@ export async function renameAgentSession(diskSessionId: string, name: string): P
   openPiSessionManager(app, meta.path).appendSessionInfo(trimmed)
 }
 
-export async function destroyAgentSession(diskSessionId: string): Promise<void> {
+export async function destroyAgentSession(
+  diskSessionId: string
+): Promise<void> {
   const entry = ipcSessions.get(diskSessionId)
   if (!entry) return
   clearPermissionPromptsForSession(diskSessionId)

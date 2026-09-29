@@ -8,11 +8,14 @@
  *                    这只是上传时用的名字，不影响本地实际产物 Neezy.exe。
  *   SIGN_SKIP=1    跳过签名
  */
+
+import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
-import { execFileSync } from "node:child_process"
 
-const SIGN_URL = (process.env.SIGN_URL || "http://10.1.13.232/sign/sign.php").trim()
+const SIGN_URL = (
+  process.env.SIGN_URL || "http://10.1.13.232/sign/sign.php"
+).trim()
 const UPLOAD_NAME = (process.env.SIGN_UPLOAD_NAME || "ezvizhub.exe").trim()
 
 function loadUserEnv(name) {
@@ -37,7 +40,8 @@ async function signExe(exePath) {
   if (!fs.existsSync(input)) throw new Error(`file not found: ${input}`)
 
   const token = process.env.SIGN_TOKEN?.trim() || loadUserEnv("SIGN_TOKEN")
-  if (!token) throw new Error("SIGN_TOKEN 未设置（进程环境或 Windows 用户环境变量）")
+  if (!token)
+    throw new Error("SIGN_TOKEN 未设置（进程环境或 Windows 用户环境变量）")
 
   const bytes = fs.readFileSync(input)
   const form = new FormData()

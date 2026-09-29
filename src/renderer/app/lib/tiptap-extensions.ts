@@ -1,7 +1,7 @@
-﻿import StarterKit from "@tiptap/starter-kit"
-import Image from "@tiptap/extension-image"
+﻿import Image from "@tiptap/extension-image"
 import Link from "@tiptap/extension-link"
 import Placeholder from "@tiptap/extension-placeholder"
+import StarterKit from "@tiptap/starter-kit"
 
 /**
  * 共享 Tiptap 扩展集合。
@@ -10,7 +10,9 @@ import Placeholder from "@tiptap/extension-placeholder"
 export const tiptapExtensions = (placeholder: string) => [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
-    codeBlock: { HTMLAttributes: { class: "rounded-lg bg-muted/60 p-3 font-mono text-xs" } },
+    codeBlock: {
+      HTMLAttributes: { class: "rounded-lg bg-muted/60 p-3 font-mono text-xs" },
+    },
   }),
   Image.configure({
     inline: false,

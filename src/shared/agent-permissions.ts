@@ -29,12 +29,7 @@ export interface AgentPermissionSettings {
   extension: PermissionExtensionConfig
 }
 
-export const PI_BUILTIN_TOOL_NAMES = [
-  "read",
-  "bash",
-  "write",
-  "edit",
-] as const
+export const PI_BUILTIN_TOOL_NAMES = ["read", "bash", "write", "edit"] as const
 
 export const DEFAULT_PERMISSION_POLICY: AgentPermissionPolicy = {
   defaultPolicy: {
@@ -80,7 +75,10 @@ export const DEFAULT_PERMISSION_EXTENSION: PermissionExtensionConfig = {
 
 export type PermissionPresetId = "strict" | "balanced" | "permissive"
 
-export const PERMISSION_PRESETS: Record<PermissionPresetId, AgentPermissionPolicy> = {
+export const PERMISSION_PRESETS: Record<
+  PermissionPresetId,
+  AgentPermissionPolicy
+> = {
   strict: {
     defaultPolicy: {
       tools: "ask",
@@ -89,7 +87,9 @@ export const PERMISSION_PRESETS: Record<PermissionPresetId, AgentPermissionPolic
       skills: "ask",
       special: "ask",
     },
-    tools: Object.fromEntries(PI_BUILTIN_TOOL_NAMES.map((name) => [name, "ask"])),
+    tools: Object.fromEntries(
+      PI_BUILTIN_TOOL_NAMES.map((name) => [name, "ask"])
+    ),
     bash: { "*": "ask" },
     mcp: {},
     skills: {},
@@ -126,7 +126,10 @@ export const PERMISSION_PRESETS: Record<PermissionPresetId, AgentPermissionPolic
 const PERMISSION_STATES: PermissionState[] = ["allow", "deny", "ask"]
 
 function isPermissionState(value: unknown): value is PermissionState {
-  return typeof value === "string" && PERMISSION_STATES.includes(value as PermissionState)
+  return (
+    typeof value === "string" &&
+    PERMISSION_STATES.includes(value as PermissionState)
+  )
 }
 
 function normalizeRecord(
@@ -141,8 +144,11 @@ function normalizeRecord(
   return out
 }
 
-export function normalizeAgentPermissionPolicy(raw: unknown): AgentPermissionPolicy {
-  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+export function normalizeAgentPermissionPolicy(
+  raw: unknown
+): AgentPermissionPolicy {
+  const record =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   const partialDefault =
     record.defaultPolicy && typeof record.defaultPolicy === "object"
       ? (record.defaultPolicy as Record<string, unknown>)
@@ -174,8 +180,11 @@ export function normalizeAgentPermissionPolicy(raw: unknown): AgentPermissionPol
   }
 }
 
-export function normalizePermissionExtensionConfig(raw: unknown): PermissionExtensionConfig {
-  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+export function normalizePermissionExtensionConfig(
+  raw: unknown
+): PermissionExtensionConfig {
+  const record =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   return {
     yoloMode: record.yoloMode === true,
   }

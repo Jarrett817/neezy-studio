@@ -1,3 +1,8 @@
+import type { AgentThinkingLevelSetting } from "../shared/app-config"
+import {
+  AGENT_THINKING_LEVEL_AUTO,
+  normalizeAgentThinkingLevel,
+} from "../shared/app-config"
 import type { ChatModelEntry } from "./chat-model-entry"
 
 export interface LlmProviderConfig {
@@ -12,6 +17,7 @@ export type ModelTier = "light" | "balanced" | "performance"
 export type RuntimeSettings = {
   preferLowPower: boolean
   maxCpuPercent: number
+  agentThinkingLevel: AgentThinkingLevelSetting
   activeChatModelId: string
   llmProvider: LlmProviderConfig
   chatModels?: ChatModelEntry[]
@@ -27,11 +33,15 @@ const DEFAULT_PROVIDER: LlmProviderConfig = {
 const DEFAULT: RuntimeSettings = {
   preferLowPower: true,
   maxCpuPercent: 95,
+  agentThinkingLevel: AGENT_THINKING_LEVEL_AUTO,
   activeChatModelId: "",
   llmProvider: DEFAULT_PROVIDER,
 }
 
-let cache: RuntimeSettings = { ...DEFAULT, llmProvider: { ...DEFAULT_PROVIDER } }
+let cache: RuntimeSettings = {
+  ...DEFAULT,
+  llmProvider: { ...DEFAULT_PROVIDER },
+}
 
 export function syncRuntimeSettings(input: RuntimeSettings): void {
   const provider = input.llmProvider
@@ -39,10 +49,16 @@ export function syncRuntimeSettings(input: RuntimeSettings): void {
     ...DEFAULT,
     ...input,
     chatModels: input.chatModels,
+    agentThinkingLevel: normalizeAgentThinkingLevel(
+      input.agentThinkingLevel ?? DEFAULT.agentThinkingLevel
+    ),
     activeChatModelId: input.activeChatModelId?.trim() ?? "",
     llmProvider: {
       preset: provider.preset || DEFAULT_PROVIDER.preset,
-      baseUrl: (provider.baseUrl || DEFAULT_PROVIDER.baseUrl).replace(/\/$/, ""),
+      baseUrl: (provider.baseUrl || DEFAULT_PROVIDER.baseUrl).replace(
+        /\/$/,
+        ""
+      ),
       apiKey: provider.apiKey ?? "",
       model: provider.model?.trim() || DEFAULT_PROVIDER.model,
     },

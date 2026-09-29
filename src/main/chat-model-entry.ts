@@ -18,7 +18,10 @@ export function resolveEntryApiBase(
   globalApi: LlmProviderConfig
 ): string {
   const preset = entry.preset ?? globalApi.preset
-  return resolveCatalogBaseUrl(preset, entry.baseUrl ?? globalApi.baseUrl).replace(/\/$/, "")
+  return resolveCatalogBaseUrl(
+    preset,
+    entry.baseUrl ?? globalApi.baseUrl
+  ).replace(/\/$/, "")
 }
 
 export function resolveEntryApiKey(
@@ -29,7 +32,10 @@ export function resolveEntryApiKey(
 }
 
 export function normalizeMainChatModels(
-  input: Partial<{ chatModels?: ChatModelEntry[]; llmProvider?: LlmProviderConfig }>
+  input: Partial<{
+    chatModels?: ChatModelEntry[]
+    llmProvider?: LlmProviderConfig
+  }>
 ): ChatModelEntry[] {
   if (!input.chatModels?.length) return []
   const globalApi = input.llmProvider ?? {

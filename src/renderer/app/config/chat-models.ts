@@ -38,11 +38,14 @@ export function createChatModelEntry(
 }
 
 function normalizeContextWindow(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    return undefined
   return Math.floor(value)
 }
 
-export function enforceChatModelRules(entries: ChatModelEntry[]): ChatModelEntry[] {
+export function enforceChatModelRules(
+  entries: ChatModelEntry[]
+): ChatModelEntry[] {
   return entries.map((e) => ({
     ...e,
     id: e.id || nanoid(12),
@@ -53,7 +56,9 @@ export function enforceChatModelRules(entries: ChatModelEntry[]): ChatModelEntry
   }))
 }
 
-export function normalizeChatModels(entries: ChatModelEntry[] | undefined): ChatModelEntry[] {
+export function normalizeChatModels(
+  entries: ChatModelEntry[] | undefined
+): ChatModelEntry[] {
   if (!entries?.length) return []
   return enforceChatModelRules(entries)
 }

@@ -1,12 +1,13 @@
-import type { App } from "electron"
-import fs from "node:fs/promises"
 import fsSync from "node:fs"
+import fs from "node:fs/promises"
 import path from "node:path"
+import type { App } from "electron"
 
 import {
   APP_CONFIG_VERSION,
-  DEFAULT_APP_CONFIG,
   type AppConfig,
+  DEFAULT_APP_CONFIG,
+  normalizeAgentThinkingLevel,
 } from "../shared/app-config"
 
 export const CONFIG_FILE = "app-config.json"
@@ -33,7 +34,12 @@ function normalizeWorkspaceDir(value: string | undefined): string {
 function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
   const dataRoot = normalizeDataRoot(app, stored?.dataRoot)
   const workspaceDir = normalizeWorkspaceDir(stored?.workspaceDir)
-  const base = { ...DEFAULT_APP_CONFIG, ...(stored ?? {}), dataRoot, workspaceDir }
+  const base = {
+    ...DEFAULT_APP_CONFIG,
+    ...(stored ?? {}),
+    dataRoot,
+    workspaceDir,
+  }
   return {
     ...base,
     version: APP_CONFIG_VERSION,
@@ -56,6 +62,7 @@ function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
             : undefined,
       })),
     activeChatModelId: stored?.activeChatModelId?.trim() ?? "",
+    agentThinkingLevel: normalizeAgentThinkingLevel(stored?.agentThinkingLevel),
   }
 }
 
@@ -65,7 +72,9 @@ export function loadAppConfig(app: App): AppConfig {
 
   if (fsSync.existsSync(configPath)) {
     try {
-      stored = JSON.parse(fsSync.readFileSync(configPath, "utf8")) as Partial<AppConfig>
+      stored = JSON.parse(
+        fsSync.readFileSync(configPath, "utf8")
+      ) as Partial<AppConfig>
     } catch (error) {
       console.warn("[app-config] parse failed:", error)
     }
@@ -82,7 +91,10 @@ export function loadAppConfig(app: App): AppConfig {
   return merged
 }
 
-export async function saveAppConfig(app: App, config: AppConfig): Promise<AppConfig> {
+export async function saveAppConfig(
+  app: App,
+  config: AppConfig
+): Promise<AppConfig> {
   const merged = mergeConfig(app, config)
   const configPath = getAppConfigPath(app)
   await fs.mkdir(path.dirname(configPath), { recursive: true })

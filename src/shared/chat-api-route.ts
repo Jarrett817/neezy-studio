@@ -9,17 +9,26 @@ export function inferChatApiKind(resolvedBaseUrl: string): ChatApiKind {
     return "anthropic-messages"
   }
   // MiniMax Coding Plan 国内域名为 Anthropic Messages；仅显式 /v1 时走 OpenAI
-  if (/api\.minimaxi\.com|api\.minimax\.cn/i.test(base) && !/\/v\d+$/i.test(base)) {
+  if (
+    /api\.minimaxi\.com|api\.minimax\.cn/i.test(base) &&
+    !/\/v\d+$/i.test(base)
+  ) {
     return "anthropic-messages"
   }
   return "openai-completions"
 }
 
-export function resolveChatApiBaseUrl(resolvedBaseUrl: string, apiKind: ChatApiKind): string {
+export function resolveChatApiBaseUrl(
+  resolvedBaseUrl: string,
+  apiKind: ChatApiKind
+): string {
   const base = resolvedBaseUrl.trim().replace(/\/$/, "")
   if (!base) return base
   if (apiKind === "anthropic-messages") {
-    if (/api\.minimaxi\.com|api\.minimax\.cn/i.test(base) && !/\/anthropic/i.test(base)) {
+    if (
+      /api\.minimaxi\.com|api\.minimax\.cn/i.test(base) &&
+      !/\/anthropic/i.test(base)
+    ) {
       return `${base}/anthropic`
     }
     return base
@@ -49,7 +58,10 @@ export function resolvePiProvider(
     if (preset === "aliyun-coding" || /maas\.aliyuncs\.com/.test(base)) {
       return "anthropic"
     }
-    if (preset === "tencent-coding" || /lkeap\.cloud\.tencent\.com/.test(base)) {
+    if (
+      preset === "tencent-coding" ||
+      /lkeap\.cloud\.tencent\.com/.test(base)
+    ) {
       return "anthropic"
     }
     if (preset === "deepseek-coding" || /deepseek\.com/.test(base)) {

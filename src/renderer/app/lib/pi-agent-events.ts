@@ -1,11 +1,16 @@
-import type { AgentSessionEvent, AssistantMessage } from "../../../shared/pi-sdk"
+import type {
+  AgentSessionEvent,
+  AssistantMessage,
+} from "../../../shared/pi-sdk"
 
 export type PiAgentStreamState = {
   content: string
   thinking: string
 }
 
-export function textFromAssistantMessage(message: AssistantMessage): PiAgentStreamState {
+export function textFromAssistantMessage(
+  message: AssistantMessage
+): PiAgentStreamState {
   if (!Array.isArray(message.content)) {
     return { content: "", thinking: "" }
   }

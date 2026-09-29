@@ -1,6 +1,9 @@
 import type { ChatModelEntry } from "./chat-model-entry"
 import { normalizeMainChatModels } from "./chat-model-entry"
-import { getSyncedRuntimeSettings, type RuntimeSettings } from "./runtime-settings"
+import {
+  getSyncedRuntimeSettings,
+  type RuntimeSettings,
+} from "./runtime-settings"
 
 function listConfiguredChatModels(settings: RuntimeSettings): ChatModelEntry[] {
   return normalizeMainChatModels({
@@ -9,7 +12,9 @@ function listConfiguredChatModels(settings: RuntimeSettings): ChatModelEntry[] {
   })
 }
 
-export function resolveChatModelEntry(settings: RuntimeSettings): ChatModelEntry | null {
+export function resolveChatModelEntry(
+  settings: RuntimeSettings
+): ChatModelEntry | null {
   const configured = listConfiguredChatModels(settings)
   if (!configured.length) return null
 

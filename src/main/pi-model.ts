@@ -1,20 +1,28 @@
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core"
+import type { Api, KnownProvider, Model } from "@earendil-works/pi-ai"
 import {
   getBuiltinModel,
   getBuiltinModels,
   getBuiltinProviders,
 } from "@earendil-works/pi-ai/providers/all"
-import type { Api, KnownProvider, Model } from "@earendil-works/pi-ai"
 import {
+  AGENT_THINKING_LEVEL_AUTO,
+  normalizeAgentThinkingLevel,
+} from "../shared/app-config"
+import {
+  type ChatApiKind,
   inferChatApiKind,
   resolveChatApiBaseUrl,
   resolvePiProvider,
-  type ChatApiKind,
 } from "../shared/chat-api-route"
-import { dashScopeModelUsesThinking, isDashScopeOpenAiBaseUrl } from "../shared/coding-plan-catalog"
-import { resolveEntryApiBase, type ChatModelEntry } from "./chat-model-entry"
+import {
+  dashScopeModelUsesThinking,
+  isDashScopeOpenAiBaseUrl,
+} from "../shared/coding-plan-catalog"
+import { type ChatModelEntry, resolveEntryApiBase } from "./chat-model-entry"
+import { buildDashScopeCompat, withDashScopeCompat } from "./dashscope-compat"
 import { resolveActiveChatRoute } from "./model-routing"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
-import { buildDashScopeCompat, withDashScopeCompat } from "./dashscope-compat"
 
 const EMPTY_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
@@ -37,9 +45,9 @@ function findPiCatalogModel(
   if (direct) return direct as Model<Api>
 
   const needle = modelId.trim().toLowerCase()
-  return getBuiltinModels(provider).find((m) => m.id.toLowerCase() === needle) as
-    | Model<Api>
-    | undefined
+  return getBuiltinModels(provider).find(
+    (m) => m.id.toLowerCase() === needle
+  ) as Model<Api> | undefined
 }
 
 /** 自定义端点时：按 modelId 在 pi-ai 全目录回查 context/maxTokens（供应商元数据来自目录，非运行时探测） */
@@ -50,16 +58,24 @@ function lookupCatalogModelById(modelId: string): Model<Api> | undefined {
     if (!isKnownProvider(provider)) continue
     const hit = getBuiltinModels(provider).find((m) => {
       const id = m.id.toLowerCase()
-      return id === needle || id.endsWith(`/${needle}`) || id.split("/").pop() === needle
+      return (
+        id === needle ||
+        id.endsWith(`/${needle}`) ||
+        id.split("/").pop() === needle
+      )
     })
     if (hit) return hit as Model<Api>
   }
   return undefined
 }
 
-function fallbackAnthropicTemplate(provider: KnownProvider): Model<Api> | undefined {
+function fallbackAnthropicTemplate(
+  provider: KnownProvider
+): Model<Api> | undefined {
   if (provider === "minimax-cn") {
-    return getBuiltinModel("minimax-cn", "MiniMax-M2.7") as Model<Api> | undefined
+    return getBuiltinModel("minimax-cn", "MiniMax-M2.7") as
+      | Model<Api>
+      | undefined
   }
   return getBuiltinModels(provider).find(
     (m) => m.api === "anthropic-messages"
@@ -135,7 +151,8 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
 
   if (isKnownProvider(provider)) {
     const catalog =
-      findPiCatalogModel(provider, modelId) ?? fallbackAnthropicTemplate(provider)
+      findPiCatalogModel(provider, modelId) ??
+      fallbackAnthropicTemplate(provider)
     if (catalog) {
       return withUserContextWindow(
         withDashScopeCompat(
@@ -159,7 +176,14 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
 
   return withUserContextWindow(
     withDashScopeCompat(
-      buildApiModel(modelId, apiKind, baseUrl, provider, reasoning, dashScopeCompat),
+      buildApiModel(
+        modelId,
+        apiKind,
+        baseUrl,
+        provider,
+        reasoning,
+        dashScopeCompat
+      ),
       modelId,
       baseUrl
     ),
@@ -167,12 +191,29 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
   )
 }
 
-/**
- * 百炼 Agent 工具流式易缺 finish_reason；默认关闭 thinking 并显式 enable_thinking=false。
- */
-export function resolveAgentThinkingLevel(model: Model<Api>): "off" | "medium" {
-  if (isDashScopeOpenAiBaseUrl(model.baseUrl ?? "") && dashScopeModelUsesThinking(model.id)) {
+function inferThinkingLevelFromModel(model: Model<Api>): ThinkingLevel {
+  if (
+    isDashScopeOpenAiBaseUrl(model.baseUrl ?? "") &&
+    dashScopeModelUsesThinking(model.id)
+  ) {
     return "off"
   }
   return model.reasoning ? "medium" : "off"
+}
+
+/** 百炼 thinking 模型在 Agent 工具流下仍强制 off；用户指定其它档位时同样钳制。 */
+export function resolveAgentThinkingLevel(model: Model<Api>): ThinkingLevel {
+  const choice = normalizeAgentThinkingLevel(
+    getSyncedRuntimeSettings().agentThinkingLevel ?? AGENT_THINKING_LEVEL_AUTO
+  )
+  if (choice !== AGENT_THINKING_LEVEL_AUTO) {
+    if (
+      isDashScopeOpenAiBaseUrl(model.baseUrl ?? "") &&
+      dashScopeModelUsesThinking(model.id)
+    ) {
+      return "off"
+    }
+    return choice
+  }
+  return inferThinkingLevelFromModel(model)
 }

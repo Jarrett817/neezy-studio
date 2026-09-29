@@ -1,7 +1,7 @@
-import { ModelRuntime } from "@earendil-works/pi-coding-agent"
+import type { Api } from "@earendil-works/pi-ai"
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai"
 import { getBuiltinProviders } from "@earendil-works/pi-ai/providers/all"
-import type { Api } from "@earendil-works/pi-ai"
+import { ModelRuntime } from "@earendil-works/pi-coding-agent"
 
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"

@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { History, MessageSquarePlus, Pencil, Search, Trash2 } from "lucide-react"
+import {
+  History,
+  MessageSquarePlus,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react"
 import { useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -12,7 +18,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet"
-import { SESSION_NAME_MAX_LENGTH } from "../../../../shared/pi-session-dto"
 import { formatSessionTime } from "~/lib/format-session-time"
 import { cn } from "~/lib/utils"
 import {
@@ -24,6 +29,7 @@ import {
   sessionListTitle,
   startNewPiChatSession,
 } from "~/services/pi-chat-sessions"
+import { SESSION_NAME_MAX_LENGTH } from "../../../../shared/pi-session-dto"
 
 export function ChatSessionSidebar({
   activeSessionId,
@@ -60,7 +66,9 @@ export function ChatSessionSidebar({
     mutationFn: () => startNewPiChatSession(),
     onSuccess: (session) => {
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      void queryClient.invalidateQueries({
+        queryKey: ["chat-sessions", "sidebar"],
+      })
       onSessionCreated(session.id)
       setOpen(false)
       toast.success("已新建对话")
@@ -75,7 +83,9 @@ export function ChatSessionSidebar({
       renamePiChatSession(sessionId, name),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      void queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      void queryClient.invalidateQueries({
+        queryKey: ["chat-sessions", "sidebar"],
+      })
       setEditingId(null)
     },
     onError: (error) => {
@@ -96,7 +106,9 @@ export function ChatSessionSidebar({
     mutationFn: (sessionId: string) => removePiChatSession(sessionId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      await queryClient.invalidateQueries({ queryKey: ["chat-sessions", "sidebar"] })
+      await queryClient.invalidateQueries({
+        queryKey: ["chat-sessions", "sidebar"],
+      })
       await queryClient.invalidateQueries({
         queryKey: ["chat-sessions", "with-messages"],
       })
@@ -147,7 +159,9 @@ export function ChatSessionSidebar({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {isLoading ? (
-              <p className="px-2 py-4 text-xs text-muted-foreground">加载历史…</p>
+              <p className="px-2 py-4 text-xs text-muted-foreground">
+                加载历史…
+              </p>
             ) : filtered.length === 0 ? (
               <p className="px-2 py-4 text-xs text-muted-foreground">
                 {query.trim() ? "无匹配对话" : "暂无历史对话"}

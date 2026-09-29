@@ -2,18 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FolderOpen, RefreshCw, Trash2, Upload } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
-
-import { Button } from "~/components/ui/button"
 import { Badge } from "~/components/ui/badge"
+import { Button } from "~/components/ui/button"
+import { cn } from "~/lib/utils"
+import { getElectronApi } from "~/services/electron-client"
 import {
+  type AgentSkill,
   importSkillFromPath,
   importSkillsFromDrop,
   listSkills,
-  type AgentSkill,
   uninstallSkill,
 } from "~/services/skills"
-import { getElectronApi } from "~/services/electron-client"
-import { cn } from "~/lib/utils"
 
 export default function SkillsRoute() {
   const queryClient = useQueryClient()
@@ -27,7 +26,8 @@ export default function SkillsRoute() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["skills"] })
 
   const importMutation = useMutation({
-    mutationFn: (paths: string[]) => Promise.all(paths.map(importSkillFromPath)),
+    mutationFn: (paths: string[]) =>
+      Promise.all(paths.map(importSkillFromPath)),
     onSuccess: (skills) => {
       toast.success(`已导入 ${skills.length} 个 skill`)
       refresh()
@@ -57,7 +57,9 @@ export default function SkillsRoute() {
 
   const onPickFolder = async () => {
     try {
-      const dir = await getElectronApi().pickDirectory({ title: "选择 skill 文件夹" })
+      const dir = await getElectronApi().pickDirectory({
+        title: "选择 skill 文件夹",
+      })
       if (!dir) return
       importMutation.mutate([dir])
     } catch (e) {
@@ -79,18 +81,27 @@ export default function SkillsRoute() {
         <div>
           <h1 className="text-lg font-semibold">技能</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            拖入含 SKILL.md 的文件夹（或 SKILL.md 本身）即可本地导入，供 Agent 调用。
+            拖入含 SKILL.md 的文件夹（或 SKILL.md 本身）即可本地导入，供 Agent
+            调用。
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full" onClick={refresh}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-full"
+          onClick={refresh}
+        >
           <RefreshCw className="size-4" />
         </Button>
       </div>
 
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: 拖放上传区 */}
       <div
         className={cn(
           "flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
-          dragOver ? "border-primary bg-primary/5" : "border-border/70 bg-muted/15"
+          dragOver
+            ? "border-primary bg-primary/5"
+            : "border-border/70 bg-muted/15"
         )}
         onDragOver={(e) => {
           e.preventDefault()
@@ -158,7 +169,9 @@ function InstalledSkillRow({
             本地
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-1">{skill.description}</p>
+        <p className="text-xs text-muted-foreground line-clamp-1">
+          {skill.description}
+        </p>
       </div>
       <Button variant="ghost" size="sm" disabled={busy} onClick={onUninstall}>
         <Trash2 className="size-3.5" />

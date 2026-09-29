@@ -61,7 +61,10 @@ const markdownComponents: Components = {
     if (isBlock) {
       return (
         <code
-          className={cn("block font-mono text-[13px] leading-relaxed", className)}
+          className={cn(
+            "block font-mono text-[13px] leading-relaxed",
+            className
+          )}
           {...props}
         >
           {children}
@@ -97,7 +100,9 @@ const markdownComponents: Components = {
       {children}
     </a>
   ),
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  strong: ({ children }) => (
+    <strong className="font-semibold">{children}</strong>
+  ),
   em: ({ children }) => <em className="italic">{children}</em>,
   del: ({ children }) => (
     <del className="text-muted-foreground line-through">{children}</del>
@@ -105,7 +110,9 @@ const markdownComponents: Components = {
   hr: () => <hr className="my-4 border-border/40" />,
   table: ({ children }) => (
     <div className="my-4 w-full overflow-x-auto rounded-xl border border-border/50 bg-background/50">
-      <table className="w-full min-w-[20rem] border-collapse text-sm">{children}</table>
+      <table className="w-full min-w-[20rem] border-collapse text-sm">
+        {children}
+      </table>
     </div>
   ),
   thead: ({ children }) => (
@@ -156,7 +163,10 @@ export function MarkdownContent({
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+      >
         {content}
       </ReactMarkdown>
     </div>

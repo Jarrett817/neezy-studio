@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto"
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent"
 import type { BrowserWindow } from "electron"
-import { randomUUID } from "node:crypto"
 
 import type { PermissionGrantTarget } from "../shared/permission-prompt-grant"
 import { parsePermissionPromptGrant } from "../shared/permission-prompt-grant"
@@ -31,8 +31,10 @@ export interface PermissionPromptPayload {
   grantTarget?: PermissionGrantTarget | null
 }
 
+const ANSI_ESCAPE = String.fromCharCode(0x1b)
+
 function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "").trim()
+  return text.replace(new RegExp(`${ANSI_ESCAPE}\\[[0-9;]*m`, "g"), "").trim()
 }
 
 type PendingPrompt = {
@@ -70,7 +72,9 @@ export function clearPermissionPromptsForSession(sessionId: string): void {
 
 function isPiPermissionSelectOptions(options: string[]): boolean {
   if (options.length !== PI_PERMISSION_SELECT_OPTIONS.length) return false
-  return PI_PERMISSION_SELECT_OPTIONS.every((option, index) => options[index] === option)
+  return PI_PERMISSION_SELECT_OPTIONS.every(
+    (option, index) => options[index] === option
+  )
 }
 
 export function resolvePermissionPrompt(
@@ -105,7 +109,11 @@ function promptUser(
   const grantTarget =
     payload.kind === "permission" ? (payload.grantTarget ?? null) : undefined
   return new Promise((resolve, reject) => {
-    getSessionPending(sessionId).set(requestId, { resolve, reject, grantTarget })
+    getSessionPending(sessionId).set(requestId, {
+      resolve,
+      reject,
+      grantTarget,
+    })
     window.webContents.send("agent:permission-prompt", {
       sessionId,
       requestId,
@@ -124,9 +132,14 @@ async function runExtensionCustomPrompt<T>(
   const mockKb = {}
 
   let resolved: T | undefined
-  const component = await factory(mockTui as never, mockTheme as never, mockKb as never, (result) => {
-    resolved = result as T
-  })
+  const component = await factory(
+    mockTui as never,
+    mockTheme as never,
+    mockKb as never,
+    (result) => {
+      resolved = result as T
+    }
+  )
 
   if (resolved !== undefined) {
     return resolved
@@ -144,7 +157,10 @@ async function runExtensionCustomPrompt<T>(
   return (value === "true") as T
 }
 
-const noopUiMethods: Omit<ExtensionUIContext, "select" | "input" | "notify" | "custom" | "confirm"> = {
+const noopUiMethods: Omit<
+  ExtensionUIContext,
+  "select" | "input" | "notify" | "custom" | "confirm"
+> = {
   onTerminalInput: () => () => {},
   setStatus: () => {},
   setWorkingMessage: () => {},
@@ -204,7 +220,11 @@ export function createElectronPermissionUi(
       promptUser(window, sessionId, { kind: "input", title, placeholder }),
     notify: (message, type) => {
       if (!window.isDestroyed()) {
-        window.webContents.send("agent:permission-notify", { sessionId, message, type })
+        window.webContents.send("agent:permission-notify", {
+          sessionId,
+          message,
+          type,
+        })
       }
     },
   }

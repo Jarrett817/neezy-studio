@@ -48,7 +48,9 @@ export async function listAgentSkillCommands(
   return getElectronApi().agentSkillCommands(sessionId)
 }
 
-export async function abortAgentSession(sessionId: string): Promise<{ ok: boolean }> {
+export async function abortAgentSession(
+  sessionId: string
+): Promise<{ ok: boolean }> {
   return getElectronApi().agentAbort(sessionId)
 }
 

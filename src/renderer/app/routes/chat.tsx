@@ -1,56 +1,70 @@
-import { useEffect, useLayoutEffect, useRef, useState, lazy, Suspense } from "react"
-import { flushSync } from "react-dom"
-import { motion } from "framer-motion"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { motion } from "framer-motion"
 import {
+  ArrowUp,
+  FileText,
   FolderOpen,
+  Loader2,
+  MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
   Square,
-  ArrowUp,
   X,
-  FileText,
-  Loader2,
-  MessageSquarePlus,
 } from "lucide-react"
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
+import { flushSync } from "react-dom"
 import { toast } from "sonner"
-
-import { NomiFace } from "~/components/nomi-face"
-import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
-import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
-import { ChatMessageBubble } from "~/components/chat/chat-message"
-import { ChatEditor, type ChatEditorHandle } from "~/components/chat/chat-editor"
-import { Button } from "~/components/ui/button"
 import { ShellHeaderActions } from "~/components/app-shell"
-import { entryDisplayName } from "~/config/chat-models"
-import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
-import { useAppStore } from "~/stores/app-store"
-import { useChatSession } from "~/hooks/use-chat-session"
-import { useChatSend } from "~/hooks/use-chat-send"
-import { startNewPiChatSession } from "~/services/pi-chat-sessions"
+import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
 import {
-  extractImageContentsFromTiptap,
-  tiptapToPlainText,
-} from "~/services/chat-content"
-import { getAgentContextUsage, listAgentSkillCommands } from "~/services/pi-agent-client"
-import {
-  getStoragePaths,
-  pickStorageDirectory,
-  saveWorkspaceDir,
-} from "~/services/storage-paths"
-import {
-  formatContextUsageTooltip,
-  type ContextUsageWire,
-} from "../../../shared/chat-wire"
+  ChatEditor,
+  type ChatEditorHandle,
+} from "~/components/chat/chat-editor"
+import { ChatMessageBubble } from "~/components/chat/chat-message"
+import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
+import { NomiFace } from "~/components/nomi-face"
+import { Button } from "~/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip"
+import { entryDisplayName } from "~/config/chat-models"
+import { useChatSend } from "~/hooks/use-chat-send"
+import { useChatSession } from "~/hooks/use-chat-session"
 import { cn } from "~/lib/utils"
+import {
+  extractImageContentsFromTiptap,
+  tiptapToPlainText,
+} from "~/services/chat-content"
+import {
+  getAgentContextUsage,
+  listAgentSkillCommands,
+} from "~/services/pi-agent-client"
+import { startNewPiChatSession } from "~/services/pi-chat-sessions"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
+import {
+  getStoragePaths,
+  pickStorageDirectory,
+  saveWorkspaceDir,
+} from "~/services/storage-paths"
+import { useAppStore } from "~/stores/app-store"
+import {
+  type ContextUsageWire,
+  formatContextUsageTooltip,
+} from "../../../shared/chat-wire"
 
-const ChatOptionsSheet = lazy(() => import("~/components/chat/chat-options-sheet"))
+const ChatOptionsSheet = lazy(
+  () => import("~/components/chat/chat-options-sheet")
+)
 
 const SYSTEM_PROMPT =
   `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd。已导入的 skill 会自动加载可直接使用。需要时直接调用工具，勿声称工具不存在。`.trim()
@@ -66,7 +80,8 @@ function workspaceLabel(dir: string | undefined): string {
 }
 
 function ContextUsageRing({ usage }: { usage: ContextUsageWire }) {
-  const percent = usage.percent == null ? 0 : Math.min(100, Math.max(0, usage.percent))
+  const percent =
+    usage.percent == null ? 0 : Math.min(100, Math.max(0, usage.percent))
   const known = usage.tokens != null && usage.percent != null
   const offset = CONTEXT_RING_C * (1 - percent / 100)
   return (
@@ -79,11 +94,7 @@ function ContextUsageRing({ usage }: { usage: ContextUsageWire }) {
             className="size-8 rounded-lg text-muted-foreground/70 hover:bg-accent/30 hover:text-foreground"
             aria-label={formatContextUsageTooltip(usage)}
           >
-            <svg
-              viewBox="0 0 16 16"
-              className="size-4 -rotate-90"
-              aria-hidden
-            >
+            <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
               <circle
                 cx="8"
                 cy="8"
@@ -123,11 +134,7 @@ function ContextUsageRing({ usage }: { usage: ContextUsageWire }) {
   )
 }
 
-function WorkspacePicker({
-  onChanged,
-}: {
-  onChanged: () => void
-}) {
+function WorkspacePicker({ onChanged }: { onChanged: () => void }) {
   const queryClient = useQueryClient()
   const { data: paths } = useQuery({
     queryKey: ["storage-paths"],
@@ -187,7 +194,10 @@ function WorkspacePicker({
               <span className="truncate text-xs">{label}</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-sm whitespace-pre-wrap break-all">
+          <TooltipContent
+            side="bottom"
+            className="max-w-sm whitespace-pre-wrap break-all"
+          >
             {title}
           </TooltipContent>
         </Tooltip>
@@ -209,20 +219,29 @@ function WorkspacePicker({
 }
 
 function isNearBottom(el: HTMLElement) {
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_NEAR_BOTTOM_PX
+  return (
+    el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_NEAR_BOTTOM_PX
+  )
 }
 
 export default function ChatRoute() {
   const {
-    activeSessionId, setActiveSessionId, sessionsReady, sessionIdRef,
-    handleSelectSession, handleNewSession,
+    activeSessionId,
+    setActiveSessionId,
+    sessionsReady,
+    sessionIdRef,
+    handleSelectSession,
+    handleNewSession,
   } = useChatSession()
 
   const queryClient = useQueryClient()
   const messages = useAppStore((s) => s.conversationHistory)
   const editorRef = useRef<ChatEditorHandle>(null)
   const [hasText, setHasText] = useState(false)
-  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null)
+  const [attachedFile, setAttachedFile] = useState<{
+    name: string
+    content: string
+  } | null>(null)
   const [isReadingFile, setIsReadingFile] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
@@ -246,9 +265,16 @@ export default function ChatRoute() {
     staleTime: 10_000,
   })
 
-  const chatEntry = runtimeSettings ? resolveChatModelEntry(runtimeSettings) : null
+  const chatEntry = runtimeSettings
+    ? resolveChatModelEntry(runtimeSettings)
+    : null
 
-  const { send, abort: abortSend, isGenerating, resetAgent } = useChatSend({
+  const {
+    send,
+    abort: abortSend,
+    isGenerating,
+    resetAgent,
+  } = useChatSend({
     agentSystemPrompt: SYSTEM_PROMPT,
     activeSessionId,
     onSessionCreated: (sid) => flushSync(() => setActiveSessionId(sid)),
@@ -259,21 +285,33 @@ export default function ChatRoute() {
 
   useEffect(() => {
     if (!sessionsReady || !activeSessionId) return
-    void resetAgent([], activeSessionId).then(() => {
-      void queryClient.invalidateQueries({ queryKey: ["agent-context-usage", activeSessionId] })
-      void queryClient.invalidateQueries({ queryKey: ["agent-skill-commands", activeSessionId] })
-    }).catch(() => {})
+    void resetAgent([], activeSessionId)
+      .then(() => {
+        void queryClient.invalidateQueries({
+          queryKey: ["agent-context-usage", activeSessionId],
+        })
+        void queryClient.invalidateQueries({
+          queryKey: ["agent-skill-commands", activeSessionId],
+        })
+      })
+      .catch(() => {})
   }, [activeSessionId, sessionsReady, resetAgent, queryClient])
 
   const { data: contextUsage } = useQuery({
     queryKey: ["agent-context-usage", activeSessionId],
-    queryFn: () => getAgentContextUsage(activeSessionId!),
+    queryFn: () => {
+      if (!activeSessionId) throw new Error("no session")
+      return getAgentContextUsage(activeSessionId)
+    },
     enabled: Boolean(activeSessionId && sessionsReady && !isGenerating),
   })
 
   const { data: skillCommands = [] } = useQuery({
     queryKey: ["agent-skill-commands", activeSessionId],
-    queryFn: () => listAgentSkillCommands(activeSessionId!),
+    queryFn: () => {
+      if (!activeSessionId) throw new Error("no session")
+      return listAgentSkillCommands(activeSessionId)
+    },
     enabled: Boolean(activeSessionId && sessionsReady),
   })
 
@@ -293,9 +331,9 @@ export default function ChatRoute() {
     setAttachedFile(null)
 
     const agentContent = fileSnapshot
-      ? (text
-          ? `${text}\n\n[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
-          : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`)
+      ? text
+        ? `${text}\n\n[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
+        : `[附件: ${fileSnapshot.name}]\n---\n${fileSnapshot.content}\n---`
       : text
     send(agentContent, {
       contentJson: contentJson ?? undefined,
@@ -318,11 +356,16 @@ export default function ChatRoute() {
     setIsReadingFile(true)
     try {
       const text = await file.text()
-      const content = text.length <= 32000 ? text
-        : `${text.slice(0, 16000)}\n...\n(内容过长，已截断中间部分)\n...\n${text.slice(text.length - 16000)}`
+      const content =
+        text.length <= 32000
+          ? text
+          : `${text.slice(0, 16000)}\n...\n(内容过长，已截断中间部分)\n...\n${text.slice(text.length - 16000)}`
       setAttachedFile({ name: file.name, content })
-    } catch { /* ignore */ }
-    finally { setIsReadingFile(false) }
+    } catch {
+      /* ignore */
+    } finally {
+      setIsReadingFile(false)
+    }
     e.target.value = ""
   }
 
@@ -330,9 +373,12 @@ export default function ChatRoute() {
   const lastAssistant = messages.findLast((m) => m.role === "assistant")
 
   if (!sessionsReady) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <Loader2 className="mr-2 size-4 animate-spin" />加载对话历史…
-    </div>
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 size-4 animate-spin" />
+        加载对话历史…
+      </div>
+    )
   }
 
   return (
@@ -340,8 +386,14 @@ export default function ChatRoute() {
       <ShellHeaderActions>
         <ChatSessionSidebar
           activeSessionId={activeSessionId}
-          onSelectSession={async (id) => { await handleSelectSession(id); resetAgent([], id).catch(() => {}) }}
-          onSessionCreated={async (id) => { await handleNewSession(id); resetAgent([], id).catch(() => {}) }}
+          onSelectSession={async (id) => {
+            await handleSelectSession(id)
+            resetAgent([], id).catch(() => {})
+          }}
+          onSessionCreated={async (id) => {
+            await handleNewSession(id)
+            resetAgent([], id).catch(() => {})
+          }}
         />
         <Button
           variant="ghost"
@@ -382,7 +434,11 @@ export default function ChatRoute() {
       </ShellHeaderActions>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-0 py-0">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-0 py-0"
+        >
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
               <NomiFace className="size-20" />
@@ -392,7 +448,14 @@ export default function ChatRoute() {
             </div>
           ) : (
             <div className="mx-auto w-full max-w-5xl px-4 pb-8">
-              {messages.map((m, i) => <ChatMessageBubble key={m.id} message={m} modelName={chatModelName} index={i} />)}
+              {messages.map((m, i) => (
+                <ChatMessageBubble
+                  key={m.id}
+                  message={m}
+                  modelName={chatModelName}
+                  index={i}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -403,8 +466,15 @@ export default function ChatRoute() {
               {attachedFile && (
                 <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">
                   <FileText className="size-4 shrink-0 text-primary" />
-                  <span className="flex-1 truncate text-xs text-muted-foreground/80">{attachedFile.name}</span>
-                  <Button variant="ghost" size="icon-sm" className="size-6 rounded-lg text-muted-foreground/50 hover:text-foreground" onClick={() => setAttachedFile(null)}>
+                  <span className="flex-1 truncate text-xs text-muted-foreground/80">
+                    {attachedFile.name}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-6 rounded-lg text-muted-foreground/50 hover:text-foreground"
+                    onClick={() => setAttachedFile(null)}
+                  >
                     <X className="size-3.5" />
                   </Button>
                 </div>
@@ -418,7 +488,13 @@ export default function ChatRoute() {
               />
               <div className="flex items-center justify-between gap-3 px-3 pb-2.5">
                 <div className="flex items-center gap-1">
-                  <input ref={fileInputRef} type="file" accept="image/*,.md,.txt,.csv,.json" className="hidden" onChange={handleFileSelect} />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.md,.txt,.csv,.json"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                  />
                   <Button
                     variant="ghost"
                     size="icon"
@@ -427,20 +503,34 @@ export default function ChatRoute() {
                     disabled={isReadingFile}
                     title="附加文件"
                   >
-                    {isReadingFile ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                    {isReadingFile ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="size-4" />
+                    )}
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
                   {isGenerating ? (
-                    <Button variant="outline" size="sm" className="gap-1.5 rounded-full border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground" onClick={abortSend}>
-                      <Square className="size-3 fill-current" />停止
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 rounded-full border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      onClick={abortSend}
+                    >
+                      <Square className="size-3 fill-current" />
+                      停止
                     </Button>
                   ) : null}
                   <motion.div whileTap={{ scale: 0.94 }}>
-                    <Button size="sm" className="gap-1.5 rounded-full px-5 shadow-sm"
+                    <Button
+                      size="sm"
+                      className="gap-1.5 rounded-full px-5 shadow-sm"
                       disabled={!hasText && !attachedFile}
-                      onClick={doSend}>
-                      <ArrowUp className="size-4" />发送
+                      onClick={doSend}
+                    >
+                      <ArrowUp className="size-4" />
+                      发送
                     </Button>
                   </motion.div>
                 </div>

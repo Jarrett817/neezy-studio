@@ -37,7 +37,10 @@
     "appId": "com.neezy.studio",
     "productName": "Neezy",
     "afterPack": "./scripts/sign-win-exe.mjs",
-    "electronLanguages": ["zh-CN", "en-US"],
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "output": "release"
     },

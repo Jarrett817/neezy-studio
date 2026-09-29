@@ -9,10 +9,12 @@ export type AgentStep = {
   variant?: "error"
 }
 
-export type {
+import type {
   ChatWireActivityItem as AssistantActivityItem,
   ChatWireToolCall as ChatToolCall,
 } from "../../../shared/chat-wire"
+
+export type { AssistantActivityItem, ChatToolCall }
 
 export const TOOL_LABELS: Record<string, string> = {
   memory_search: "查阅记忆",
@@ -125,7 +127,10 @@ export function formatToolPartialPreview(partial: unknown): string {
   return truncateThinkingPreview(text.replace(/\s+/g, " ").trim(), 200)
 }
 
-export function formatToolResultPreview(result: unknown, isError: boolean): string {
+export function formatToolResultPreview(
+  result: unknown,
+  isError: boolean
+): string {
   const text =
     typeof result === "string"
       ? result
@@ -355,14 +360,20 @@ export function patchCompactionActivity(
 export function patchRetryActivity(
   activity: AssistantActivityItem[],
   phase: "start" | "end",
-  meta: { attempt: number; maxAttempts: number; errorMessage?: string; success?: boolean }
+  meta: {
+    attempt: number
+    maxAttempts?: number
+    errorMessage?: string
+    success?: boolean
+  }
 ): AssistantActivityItem[] {
   const id = "retry"
   if (phase === "start") {
+    const max = meta.maxAttempts ?? 1
     const err = meta.errorMessage?.trim()
     const detail = err
-      ? `第 ${meta.attempt}/${meta.maxAttempts} 次 · ${truncateThinkingPreview(err, 80)}`
-      : `第 ${meta.attempt}/${meta.maxAttempts} 次`
+      ? `第 ${meta.attempt}/${max} 次 · ${truncateThinkingPreview(err, 80)}`
+      : `第 ${meta.attempt}/${max} 次`
     const rest = activity.filter((a) => a.kind !== "workflow" || a.id !== id)
     return [
       ...rest,
@@ -420,7 +431,7 @@ export function markAllDone(steps: AgentStep[]): AgentStep[] {
 }
 
 const THINK_OPEN = /<(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
-const THINK_CLOSE = /<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
+const _THINK_CLOSE = /<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
 const THINK_PAIRED =
   /<(?:think|redacted_reasoning|redacted_thinking)\s*>([\s\S]*?)<\/(?:think|redacted_reasoning|redacted_thinking)\s*>/gi
 
@@ -441,10 +452,11 @@ export function parseModelThinking(text: string): ParsedModelThinking {
   const pairedParts: string[] = []
   let pairedLastEnd = 0
   const paired = new RegExp(THINK_PAIRED.source, THINK_PAIRED.flags)
-  let m: RegExpExecArray | null
-  while ((m = paired.exec(raw)) !== null) {
+  let m = paired.exec(raw)
+  while (m !== null) {
     pairedParts.push(m[1].trim())
     pairedLastEnd = m.index + m[0].length
+    m = paired.exec(raw)
   }
   if (pairedParts.length > 0) {
     return {
@@ -459,8 +471,9 @@ export function parseModelThinking(text: string): ParsedModelThinking {
   )
   if (closeMatch) {
     const thinking = closeMatch[1].replace(THINK_OPEN, "").trim()
+    const closeStart = closeMatch.index ?? 0
     const visible = raw
-      .slice(closeMatch.index! + closeMatch[0].length)
+      .slice(closeStart + closeMatch[0].length)
       .replace(THINK_OPEN, "")
       .trim()
     return { thinking, visible, inThinkBlock: false }
@@ -543,7 +556,9 @@ export function mergeStreamThinking(
   const thinking = [nativeThinking.trim(), parsed.thinking.trim()]
     .filter(Boolean)
     .join("\n\n")
-  const visible = parsed.inThinkBlock ? parsed.visible : parsed.visible || rawAnswer
+  const visible = parsed.inThinkBlock
+    ? parsed.visible
+    : parsed.visible || rawAnswer
   return {
     thinking,
     visible,

@@ -1,17 +1,10 @@
-import fs from "node:fs/promises"
 import fsSync from "node:fs"
+import fs from "node:fs/promises"
 import path from "node:path"
 
 const DB_FILES = ["memories.db", "memories.db-wal", "memories.db-shm"] as const
 
-const DATA_DIRS = [
-  "memories",
-  "personas",
-  "skills",
-  "playbooks",
-  "input-profiles",
-  "models",
-] as const
+const DATA_DIRS = ["memories", "personas", "skills", "models"] as const
 
 export type DataRootMigrationResult = {
   from: string
@@ -19,7 +12,7 @@ export type DataRootMigrationResult = {
   moved: string[]
 }
 
-async function exists(target: string): Promise<boolean> {
+async function _exists(target: string): Promise<boolean> {
   try {
     await fs.access(target)
     return true

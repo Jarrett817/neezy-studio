@@ -1,36 +1,37 @@
 import {
-  completeSimple,
-  streamSimple,
   type AssistantMessage,
   type Context,
+  completeSimple,
   type Message,
+  streamSimple,
   type TextContent,
   type ThinkingContent,
 } from "@earendil-works/pi-ai/compat"
-
-import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
-import { resolveActiveChatRoute } from "./model-routing"
-import { resolveEntryApiKey } from "./chat-model-entry"
-import { getSyncedRuntimeSettings } from "./runtime-settings"
 import { isDashScopeOpenAiBaseUrl } from "../shared/coding-plan-catalog"
+import { resolveEntryApiKey } from "./chat-model-entry"
+import { resolveActiveChatRoute } from "./model-routing"
+import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
+import { getSyncedRuntimeSettings } from "./runtime-settings"
 
-/** Playbook 单轮流式：仅 role + 文本，经 toPiUserOrAssistant 转为 pi-ai Message */
+/** 连接测试单轮流式：仅 role + 文本，经 toPiUserOrAssistant 转为 pi-ai Message */
 export type PiChatMessage = {
   role: "system" | "user" | "assistant"
   content: string
 }
 
-let activeModelId: string | null = null
+let _activeModelId: string | null = null
 
 function resolvePiReasoningOption(
   userMessage?: string
 ): "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
   const model = resolvePiChatModel(userMessage)
   const level = resolveAgentThinkingLevel(model)
-  return level === "off" ? undefined : level
+  if (level === "off") return undefined
+  if (level === "max") return "xhigh"
+  return level
 }
 
-export function resolveRouteApiKey(userMessage?: string): string | undefined {
+export function resolveRouteApiKey(_userMessage?: string): string | undefined {
   const route = resolveActiveChatRoute()
   const entry = route.entry
   if (!entry) return undefined
@@ -39,13 +40,18 @@ export function resolveRouteApiKey(userMessage?: string): string | undefined {
 }
 
 function textFromBlocks(
-  blocks: (TextContent | ThinkingContent | { type: string; text?: string; thinking?: string })[]
+  blocks: (
+    | TextContent
+    | ThinkingContent
+    | { type: string; text?: string; thinking?: string }
+  )[]
 ): { text: string; thinking: string } {
   let text = ""
   let thinking = ""
   for (const block of blocks) {
     if (block.type === "text" && "text" in block) text += block.text
-    if (block.type === "thinking" && "thinking" in block) thinking += block.thinking
+    if (block.type === "thinking" && "thinking" in block)
+      thinking += block.thinking
   }
   return { text, thinking }
 }
@@ -58,7 +64,10 @@ export function extractAssistantMessageText(message: AssistantMessage): {
   return { content: text.trim(), thinking: thinking.trim() }
 }
 
-function toPiUserOrAssistant(m: PiChatMessage, model: ReturnType<typeof resolvePiChatModel>): Message {
+function toPiUserOrAssistant(
+  m: PiChatMessage,
+  model: ReturnType<typeof resolvePiChatModel>
+): Message {
   const ts = Date.now()
   if (m.role === "user") {
     return { role: "user", content: m.content, timestamp: ts }
@@ -95,7 +104,11 @@ function buildContext(
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => toPiUserOrAssistant(m, model))
   if (options?.userInput?.trim()) {
-    messages.push({ role: "user", content: options.userInput.trim(), timestamp: Date.now() })
+    messages.push({
+      role: "user",
+      content: options.userInput.trim(),
+      timestamp: Date.now(),
+    })
   }
   return {
     systemPrompt: systemParts.join("\n\n") || undefined,
@@ -115,7 +128,7 @@ async function ensureChatReady(userMessage?: string): Promise<void> {
   if (!key) {
     throw new Error("请配置 API Key")
   }
-  activeModelId = route.modelId
+  _activeModelId = route.modelId
   void userMessage
 }
 
@@ -126,10 +139,9 @@ export async function testPiConnection(): Promise<{
 }> {
   const started = Date.now()
   try {
-    await piCompleteMessages(
-      [{ role: "user", content: "reply with ok" }],
-      { maxTokens: 16 }
-    )
+    await piCompleteMessages([{ role: "user", content: "reply with ok" }], {
+      maxTokens: 16,
+    })
     return { ok: true, latencyMs: Date.now() - started }
   } catch (error) {
     return {
@@ -146,7 +158,9 @@ export async function piCompleteMessages(
 ): Promise<string> {
   await ensureChatReady()
   const model = resolvePiChatModel()
-  const context = buildContext(messages, { systemPrompt: options?.systemPrompt })
+  const context = buildContext(messages, {
+    systemPrompt: options?.systemPrompt,
+  })
   const streamOptions = {
     temperature: options?.temperature ?? 0.7,
     maxTokens: options?.maxTokens ?? 4096,
@@ -187,5 +201,3 @@ export async function piCompleteMessages(
   if (!content && result.errorMessage) throw new Error(result.errorMessage)
   return content
 }
-
-

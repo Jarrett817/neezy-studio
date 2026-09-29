@@ -19,7 +19,9 @@ export interface AgentPermissionPrompt {
   grantTarget?: unknown
 }
 
-const AgentPermissionDialogView = lazy(() => import("./agent-permission-dialog-view"))
+const AgentPermissionDialogView = lazy(
+  () => import("./agent-permission-dialog-view")
+)
 
 async function respondPermission(
   sessionId: string,

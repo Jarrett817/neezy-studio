@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useRef } from "react"
-
-import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
-import { formatWireUsage } from "../../../shared/chat-wire"
 import {
+  type AssistantActivityItem,
+  type ChatToolCall,
   formatToolPartialPreview,
   mergeStreamThinking,
   patchCompactionActivity,
   patchRetryActivity,
-  type AssistantActivityItem,
-  type ChatToolCall,
 } from "~/lib/agent-steps"
-import { activityFromAssistantContent } from "../../../shared/pi-assistant-activity"
-import { reduceAgentEvent, textFromAssistantMessage } from "~/lib/pi-agent-events"
-import { useAppStore } from "~/stores/app-store"
+import {
+  reduceAgentEvent,
+  textFromAssistantMessage,
+} from "~/lib/pi-agent-events"
+import { extractAgentFailure } from "~/services/agent-failure"
 import {
   abortAgentSession,
   configureAgentSession,
@@ -23,13 +22,18 @@ import {
 } from "~/services/pi-agent-client"
 import { loadPiChatMessages } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
-import { extractAgentFailure } from "~/services/agent-failure"
+import type { useAppStore } from "~/stores/app-store"
+import { formatWireUsage } from "../../../shared/chat-wire"
+import { activityFromAssistantContent } from "../../../shared/pi-assistant-activity"
+import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
 
 type UsePiAgentChatOptions = {
   systemPrompt: string
   diskSessionId: string | null
   enabled: boolean
-  onDiskMessagesReload?: (messages: ReturnType<typeof useAppStore.getState>["conversationHistory"]) => void
+  onDiskMessagesReload?: (
+    messages: ReturnType<typeof useAppStore.getState>["conversationHistory"]
+  ) => void
   /** 磁盘会话 id 失效后主进程新建会话时回写 UI */
   onDiskSessionIdRebound?: (newId: string) => void
 }
@@ -49,12 +53,13 @@ export function usePiAgentChat({
   const openThinkingIdRef = useRef<string | null>(null)
   const openTextIdRef = useRef<string | null>(null)
   const onStreamRef = useRef<
-    ((patch: {
-      thinking: string
-      content: string
-      activity: AssistantActivityItem[]
-      toolCalls: ChatToolCall[]
-    }) => void) | null
+    | ((patch: {
+        thinking: string
+        content: string
+        activity: AssistantActivityItem[]
+        toolCalls: ChatToolCall[]
+      }) => void)
+    | null
   >(null)
   const toolCallsRef = useRef<ChatToolCall[]>([])
   const onUsageRef = useRef<((summary: string) => void) | null>(null)
@@ -123,14 +128,14 @@ export function usePiAgentChat({
     [applySystemPrompt]
   )
 
-  const upsertToolCall = (item: ChatToolCall) => {
+  const upsertToolCall = useCallback((item: ChatToolCall) => {
     const list = toolCallsRef.current
     const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
     if (idx >= 0) list[idx] = { ...list[idx], ...item }
     else list.push(item)
-  }
+  }, [])
 
-  const emitUiPatch = () => {
+  const emitUiPatch = useCallback(() => {
     if (!activeAssistantId.current || !onStreamRef.current) return
     const display = mergeStreamThinking(
       streamState.current.thinking,
@@ -142,25 +147,35 @@ export function usePiAgentChat({
       activity: [...activityRef.current],
       toolCalls: [...toolCallsRef.current],
     })
-  }
+  }, [])
 
-  const syncActivityFromPiAssistant = (message: AssistantMessage) => {
-    const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
-    const fromPi = activityFromAssistantContent(message.content, ts)
-    const workflows = activityRef.current.filter((a) => a.kind === "workflow")
-    if (fromPi.activity.length > 0) {
-      activityRef.current = fromPi.activity
-      for (const w of workflows) {
-        if (!activityRef.current.some((a) => a.kind === "workflow" && a.id === w.id)) {
-          activityRef.current = [...activityRef.current, w]
+  const syncActivityFromPiAssistant = useCallback(
+    (message: AssistantMessage) => {
+      const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
+      const fromPi = activityFromAssistantContent(message.content, ts)
+      const workflows = activityRef.current.filter((a) => a.kind === "workflow")
+      if (fromPi.activity.length > 0) {
+        activityRef.current = fromPi.activity
+        for (const w of workflows) {
+          if (
+            !activityRef.current.some(
+              (a) => a.kind === "workflow" && a.id === w.id
+            )
+          ) {
+            activityRef.current = [...activityRef.current, w]
+          }
         }
       }
-    }
-    if (fromPi.toolCalls.length > 0) {
-      const live = new Map(toolCallsRef.current.map((t) => [t.toolCallId, t]))
-      toolCallsRef.current = fromPi.toolCalls.map((t) => ({ ...t, ...live.get(t.toolCallId) }))
-    }
-  }
+      if (fromPi.toolCalls.length > 0) {
+        const live = new Map(toolCallsRef.current.map((t) => [t.toolCallId, t]))
+        toolCallsRef.current = fromPi.toolCalls.map((t) => ({
+          ...t,
+          ...live.get(t.toolCallId),
+        }))
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     if (!enabled || !diskSessionId) return
@@ -256,7 +271,6 @@ export function usePiAgentChat({
       if (ev.type === "auto_retry_end") {
         activityRef.current = patchRetryActivity(activityRef.current, "end", {
           attempt: ev.attempt,
-          maxAttempts: ev.maxAttempts,
           success: ev.success,
           errorMessage: ev.finalError,
         })
@@ -288,9 +302,15 @@ export function usePiAgentChat({
       if (ev.type === "tool_execution_update") {
         const preview = formatToolPartialPreview(ev.partialResult)
         if (preview) {
-          const current = toolCallsRef.current.find((t) => t.toolCallId === ev.toolCallId)
+          const current = toolCallsRef.current.find(
+            (t) => t.toolCallId === ev.toolCallId
+          )
           if (current) {
-            upsertToolCall({ ...current, partialResult: preview, status: "running" })
+            upsertToolCall({
+              ...current,
+              partialResult: preview,
+              status: "running",
+            })
             emitUiPatch()
           }
         }
@@ -348,7 +368,9 @@ export function usePiAgentChat({
         pendingToolArgsRef.current.delete(ev.toolCallId)
         const args = pending?.args ?? {}
         const resultText =
-          typeof ev.result === "string" ? ev.result : JSON.stringify(ev.result ?? "")
+          typeof ev.result === "string"
+            ? ev.result
+            : JSON.stringify(ev.result ?? "")
         upsertToolCall({
           toolCallId: ev.toolCallId,
           name: ev.toolName,
@@ -389,6 +411,9 @@ export function usePiAgentChat({
     diskSessionId,
     openAgentForDisk,
     withSessionLock,
+    emitUiPatch,
+    upsertToolCall,
+    syncActivityFromPiAssistant,
   ])
 
   useEffect(() => {
@@ -398,7 +423,7 @@ export function usePiAgentChat({
       if (!sid) return
       await applySystemPrompt(sid)
     }).catch((err) => console.warn("[pi-agent] system prompt sync:", err))
-  }, [systemPrompt, enabled, applySystemPrompt, withSessionLock])
+  }, [enabled, applySystemPrompt, withSessionLock])
 
   useEffect(() => {
     return () => {

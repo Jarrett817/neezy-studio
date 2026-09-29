@@ -1,7 +1,7 @@
-import type { App } from "electron"
-import fs from "node:fs/promises"
 import fsSync from "node:fs"
+import fs from "node:fs/promises"
 import path from "node:path"
+import type { App } from "electron"
 
 import { loadAppConfig, saveAppConfig } from "./app-config"
 import { migrateDataRoot } from "./data-root-migrate"
@@ -42,7 +42,11 @@ function assertExistingDirectory(dir: string, label: string): string {
   return resolved
 }
 
-function buildResolved(app: App, dataRoot: string, workspaceDirRaw: string): StoragePaths {
+function buildResolved(
+  app: App,
+  dataRoot: string,
+  workspaceDirRaw: string
+): StoragePaths {
   const systemDefaults = getSystemDefaultPaths(app)
   const modelsDir = path.join(dataRoot, "models")
   const workspaceCustomized = Boolean(workspaceDirRaw.trim())
@@ -59,8 +63,6 @@ function buildResolved(app: App, dataRoot: string, workspaceDirRaw: string): Sto
     memoriesDir: path.join(dataRoot, "memories"),
     personasDir: path.join(dataRoot, "personas"),
     skillsDir: path.join(dataRoot, "skills"),
-    playbooksDir: path.join(dataRoot, "playbooks"),
-    inputProfilesDir: path.join(dataRoot, "input-profiles"),
     configFile: path.join(app.getPath("userData"), "app-config.json"),
     defaultDataRoot: systemDefaults.dataRoot,
     defaultModelsDir: systemDefaults.modelsDir,
@@ -97,8 +99,6 @@ export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
   await fs.mkdir(paths.memoriesDir, { recursive: true })
   await fs.mkdir(paths.personasDir, { recursive: true })
   await fs.mkdir(paths.skillsDir, { recursive: true })
-  await fs.mkdir(paths.playbooksDir, { recursive: true })
-  await fs.mkdir(paths.inputProfilesDir, { recursive: true })
 }
 
 async function applyDataRootChange(
@@ -137,7 +137,9 @@ export async function saveStoragePaths(
   return applyDataRootChange(app, dataRoot)
 }
 
-export async function resetStoragePaths(app: App): Promise<StoragePathsSaveResult> {
+export async function resetStoragePaths(
+  app: App
+): Promise<StoragePathsSaveResult> {
   const systemDefaults = getSystemDefaultPaths(app)
   return applyDataRootChange(app, systemDefaults.dataRoot)
 }

@@ -39,16 +39,37 @@ export function NomiFace({
   const blink = reduce
     ? {}
     : mood === "thinking"
-      ? { scaleY: [1, 1, 0.15, 1, 1], y: ["-18%", "-18%", "-18%", "-18%", "-18%"] }
+      ? {
+          scaleY: [1, 1, 0.15, 1, 1],
+          y: ["-18%", "-18%", "-18%", "-18%", "-18%"],
+        }
       : mood === "talking"
         ? { scaleY: [1, 1, 0.15, 1, 1] }
-        : { scaleY: [1, 1, 0.12, 1, 1, 1], x: ["0%", "22%", "22%", "-22%", "0%", "0%"] }
+        : {
+            scaleY: [1, 1, 0.12, 1, 1, 1],
+            x: ["0%", "22%", "22%", "-22%", "0%", "0%"],
+          }
   const blinkTransition =
     mood === "thinking"
-      ? { duration: 1.8, repeat: Infinity, ease: "easeInOut" as const, times: [0, 0.6, 0.68, 0.76, 1] }
+      ? {
+          duration: 1.8,
+          repeat: Infinity,
+          ease: "easeInOut" as const,
+          times: [0, 0.6, 0.68, 0.76, 1],
+        }
       : mood === "talking"
-        ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" as const, times: [0, 0.82, 0.9, 0.98, 1] }
-        : { duration: 5, repeat: Infinity, ease: "easeInOut" as const, times: [0, 0.5, 0.56, 0.62, 0.8, 1] }
+        ? {
+            duration: 2.4,
+            repeat: Infinity,
+            ease: "easeInOut" as const,
+            times: [0, 0.82, 0.9, 0.98, 1],
+          }
+        : {
+            duration: 5,
+            repeat: Infinity,
+            ease: "easeInOut" as const,
+            times: [0, 0.5, 0.56, 0.62, 0.8, 1],
+          }
 
   return (
     <motion.span

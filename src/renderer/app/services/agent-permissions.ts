@@ -5,9 +5,12 @@ import type {
   PermissionPresetId,
   PermissionState,
 } from "../../../shared/agent-permissions"
-import { PERMISSION_PRESETS } from "../../../shared/agent-permissions"
 import { getElectronApi } from "./electron-client"
 
+export {
+  PERMISSION_PRESETS,
+  PI_BUILTIN_TOOL_NAMES,
+} from "../../../shared/agent-permissions"
 export type {
   AgentPermissionPolicy,
   AgentPermissionSettings,
@@ -15,8 +18,6 @@ export type {
   PermissionPresetId,
   PermissionState,
 }
-
-export { PERMISSION_PRESETS, PI_BUILTIN_TOOL_NAMES } from "../../../shared/agent-permissions"
 
 export function getAgentPermissionSettings(): Promise<AgentPermissionSettings> {
   return getElectronApi().getAgentPermissionSettings()

@@ -44,7 +44,10 @@ export function tiptapToPlainText(doc: JSONContent | null | undefined): string {
     }
   }
   visit(doc)
-  return out.join("").replace(/\n{3,}/g, "\n\n").trim()
+  return out
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
 }
 
 /**
@@ -66,7 +69,9 @@ export function fileToBase64DataUrl(file: File): Promise<string> {
  * 压缩失败时回退为原图。
  */
 export async function compressImageToDataUrl(file: File): Promise<string> {
-  const { default: imageCompression } = await import("browser-image-compression")
+  const { default: imageCompression } = await import(
+    "browser-image-compression"
+  )
   try {
     const compressed = await imageCompression(file, {
       maxSizeMB: 1,
@@ -90,7 +95,10 @@ export function extractImagesFromTiptap(
   if (!doc) return result
   const visit = (node: JSONContent) => {
     if (node.type === "image" && node.attrs?.src) {
-      result.push({ src: String(node.attrs.src), alt: node.attrs.alt ?? undefined })
+      result.push({
+        src: String(node.attrs.src),
+        alt: node.attrs.alt ?? undefined,
+      })
     }
     for (const child of node.content ?? []) visit(child)
   }

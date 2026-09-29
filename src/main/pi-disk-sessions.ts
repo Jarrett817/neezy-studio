@@ -1,19 +1,18 @@
-import { SessionManager } from "@earendil-works/pi-coding-agent"
-import type { App } from "electron"
 import fsSync from "node:fs"
 import fs from "node:fs/promises"
-
-import type { AgentMessage } from "../shared/pi-sdk"
-import { formatWireUsage, type ChatWireMessage } from "../shared/chat-wire"
+import path from "node:path"
+import { SessionManager } from "@earendil-works/pi-coding-agent"
+import type { App } from "electron"
+import { type ChatWireMessage, formatWireUsage } from "../shared/chat-wire"
 import { activityFromAssistantContent } from "../shared/pi-assistant-activity"
+import type { AgentMessage } from "../shared/pi-sdk"
 import {
+  type SessionInfoDto,
   sessionListPreview,
   sessionListTitle,
   toSessionInfoDto,
-  type SessionInfoDto,
 } from "../shared/pi-session-dto"
 import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
-import path from "node:path"
 
 export const PI_SESSIONS_DIR_NAME = "pi-sessions"
 
@@ -91,7 +90,10 @@ export async function findPiSessionById(
   return sessions.find((s) => s.id === sessionId) ?? null
 }
 
-export function openPiSessionManager(app: App, sessionFile: string): SessionManager {
+export function openPiSessionManager(
+  app: App,
+  sessionFile: string
+): SessionManager {
   const { sessionDir } = piSessionDirs(app)
   // cwdOverride：工具操作落在当前工作区，而非会话创建时的 dataRoot
   return SessionManager.open(sessionFile, sessionDir, resolveWorkspaceDir(app))
@@ -120,7 +122,11 @@ function textFromContent(content: unknown): { text: string; thinking: string } {
   let thinking = ""
   for (const block of content) {
     if (block && typeof block === "object" && "type" in block) {
-      if (block.type === "text" && "text" in block && typeof block.text === "string") {
+      if (
+        block.type === "text" &&
+        "text" in block &&
+        typeof block.text === "string"
+      ) {
         text += block.text
       }
       if (
@@ -165,15 +171,25 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
           ? msg.toolCallId.trim()
           : ""
       const name =
-        "toolName" in msg && typeof msg.toolName === "string" ? msg.toolName.trim() : ""
+        "toolName" in msg && typeof msg.toolName === "string"
+          ? msg.toolName.trim()
+          : ""
       if (!toolCallId || !name) continue
       const result =
         typeof msg.content === "string"
           ? msg.content
           : Array.isArray(msg.content)
             ? msg.content
-                .filter((b) => b && typeof b === "object" && "type" in b && b.type === "text")
-                .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
+                .filter(
+                  (b) =>
+                    b &&
+                    typeof b === "object" &&
+                    "type" in b &&
+                    b.type === "text"
+                )
+                .map((b) =>
+                  "text" in b && typeof b.text === "string" ? b.text : ""
+                )
                 .join("")
             : ""
       const isError = "isError" in msg && msg.isError === true
@@ -185,7 +201,9 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
         id: `pi-${msg.timestamp}`,
         role: "user",
         content:
-          typeof msg.content === "string" ? msg.content : textFromContent(msg.content).text,
+          typeof msg.content === "string"
+            ? msg.content
+            : textFromContent(msg.content).text,
         thinking: "",
         timestamp: msg.timestamp,
       })
@@ -193,7 +211,10 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
     }
     if (msg.role === "assistant" && "timestamp" in msg) {
       const { text, thinking } = textFromContent(msg.content)
-      const { activity, toolCalls } = activityFromAssistantContent(msg.content, msg.timestamp)
+      const { activity, toolCalls } = activityFromAssistantContent(
+        msg.content,
+        msg.timestamp
+      )
       if (!text.trim() && !thinking.trim() && toolCalls.length === 0) continue
       const usageSummary = formatWireUsage(
         "usage" in msg ? msg.usage : undefined
@@ -242,7 +263,10 @@ export async function createPiChatSession(app: App): Promise<SessionInfoDto> {
   })
 }
 
-export async function deletePiChatSession(app: App, sessionId: string): Promise<void> {
+export async function deletePiChatSession(
+  app: App,
+  sessionId: string
+): Promise<void> {
   const meta = await findPiSessionById(app, sessionId)
   if (!meta) return
   await fs.unlink(meta.path).catch((err) => {
@@ -251,4 +275,4 @@ export async function deletePiChatSession(app: App, sessionId: string): Promise<
   })
 }
 
-export { sessionListTitle, sessionListPreview }
+export { sessionListPreview, sessionListTitle }

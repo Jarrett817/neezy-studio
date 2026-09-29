@@ -1,15 +1,15 @@
-import type { App } from "electron"
 import fs from "node:fs"
 import path from "node:path"
+import type { App } from "electron"
 import { parse as parseJsonc } from "jsonc-parser"
 
 import {
+  type AgentPermissionPolicy,
+  type AgentPermissionSettings,
   DEFAULT_PERMISSION_EXTENSION,
   DEFAULT_PERMISSION_POLICY,
   normalizeAgentPermissionPolicy,
   normalizePermissionExtensionConfig,
-  type AgentPermissionPolicy,
-  type AgentPermissionSettings,
   type PermissionExtensionConfig,
 } from "../shared/agent-permissions"
 import {
@@ -26,7 +26,8 @@ export function getPermissionExtensionConfigPath(agentDir: string): string {
 }
 
 export function ensurePermissionExtensionEnv(agentDir: string): void {
-  process.env.PI_PERMISSION_SYSTEM_CONFIG_PATH = getPermissionExtensionConfigPath(agentDir)
+  process.env.PI_PERMISSION_SYSTEM_CONFIG_PATH =
+    getPermissionExtensionConfigPath(agentDir)
 }
 
 function readJsoncFile(filePath: string): unknown {
@@ -84,7 +85,12 @@ export function loadAgentPermissionSettings(app: App): AgentPermissionSettings {
   ensurePermissionExtensionEnv(agentDir)
   const globalPolicyPath = ensureGlobalPolicyFile(agentDir)
   const extensionConfigPath = ensureExtensionConfigFile(agentDir)
-  const projectPolicyPath = path.join(dataRoot, ".pi", "agent", "pi-permissions.jsonc")
+  const projectPolicyPath = path.join(
+    dataRoot,
+    ".pi",
+    "agent",
+    "pi-permissions.jsonc"
+  )
 
   return {
     globalPolicyPath,
@@ -124,7 +130,9 @@ export function applyPermissionGrantToGlobalPolicy(
   return loadAgentPermissionSettings(app)
 }
 
-export function resetAgentPermissionSettings(app: App): AgentPermissionSettings {
+export function resetAgentPermissionSettings(
+  app: App
+): AgentPermissionSettings {
   const current = loadAgentPermissionSettings(app)
   writeJsonFile(current.globalPolicyPath, DEFAULT_PERMISSION_POLICY)
   writeJsonFile(current.extensionConfigPath, DEFAULT_PERMISSION_EXTENSION)

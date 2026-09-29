@@ -1,10 +1,10 @@
 import { app, ipcMain } from "electron"
-
-import { applyAppConfig } from "./app-config-sync"
-import { loadAppConfig, saveAppConfig } from "./app-config"
 import type { AppConfig } from "../shared/app-config"
+import { loadAppConfig, saveAppConfig } from "./app-config"
+import { applyAppConfig } from "./app-config-sync"
 import { listOpenAiCompatibleModels } from "./openai-models"
-import { syncRuntimeSettings, type RuntimeSettings } from "./runtime-settings"
+import { applyRuntimeThinkingToOpenSessions } from "./pi-agent"
+import { type RuntimeSettings, syncRuntimeSettings } from "./runtime-settings"
 
 /** 尽早注册，避免主进程重载或启动顺序导致 renderer 调用时 handler 未就绪 */
 function registerCoreIpcHandlers(): void {
@@ -13,9 +13,13 @@ function registerCoreIpcHandlers(): void {
   ipcMain.removeHandler("app:get-app-config")
   ipcMain.removeHandler("app:save-app-config")
 
-  ipcMain.handle("app:sync-runtime-settings", (_event, settings: RuntimeSettings) => {
-    syncRuntimeSettings(settings)
-  })
+  ipcMain.handle(
+    "app:sync-runtime-settings",
+    (_event, settings: RuntimeSettings) => {
+      syncRuntimeSettings(settings)
+      applyRuntimeThinkingToOpenSessions()
+    }
+  )
 
   ipcMain.handle("app:list-openai-models", (_event, payload: unknown) => {
     const body =

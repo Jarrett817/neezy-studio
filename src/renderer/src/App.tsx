@@ -1,11 +1,11 @@
-﻿import { Component, type ComponentType, type ReactNode } from "react"
+﻿import { QueryClientProvider } from "@tanstack/react-query"
+import { Component, type ComponentType, type ReactNode } from "react"
 import {
   createHashRouter,
   Navigate,
   Outlet,
   RouterProvider,
 } from "react-router"
-import { QueryClientProvider } from "@tanstack/react-query"
 
 import { AppShell } from "~/components/app-shell"
 import { Toaster } from "~/components/ui/sonner"

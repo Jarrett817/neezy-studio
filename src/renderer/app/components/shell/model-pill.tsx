@@ -1,13 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "react-router"
 import { PlugZap } from "lucide-react"
+import { Link } from "react-router"
 
 import { entryDisplayName, isEntryConfigured } from "~/config/chat-models"
 import { cn } from "~/lib/utils"
-import {
-  getRuntimeSettings,
-  resolveChatModelEntry,
-} from "~/services/settings"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 
 export function ModelPill() {
   const { data: settings } = useQuery({
@@ -21,7 +18,7 @@ export function ModelPill() {
     ? entryDisplayName(entry)
     : settings?.llmProvider.model.trim() || "未配置模型"
   const connected = entry
-    ? isEntryConfigured(entry, settings!.llmProvider)
+    ? isEntryConfigured(entry, settings?.llmProvider)
     : false
 
   return (
@@ -34,7 +31,10 @@ export function ModelPill() {
       )}
     >
       <PlugZap
-        className={cn("size-3.5 shrink-0", connected ? "text-primary" : "text-muted-foreground")}
+        className={cn(
+          "size-3.5 shrink-0",
+          connected ? "text-primary" : "text-muted-foreground"
+        )}
       />
       <span
         className={cn(

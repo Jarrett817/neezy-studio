@@ -1,17 +1,16 @@
-import { useState, useRef, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { useCallback, useRef, useState } from "react"
 import { toast } from "sonner"
-
-import type { ImageContent } from "../../../shared/pi-sdk"
-import { useAppStore } from "~/stores/app-store"
 import { usePiAgentChat } from "~/hooks/use-pi-agent-chat"
-import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
+import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
 import {
   ensurePiChatSessionForSend,
-  pruneEmptyPiChatSessions,
   setActiveSessionId as persistActiveSessionId,
+  pruneEmptyPiChatSessions,
 } from "~/services/pi-chat-sessions"
-import { appendModelReplyHints, parseModelThinking } from "~/lib/agent-steps"
+import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
+import { useAppStore } from "~/stores/app-store"
+import type { ImageContent } from "../../../shared/pi-sdk"
 
 export function useChatSend({
   agentSystemPrompt,
@@ -32,7 +31,8 @@ export function useChatSend({
   const addMessage = useAppStore((s) => s.addMessage)
   const updateMessage = useAppStore((s) => s.updateMessage)
   const getMessage = useCallback(
-    (id: string) => useAppStore.getState().conversationHistory.find((m) => m.id === id),
+    (id: string) =>
+      useAppStore.getState().conversationHistory.find((m) => m.id === id),
     []
   )
   const [isGenerating, setIsGenerating] = useState(false)
@@ -40,21 +40,25 @@ export function useChatSend({
   const activeAssistantId = useRef<string | null>(null)
   const abortRequestedRef = useRef(false)
 
-  const { runPrompt, abort: abortPiAgent, resetAgent } = usePiAgentChat({
+  const {
+    runPrompt,
+    abort: abortPiAgent,
+    resetAgent,
+  } = usePiAgentChat({
     systemPrompt: agentSystemPrompt,
     diskSessionId: activeSessionId,
     enabled: sessionsReady && Boolean(activeSessionId),
   })
 
-  const beginInflight = () => {
+  const beginInflight = useCallback(() => {
     inflightRef.current += 1
     setIsGenerating(true)
-  }
+  }, [])
 
-  const endInflight = () => {
+  const endInflight = useCallback(() => {
     inflightRef.current = Math.max(0, inflightRef.current - 1)
     setIsGenerating(inflightRef.current > 0)
-  }
+  }, [])
 
   const abort = useCallback(() => {
     abortRequestedRef.current = true
@@ -89,12 +93,14 @@ export function useChatSend({
       const userId = crypto.randomUUID()
       const assistantId = crypto.randomUUID()
 
+      const queued = inflightRef.current > 0
       addMessage({
         id: userId,
         role: "user",
         content: userContent || (images?.length ? "[图片]" : ""),
         contentJson: options?.contentJson as never,
         thinking: "",
+        queued,
       })
 
       beginInflight()
@@ -117,6 +123,7 @@ export function useChatSend({
           assistantId,
           onReady: () => {
             abortRequestedRef.current = false
+            updateMessage(userId, { queued: false })
             activeAssistantId.current = assistantId
             addMessage({
               id: assistantId,
@@ -128,7 +135,12 @@ export function useChatSend({
             })
           },
           onStream: ({ thinking, content, activity, toolCalls }) => {
-            updateMessage(assistantId, { thinking, content, activity, toolCalls })
+            updateMessage(assistantId, {
+              thinking,
+              content,
+              activity,
+              toolCalls,
+            })
           },
           onUsage: (summary) => {
             updateMessage(assistantId, { usageSummary: summary })
@@ -141,7 +153,10 @@ export function useChatSend({
         }
 
         const parsed = parseModelThinking(result.content)
-        const finalThinking = getMessage(assistantId)?.thinking?.trim() || result.thinking || parsed.thinking
+        const finalThinking =
+          getMessage(assistantId)?.thinking?.trim() ||
+          result.thinking ||
+          parsed.thinking
         const finalContent = parsed.visible || result.content
         const hasTools = (getMessage(assistantId)?.toolCalls?.length ?? 0) > 0
 
@@ -158,7 +173,9 @@ export function useChatSend({
 
         const finalMsg = getMessage(assistantId)
         updateMessage(assistantId, {
-          content: finalContent.trim() ? finalContent : finalMsg?.content ?? "",
+          content: finalContent.trim()
+            ? finalContent
+            : (finalMsg?.content ?? ""),
           thinking: finalThinking,
           activity: finalMsg?.activity,
           isStreaming: false,
@@ -177,6 +194,7 @@ export function useChatSend({
         }
         toast.error(message)
       } finally {
+        updateMessage(userId, { queued: false })
         if (activeAssistantId.current === assistantId) {
           activeAssistantId.current = null
         }
@@ -193,6 +211,8 @@ export function useChatSend({
       chatEntry,
       onSessionCreated,
       sessionIdRef,
+      beginInflight,
+      endInflight,
     ]
   )
 

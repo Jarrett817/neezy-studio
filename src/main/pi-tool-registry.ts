@@ -1,6 +1,6 @@
 import { defineTool } from "@earendil-works/pi-coding-agent"
-import type { ToolDefinition } from "../shared/pi-sdk"
 import { Type } from "typebox"
+import type { ToolDefinition } from "../shared/pi-sdk"
 
 import { appendSoul } from "./soul-store"
 
@@ -16,7 +16,10 @@ const soulWriteTool = defineTool({
   execute: async (_toolCallId, params) => {
     const p = params as { entry: string }
     await appendSoul(p.entry)
-    return { content: [{ type: "text", text: "已沉淀到 soul.md" }], details: {} }
+    return {
+      content: [{ type: "text", text: "已沉淀到 soul.md" }],
+      details: {},
+    }
   },
 })
 

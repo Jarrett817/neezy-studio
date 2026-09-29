@@ -1,3 +1,4 @@
+import type { Agent, StreamFn } from "@earendil-works/pi-agent-core"
 import type {
   Api,
   AssistantMessage,
@@ -5,7 +6,6 @@ import type {
   AssistantMessageEventStream,
   Model,
 } from "@earendil-works/pi-ai"
-import type { Agent, StreamFn } from "@earendil-works/pi-agent-core"
 import type { AgentSession } from "@earendil-works/pi-coding-agent"
 import {
   dashScopeModelUsesThinking,
@@ -65,7 +65,10 @@ function hasAssistantStreamContent(message: AssistantMessage): boolean {
     if (block.type === "text") return block.text.trim().length > 0
     if (block.type === "thinking") return block.thinking.trim().length > 0
     if (block.type === "toolCall") {
-      return block.name.trim().length > 0 || Object.keys(block.arguments ?? {}).length > 0
+      return (
+        block.name.trim().length > 0 ||
+        Object.keys(block.arguments ?? {}).length > 0
+      )
     }
     return false
   })
@@ -86,7 +89,8 @@ function wrapDashScopeEventStream(
   stream: AssistantMessageEventStream
 ): AssistantMessageEventStream {
   const originalResult = stream.result.bind(stream)
-  stream.result = () => originalResult().then(salvageDashScopeMissingFinishReason)
+  stream.result = () =>
+    originalResult().then(salvageDashScopeMissingFinishReason)
 
   const originalIterator = stream[Symbol.asyncIterator].bind(stream)
   stream[Symbol.asyncIterator] = function dashScopeStreamIterator() {
@@ -100,7 +104,11 @@ function wrapDashScopeEventStream(
           const salvaged = salvageDashScopeMissingFinishReason(event.error)
           if (salvaged.stopReason !== "error") {
             return {
-              value: { type: "done", reason: salvaged.stopReason, message: salvaged },
+              value: {
+                type: "done",
+                reason: salvaged.stopReason,
+                message: salvaged,
+              },
               done: false,
             }
           }
@@ -137,16 +145,24 @@ function patchDashScopeRequestPayload(
   }
   // 百炼要求 user message 纯文本时 content 必须是 string，不能是 array
   if (Array.isArray(next.messages)) {
-    const normalized = (next.messages as Array<Record<string, unknown>>).map((m) => {
-      if ((m.role === "user" || m.role === "tool") && Array.isArray(m.content)) {
-        const blocks = m.content as Array<Record<string, unknown>>
-        const allText = blocks.every((b) => b && b.type === "text")
-        if (allText) {
-          return { ...m, content: blocks.map((b) => String(b.text ?? "")).join("") }
+    const normalized = (next.messages as Array<Record<string, unknown>>).map(
+      (m) => {
+        if (
+          (m.role === "user" || m.role === "tool") &&
+          Array.isArray(m.content)
+        ) {
+          const blocks = m.content as Array<Record<string, unknown>>
+          const allText = blocks.every((b) => b && b.type === "text")
+          if (allText) {
+            return {
+              ...m,
+              content: blocks.map((b) => String(b.text ?? "")).join(""),
+            }
+          }
         }
+        return m
       }
-      return m
-    })
+    )
 
     // 百炼要求 user/assistant 交替——合并连续的同 role 消息（仅对 user 做合并）
     const merged: Array<Record<string, unknown>> = []
@@ -214,7 +230,9 @@ export function applyDashScopeAgentFixes(session: AgentSession): void {
 
   const prevPayload = agent.onPayload
   agent.onPayload = async (payload, model) => {
-    let next = prevPayload ? ((await prevPayload(payload, model)) ?? payload) : payload
+    let next = prevPayload
+      ? ((await prevPayload(payload, model)) ?? payload)
+      : payload
     if (isDashScopeOpenAiBaseUrl(model.baseUrl ?? "")) {
       next = patchDashScopeRequestPayload(
         next,

@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react"
 import {
   AlertCircle,
   Check,
@@ -10,22 +11,21 @@ import {
   Loader2,
   Search,
 } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
 
 import { MarkdownContent } from "~/components/markdown-content"
 import {
-  buildAssistantTimeline,
-  type TimelineItem,
-} from "~/lib/assistant-timeline"
-import {
+  type AgentStep,
+  type AssistantActivityItem,
+  type ChatToolCall,
   FILE_PATH_TOOLS,
   pickToolPath,
   pickToolPattern,
   toolLabel,
-  type AgentStep,
-  type AssistantActivityItem,
-  type ChatToolCall,
 } from "~/lib/agent-steps"
+import {
+  buildAssistantTimeline,
+  type TimelineItem,
+} from "~/lib/assistant-timeline"
 import { cn } from "~/lib/utils"
 
 function StreamCursor() {
@@ -40,9 +40,18 @@ function StreamCursor() {
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1 px-1">
-      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "0ms" }} />
-      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "150ms" }} />
-      <span className="size-1.5 rounded-full bg-foreground/30 animate-bounce" style={{ animationDelay: "300ms" }} />
+      <span
+        className="size-1.5 rounded-full bg-foreground/30 animate-bounce"
+        style={{ animationDelay: "0ms" }}
+      />
+      <span
+        className="size-1.5 rounded-full bg-foreground/30 animate-bounce"
+        style={{ animationDelay: "150ms" }}
+      />
+      <span
+        className="size-1.5 rounded-full bg-foreground/30 animate-bounce"
+        style={{ animationDelay: "300ms" }}
+      />
     </span>
   )
 }
@@ -73,7 +82,12 @@ function WorkflowStepRow({ step }: { step: AgentStep }) {
         )}
       </span>
       <div className="min-w-0 flex-1">
-        <p className={cn("font-medium text-foreground/90", isActive && "text-foreground")}>
+        <p
+          className={cn(
+            "font-medium text-foreground/90",
+            isActive && "text-foreground"
+          )}
+        >
           {step.label}
         </p>
         {step.detail ? (
@@ -122,7 +136,10 @@ function FileToolBody({ tool }: { tool: ChatToolCall }) {
   return (
     <div className="bg-muted/15 px-3 py-2.5">
       <div className="flex items-start gap-2.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-foreground/55" aria-hidden />
+        <Icon
+          className="mt-0.5 size-4 shrink-0 text-foreground/55"
+          aria-hidden
+        />
         <div className="min-w-0 flex-1 space-y-1">
           {path ? (
             <p className="font-mono text-[12px] leading-snug break-all text-foreground/90">
@@ -159,7 +176,11 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
     typeof tool.args.cwd === "string" && tool.args.cwd.trim()
       ? tool.args.cwd.trim()
       : undefined
-  const output = (tool.partialResult?.trim() || tool.result?.trim() || "").trim()
+  const output = (
+    tool.partialResult?.trim() ||
+    tool.result?.trim() ||
+    ""
+  ).trim()
   const running = tool.status === "running"
   const failed = tool.status === "error"
   const pathSummary = isFileTool ? pickToolPath(tool.name, tool.args) : ""
@@ -233,7 +254,13 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
   )
 }
 
-function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+function ThinkingBlock({
+  text,
+  streaming,
+}: {
+  text: string
+  streaming?: boolean
+}) {
   return (
     <details
       key={streaming ? "thinking-open" : "thinking-done"}
@@ -318,7 +345,12 @@ export function AgentActivityTimeline({
   if (items.length === 0) {
     if (!isStreaming) return null
     return (
-      <div className={cn("flex items-center gap-2 py-2 text-sm text-muted-foreground/60", className)}>
+      <div
+        className={cn(
+          "flex items-center gap-2 py-2 text-sm text-muted-foreground/60",
+          className
+        )}
+      >
         <TypingDots />
       </div>
     )

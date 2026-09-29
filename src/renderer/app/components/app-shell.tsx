@@ -1,14 +1,22 @@
+import { motion } from "framer-motion"
+import {
+  Cable,
+  MessagesSquare,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react"
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { NavLink, Link, useLocation } from "react-router"
-import { MessagesSquare, Settings, SlidersHorizontal, Cable } from "lucide-react"
-import { motion } from "framer-motion"
+import { Link, NavLink, useLocation } from "react-router"
 
 import { NomiFace } from "~/components/nomi-face"
 import { ModelPill } from "~/components/shell/model-pill"
-import { cn } from "~/lib/utils"
 import { queryClient } from "~/lib/query-client"
-import { getRuntimeSettings, pushRuntimeSettingsToMain } from "~/services/settings"
+import { cn } from "~/lib/utils"
+import {
+  getRuntimeSettings,
+  pushRuntimeSettingsToMain,
+} from "~/services/settings"
 
 const mainNavItems = [
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
@@ -32,7 +40,11 @@ function resolveHeaderTitle(pathname: string): string | null {
 const ShellHeaderActionsContext = React.createContext<HTMLElement | null>(null)
 
 /** 将子节点挂到顶栏（模型配置左侧），用于对话页工具 */
-export function ShellHeaderActions({ children }: { children: React.ReactNode }) {
+export function ShellHeaderActions({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const el = React.useContext(ShellHeaderActionsContext)
   if (!el) return null
   return createPortal(children, el)
@@ -41,7 +53,8 @@ export function ShellHeaderActions({ children }: { children: React.ReactNode }) 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const headerTitle = resolveHeaderTitle(pathname)
-  const [headerActionsEl, setHeaderActionsEl] = React.useState<HTMLElement | null>(null)
+  const [headerActionsEl, setHeaderActionsEl] =
+    React.useState<HTMLElement | null>(null)
 
   React.useEffect(() => {
     void (async () => {
@@ -87,7 +100,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <motion.span
                           layoutId="nav-active"
                           className="absolute inset-0 rounded-xl bg-primary/12"
-                          transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 35,
+                          }}
                         />
                       )}
                       <Icon className="relative size-5 shrink-0" />
@@ -103,7 +120,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <header className="z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-card px-6 shadow-sm">
             {headerTitle ? (
-              <h1 className="shrink-0 text-sm font-semibold tracking-tight">{headerTitle}</h1>
+              <h1 className="shrink-0 text-sm font-semibold tracking-tight">
+                {headerTitle}
+              </h1>
             ) : null}
             <div
               ref={setHeaderActionsEl}

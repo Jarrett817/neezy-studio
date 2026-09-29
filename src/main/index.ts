@@ -1,22 +1,26 @@
 import "./chromium-fetch"
 import "./core-ipc"
 
-import type { BrowserWindow } from "electron"
-import { app, BrowserWindow as BrowserWindowCtor, dialog, ipcMain, Menu } from "electron"
-
-import fs from "node:fs/promises"
 import fsSync from "node:fs"
+import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-
-import { applyAppConfig } from "./app-config-sync"
+import type { BrowserWindow } from "electron"
+import {
+  app,
+  BrowserWindow as BrowserWindowCtor,
+  dialog,
+  ipcMain,
+  Menu,
+} from "electron"
 import { loadAppConfig } from "./app-config"
+import { applyAppConfig } from "./app-config-sync"
+import { registerCoreIpcHandlers } from "./core-ipc"
+import { installCsp } from "./csp"
+import { registerIpcHandlers } from "./ipc-handlers"
 import { initMainLogger, log } from "./logger"
 import * as storagePaths from "./storage-paths"
-import { registerCoreIpcHandlers } from "./core-ipc"
-import { registerIpcHandlers } from "./ipc-handlers"
-import { installCsp } from "./csp"
 import type { StoragePaths } from "./types"
 
 const mainDir =
@@ -131,7 +135,9 @@ if (!app.requestSingleInstanceLock()) {
 
     app.on("activate", () => {
       if (BrowserWindowCtor.getAllWindows().length === 0) {
-        createWindow().catch((error) => log.error("[main] createWindow failed:", error))
+        createWindow().catch((error) =>
+          log.error("[main] createWindow failed:", error)
+        )
       }
     })
   })
@@ -140,5 +146,3 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit()
   })
 }
-
-

@@ -1,9 +1,8 @@
-import type { App, BrowserWindow, Dialog, IpcMain } from "electron"
-import type { ChildProcess } from "node:child_process"
-import type * as Fs from "node:fs/promises"
 import type * as FsSync from "node:fs"
+import type * as Fs from "node:fs/promises"
 import type * as Os from "node:os"
 import type * as Path from "node:path"
+import type { App, BrowserWindow, Dialog, IpcMain } from "electron"
 import type * as StoragePathsModule from "./storage-paths"
 
 export type ModelTier = "light" | "balanced" | "performance"
@@ -51,8 +50,6 @@ export type StoragePaths = {
   memoriesDir: string
   personasDir: string
   skillsDir: string
-  playbooksDir: string
-  inputProfilesDir: string
   configFile: string
   defaultDataRoot: string
   defaultModelsDir: string

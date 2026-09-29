@@ -1,7 +1,11 @@
 ﻿import type { JSONContent } from "@tiptap/react"
 import { create } from "zustand"
 
-import type { AgentStep, AssistantActivityItem, ChatToolCall } from "~/lib/agent-steps"
+import type {
+  AgentStep,
+  AssistantActivityItem,
+  ChatToolCall,
+} from "~/lib/agent-steps"
 
 export type ChatMessage = {
   id: string
@@ -20,6 +24,8 @@ export type ChatMessage = {
   errorMessage?: string
   toolCalls?: ChatToolCall[]
   usageSummary?: string
+  /** 已发送但 Agent 尚未开始处理（sessionLock 排队） */
+  queued?: boolean
   timestamp: number
 }
 

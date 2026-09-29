@@ -54,11 +54,16 @@ export function formatContextUsageTooltip(usage: ContextUsageWire): string {
   return `已用 ${formatTokenCount(usage.tokens)} · 上限 ${limit}`
 }
 
-export function formatWireUsage(usage: {
-  input?: number
-  output?: number
-  cost?: { total?: number }
-} | null | undefined): string | undefined {
+export function formatWireUsage(
+  usage:
+    | {
+        input?: number
+        output?: number
+        cost?: { total?: number }
+      }
+    | null
+    | undefined
+): string | undefined {
   if (!usage) return undefined
   const input = usage.input ?? 0
   const output = usage.output ?? 0

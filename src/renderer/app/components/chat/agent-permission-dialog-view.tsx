@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState } from "react"
 
 import {
   AlertDialog,
@@ -9,21 +9,27 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '~/components/ui/alert-dialog'
-import { Button } from '~/components/ui/button'
-import { Textarea } from '~/components/ui/textarea'
+} from "~/components/ui/alert-dialog"
+import { Button } from "~/components/ui/button"
+import { Textarea } from "~/components/ui/textarea"
 
 import type {
   AgentPermissionPrompt,
   PermissionDialogAction,
-} from './agent-permission-dialog'
+} from "./agent-permission-dialog"
 
 interface AgentPermissionDialogViewProps {
   prompt: AgentPermissionPrompt
-  onDismiss: (payload: { action?: PermissionDialogAction; value?: string }) => void
+  onDismiss: (payload: {
+    action?: PermissionDialogAction
+    value?: string
+  }) => void
 }
 
-export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPermissionDialogViewProps) {
+export default function AgentPermissionDialogView({
+  prompt,
+  onDismiss,
+}: AgentPermissionDialogViewProps) {
   const [denyReason, setDenyReason] = useState("")
   const titleLine = prompt.title.split("\n")[0] ?? "需要你的确认"
   const body = prompt.title.includes("\n")
@@ -36,7 +42,9 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{titleLine}</AlertDialogTitle>
-            {body ? <AlertDialogDescription>{body}</AlertDialogDescription> : null}
+            {body ? (
+              <AlertDialogDescription>{body}</AlertDialogDescription>
+            ) : null}
           </AlertDialogHeader>
           <Textarea
             value={denyReason}
@@ -45,7 +53,9 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
             rows={3}
           />
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => void onDismiss({})}>跳过</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => void onDismiss({})}>
+              跳过
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
                 void onDismiss({ value: denyReason.trim() || undefined })
@@ -61,7 +71,10 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
 
   if (prompt.kind === "confirm") {
     return (
-      <AlertDialog open onOpenChange={(open) => !open && void onDismiss({ value: "false" })}>
+      <AlertDialog
+        open
+        onOpenChange={(open) => !open && void onDismiss({ value: "false" })}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{titleLine}</AlertDialogTitle>
@@ -72,10 +85,14 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
             ) : null}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => void onDismiss({ value: "false" })}>
+            <AlertDialogCancel
+              onClick={() => void onDismiss({ value: "false" })}
+            >
               取消
             </AlertDialogCancel>
-            <AlertDialogAction onClick={() => void onDismiss({ value: "true" })}>
+            <AlertDialogAction
+              onClick={() => void onDismiss({ value: "true" })}
+            >
               确认
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -88,7 +105,10 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
     const canAlwaysAllow = prompt.grantTarget != null
 
     return (
-      <AlertDialog open onOpenChange={(open) => !open && void onDismiss({ action: "deny" })}>
+      <AlertDialog
+        open
+        onOpenChange={(open) => !open && void onDismiss({ action: "deny" })}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{titleLine}</AlertDialogTitle>
@@ -178,7 +198,9 @@ export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPe
           ))}
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => void onDismiss({})}>取消</AlertDialogCancel>
+          <AlertDialogCancel onClick={() => void onDismiss({})}>
+            取消
+          </AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

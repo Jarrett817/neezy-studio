@@ -19,18 +19,23 @@ function stripMatchedSuffix(text: string): string {
 }
 
 /** 从 pi-permission-system 询问文案解析可持久化的策略项 */
-export function parsePermissionPromptGrant(promptText: string): PermissionGrantTarget | null {
+export function parsePermissionPromptGrant(
+  promptText: string
+): PermissionGrantTarget | null {
   const text = promptText.trim()
   if (!text) return null
 
   const bashMatch = text.match(/requested bash command '([^']*)'/)
   if (bashMatch) {
     const pattern =
-      extractMatchedPattern(text) ?? (bashMatch[1]?.trim() ? bashMatch[1].trim() : "*")
+      extractMatchedPattern(text) ??
+      (bashMatch[1]?.trim() ? bashMatch[1].trim() : "*")
     return { kind: "bash", pattern }
   }
 
-  const mcpMatch = stripMatchedSuffix(text).match(/requested MCP target '([^']+)'/)
+  const mcpMatch = stripMatchedSuffix(text).match(
+    /requested MCP target '([^']+)'/
+  )
   if (mcpMatch) {
     return { kind: "mcp", target: mcpMatch[1] }
   }
@@ -45,7 +50,10 @@ export function parsePermissionPromptGrant(promptText: string): PermissionGrantT
     return { kind: "skill", name: skillMatch[1] }
   }
 
-  if (text.includes("outside working directory") && text.includes("Allow this external directory")) {
+  if (
+    text.includes("outside working directory") &&
+    text.includes("Allow this external directory")
+  ) {
     return { kind: "special", key: "external_directory" }
   }
 

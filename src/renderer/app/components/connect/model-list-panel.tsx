@@ -1,16 +1,7 @@
-import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Cloud, Loader2, Plus, Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
-
-import {
-  createChatModelEntry,
-  enforceChatModelRules,
-  resolveEntryApiBase,
-  resolveEntryApiKey,
-  type ChatModelEntry,
-} from "~/config/chat-models"
-import { getCodingPlanVendor, isDashScopeOpenAiBaseUrl, resolveCatalogBaseUrl } from "~/config/llm-presets"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -22,13 +13,27 @@ import {
   SelectValue,
 } from "~/components/ui/select"
 import { Switch } from "~/components/ui/switch"
+import {
+  type ChatModelEntry,
+  createChatModelEntry,
+  enforceChatModelRules,
+  resolveEntryApiBase,
+  resolveEntryApiKey,
+} from "~/config/chat-models"
+import {
+  getCodingPlanVendor,
+  isDashScopeOpenAiBaseUrl,
+  resolveCatalogBaseUrl,
+} from "~/config/llm-presets"
 import { useCodingPlanCatalog } from "~/hooks/use-coding-plan-catalog"
-import { listOpenAiModels } from "~/services/electron-client"
 import { cn } from "~/lib/utils"
+import { listOpenAiModels } from "~/services/electron-client"
 import type { LlmProviderConfig } from "~/services/llm-provider"
 import { loadModelRegistry, saveChatModels } from "~/services/model-registry"
 
-function globalApiFromRegistry(registry: Awaited<ReturnType<typeof loadModelRegistry>>): LlmProviderConfig {
+function globalApiFromRegistry(
+  registry: Awaited<ReturnType<typeof loadModelRegistry>>
+): LlmProviderConfig {
   return {
     preset: registry.apiPreset,
     baseUrl: registry.apiBaseUrl,
@@ -40,7 +45,9 @@ function globalApiFromRegistry(registry: Awaited<ReturnType<typeof loadModelRegi
 export function ModelListPanel() {
   const queryClient = useQueryClient()
   const { vendors } = useCodingPlanCatalog()
-  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
+  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>(
+    {}
+  )
   const [fetchingId, setFetchingId] = useState<string | null>(null)
   const { data: registry, isLoading } = useQuery({
     queryKey: ["model-registry"],
@@ -133,8 +140,9 @@ export function ModelListPanel() {
     const base = resolveCatalogBaseUrl(preset, entry.baseUrl ?? "")
     updateApi(id, {
       preset,
-      baseUrl: preset === "custom" ? entry.baseUrl ?? "" : base,
-      label: entry.label.trim() || getCodingPlanVendor(preset)?.label || entry.label,
+      baseUrl: preset === "custom" ? (entry.baseUrl ?? "") : base,
+      label:
+        entry.label.trim() || getCodingPlanVendor(preset)?.label || entry.label,
     })
   }
 
@@ -154,8 +162,9 @@ export function ModelListPanel() {
         套餐目录来自仓库静态表 + 可选「更新目录」从{" "}
         <span className="font-mono text-[10px]">coding-plans-for-copilot</span>{" "}
         拉取，仅用于填充 <strong className="text-foreground">Base URL</strong>；
-        <strong className="text-foreground">模型名</strong>以你填写或「从接口拉取」为准（目录里的
-        modelHints 只是示例，可能过时）。在已启用的条目中指定一个「当前对话模型」即可。
+        <strong className="text-foreground">模型名</strong>
+        以你填写或「从接口拉取」为准（目录里的 modelHints
+        只是示例，可能过时）。在已启用的条目中指定一个「当前对话模型」即可。
       </p>
 
       <section className="space-y-3">
@@ -188,7 +197,10 @@ export function ModelListPanel() {
               const remoteList = fetchedModels[entry.id] ?? []
               const suggestId = `model-suggest-${entry.id}`
               const preset = entry.preset ?? "custom"
-              const resolvedBase = resolveCatalogBaseUrl(preset, entry.baseUrl ?? "")
+              const resolvedBase = resolveCatalogBaseUrl(
+                preset,
+                entry.baseUrl ?? ""
+              )
               return (
                 <li
                   key={entry.id}
@@ -254,7 +266,9 @@ export function ModelListPanel() {
                               {v.label}
                             </SelectItem>
                           ))}
-                          <SelectItem value="custom">自定义 OpenAI 兼容</SelectItem>
+                          <SelectItem value="custom">
+                            自定义 OpenAI 兼容
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -262,7 +276,11 @@ export function ModelListPanel() {
                       <Label className="text-xs">Base URL</Label>
                       <Input
                         className="h-9 font-mono text-xs"
-                        value={preset === "custom" ? entry.baseUrl ?? "" : resolvedBase}
+                        value={
+                          preset === "custom"
+                            ? (entry.baseUrl ?? "")
+                            : resolvedBase
+                        }
                         disabled={preset !== "custom"}
                         onChange={(e) =>
                           updateApi(entry.id, { baseUrl: e.target.value })
@@ -282,7 +300,9 @@ export function ModelListPanel() {
                     </div>
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs">模型名（厂商文档为准）</Label>
+                        <Label className="text-xs">
+                          模型名（厂商文档为准）
+                        </Label>
                         <Button
                           type="button"
                           variant="ghost"
@@ -313,7 +333,9 @@ export function ModelListPanel() {
                       </datalist>
                     </div>
                     <div className="space-y-1 sm:col-span-2">
-                      <Label className="text-xs">上下文上限（token，可空）</Label>
+                      <Label className="text-xs">
+                        上下文上限（token，可空）
+                      </Label>
                       <Input
                         type="number"
                         min={1024}
@@ -330,7 +352,9 @@ export function ModelListPanel() {
                           const n = Number(raw)
                           updateApi(entry.id, {
                             contextWindow:
-                              Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined,
+                              Number.isFinite(n) && n > 0
+                                ? Math.floor(n)
+                                : undefined,
                           })
                         }}
                       />

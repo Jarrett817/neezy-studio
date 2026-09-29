@@ -15,11 +15,31 @@ import {
 } from "~/components/ui/select"
 import { Switch } from "~/components/ui/switch"
 import { Textarea } from "~/components/ui/textarea"
-import { getMcpConfig, saveMcpConfig, type McpServerDraft } from "~/services/mcp-config"
 import { cn } from "~/lib/utils"
+import {
+  getMcpConfig,
+  type McpServerDraft,
+  saveMcpConfig,
+} from "~/services/mcp-config"
 
-function emptyServer(): McpServerDraft {
+type McpDraftRow = McpServerDraft & { rowId: string }
+
+function newRowId(): string {
+  return crypto.randomUUID()
+}
+
+function toDraftRow(server: McpServerDraft): McpDraftRow {
+  return { ...server, rowId: newRowId() }
+}
+
+function toServerDraft(row: McpDraftRow): McpServerDraft {
+  const { rowId: _rowId, ...server } = row
+  return server
+}
+
+function emptyServer(): McpDraftRow {
   return {
+    rowId: newRowId(),
     name: "",
     transport: "stdio",
     command: "npx",
@@ -53,17 +73,17 @@ export default function McpRoute() {
     queryKey: ["mcp-config"],
     queryFn: getMcpConfig,
   })
-  const [draft, setDraft] = useState<McpServerDraft[]>([])
+  const [draft, setDraft] = useState<McpDraftRow[]>([])
 
   useEffect(() => {
-    if (data) setDraft(data.servers.map((s) => ({ ...s })))
+    if (data) setDraft(data.servers.map(toDraftRow))
   }, [data])
 
   const saveMutation = useMutation({
-    mutationFn: () => saveMcpConfig(draft),
+    mutationFn: () => saveMcpConfig(draft.map(toServerDraft)),
     onSuccess: (saved) => {
       queryClient.setQueryData(["mcp-config"], saved)
-      setDraft(saved.servers.map((s) => ({ ...s })))
+      setDraft(saved.servers.map(toDraftRow))
       toast.success("MCP 配置已保存", {
         description: "已写入 mcp-adapter.json；新建对话后生效。",
       })
@@ -72,7 +92,9 @@ export default function McpRoute() {
   })
 
   const updateAt = (index: number, patch: Partial<McpServerDraft>) => {
-    setDraft((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)))
+    setDraft((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
+    )
   }
 
   if (isLoading) {
@@ -84,8 +106,11 @@ export default function McpRoute() {
       <div>
         <h1 className="text-lg font-semibold">MCP</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          通过 pi-mcp-adapter 连接 MCP 服务器（懒加载，代理工具约 200 token）。配置文件：
-          <span className="ml-1 font-mono text-xs break-all">{data?.configPath}</span>
+          通过 pi-mcp-adapter 连接 MCP 服务器（懒加载，代理工具约 200
+          token）。配置文件：
+          <span className="ml-1 font-mono text-xs break-all">
+            {data?.configPath}
+          </span>
         </p>
       </div>
 
@@ -110,7 +135,7 @@ export default function McpRoute() {
         <ul className="space-y-3">
           {draft.map((server, index) => (
             <li
-              key={index}
+              key={server.rowId}
               className={cn(
                 "space-y-3 rounded-2xl border border-border/60 bg-card p-4 shadow-sm",
                 server.disabled && "opacity-60"
@@ -129,7 +154,9 @@ export default function McpRoute() {
                   variant="ghost"
                   size="icon"
                   className="size-8"
-                  onClick={() => setDraft((prev) => prev.filter((_, i) => i !== index))}
+                  onClick={() =>
+                    setDraft((prev) => prev.filter((_, i) => i !== index))
+                  }
                   aria-label="删除"
                 >
                   <Trash2 className="size-3.5" />
@@ -154,7 +181,11 @@ export default function McpRoute() {
                       updateAt(index, {
                         transport: v as McpServerDraft["transport"],
                         ...(v === "http"
-                          ? { command: undefined, args: undefined, url: server.url || "https://" }
+                          ? {
+                              command: undefined,
+                              args: undefined,
+                              url: server.url || "https://",
+                            }
                           : {
                               url: undefined,
                               command: server.command || "npx",
@@ -191,7 +222,9 @@ export default function McpRoute() {
                         className="h-9 font-mono text-xs"
                         value={server.command ?? ""}
                         placeholder="npx"
-                        onChange={(e) => updateAt(index, { command: e.target.value })}
+                        onChange={(e) =>
+                          updateAt(index, { command: e.target.value })
+                        }
                       />
                     </div>
                     <div className="space-y-1 sm:col-span-2">
@@ -218,7 +251,9 @@ export default function McpRoute() {
                     className="min-h-20 font-mono text-xs"
                     value={envToText(server.env)}
                     placeholder={"API_TOKEN=xxx"}
-                    onChange={(e) => updateAt(index, { env: textToEnv(e.target.value) })}
+                    onChange={(e) =>
+                      updateAt(index, { env: textToEnv(e.target.value) })
+                    }
                   />
                 </div>
               </div>

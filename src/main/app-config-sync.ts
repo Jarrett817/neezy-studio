@@ -2,8 +2,8 @@ import type { App } from "electron"
 
 import type { AppConfig } from "../shared/app-config"
 import type { ChatModelEntry } from "./chat-model-entry"
+import { type RuntimeSettings, syncRuntimeSettings } from "./runtime-settings"
 import { invalidateStoragePathsCache } from "./storage-paths"
-import { syncRuntimeSettings, type RuntimeSettings } from "./runtime-settings"
 
 export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
   const chatModels: ChatModelEntry[] = config.chatModels.map((e) => ({
@@ -21,6 +21,7 @@ export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
   return {
     preferLowPower: config.preferLowPower,
     maxCpuPercent: config.maxCpuPercent,
+    agentThinkingLevel: config.agentThinkingLevel,
     activeChatModelId: config.activeChatModelId?.trim() ?? "",
     llmProvider: {
       preset: "custom",
@@ -32,7 +33,7 @@ export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
   }
 }
 
-export function applyAppConfig(app: App, config: AppConfig): AppConfig {
+export function applyAppConfig(_app: App, config: AppConfig): AppConfig {
   const runtime = appConfigToRuntime(config)
   syncRuntimeSettings(runtime)
   invalidateStoragePathsCache()

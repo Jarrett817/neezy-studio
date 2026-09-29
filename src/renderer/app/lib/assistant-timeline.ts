@@ -28,82 +28,67 @@ function toolToStepItem(tool: ChatToolCall): TimelineItem {
   }
 }
 
-/** 按 activity 原样罗列；无 activity 时回退 thinking → tools → answer。usage 始终在末尾。 */
+function workflowToStepItem(entry: Extract<AssistantActivityItem, { kind: "workflow" }>): TimelineItem {
+  return {
+    id: entry.id,
+    kind: "step",
+    step: {
+      id: entry.id,
+      label: entry.label,
+      detail: entry.detail,
+      status: entry.status === "active" ? "active" : "done",
+      variant: entry.variant,
+    },
+  }
+}
+
+/** 严格按 Pi activity 顺序渲染；toolCalls 仅作 toolCallId 详情表 */
 export function buildAssistantTimeline(input: {
-  agentSteps?: AgentStep[]
   toolCalls?: ChatToolCall[]
   activity?: AssistantActivityItem[]
-  thinking?: string
-  content?: string
   usageSummary?: string
   isStreaming?: boolean
 }): TimelineItem[] {
   const items: TimelineItem[] = []
-  const toolCalls = input.toolCalls ?? []
-  const toolById = new Map(toolCalls.map((t) => [t.toolCallId, t]))
+  const toolById = new Map((input.toolCalls ?? []).map((t) => [t.toolCallId, t]))
   const activity = input.activity ?? []
   const streaming = Boolean(input.isStreaming)
+  const last = activity.at(-1)
 
-  if (activity.length > 0) {
-    const seenTools = new Set<string>()
-    const last = activity.at(-1)
-    for (const entry of activity) {
-      const isLast = entry === last
-      if (entry.kind === "thinking") {
-        const text = entry.text.trim()
-        if (!text && !streaming) continue
-        items.push({
-          id: entry.id,
-          kind: "thinking",
-          text,
-          streaming: streaming && isLast,
-        })
-        continue
-      }
-      if (entry.kind === "text") {
-        items.push({
-          id: entry.id,
-          kind: "answer",
-          text: entry.text,
-          streaming: streaming && isLast,
-        })
-        continue
-      }
-      const tool = toolById.get(entry.toolCallId)
-      if (!tool) continue
-      seenTools.add(tool.toolCallId)
-      items.push(toolToStepItem(tool))
-    }
-    for (const tool of toolCalls) {
-      if (!seenTools.has(tool.toolCallId)) items.push(toolToStepItem(tool))
-    }
-    if (streaming) {
-      const lastItem = items.at(-1)
-      if (lastItem?.kind === "step") {
-        items.push({ id: "answer-pending", kind: "answer", text: "", streaming: true })
-      }
-    }
-  } else {
-    const thinkingText = input.thinking?.trim() ?? ""
-    if (thinkingText) {
+  for (const entry of activity) {
+    const isLast = entry === last
+    if (entry.kind === "thinking") {
+      const text = entry.text.trim()
+      if (!text && !streaming) continue
       items.push({
-        id: "thinking",
+        id: entry.id,
         kind: "thinking",
-        text: thinkingText,
-        streaming,
+        text,
+        streaming: streaming && isLast,
       })
+      continue
     }
-    for (const tool of toolCalls) {
-      items.push(toolToStepItem(tool))
-    }
-    const answerText = input.content?.trim() ?? ""
-    if (answerText || streaming) {
+    if (entry.kind === "text") {
       items.push({
-        id: "answer",
+        id: entry.id,
         kind: "answer",
-        text: answerText,
-        streaming,
+        text: entry.text,
+        streaming: streaming && isLast,
       })
+      continue
+    }
+    if (entry.kind === "workflow") {
+      items.push(workflowToStepItem(entry))
+      continue
+    }
+    const tool = toolById.get(entry.toolCallId)
+    if (tool) items.push(toolToStepItem(tool))
+  }
+
+  if (streaming) {
+    const lastItem = items.at(-1)
+    if (lastItem?.kind === "step" && lastItem.tool) {
+      items.push({ id: "answer-pending", kind: "answer", text: "", streaming: true })
     }
   }
 
@@ -113,21 +98,4 @@ export function buildAssistantTimeline(input: {
   }
 
   return items
-}
-
-export function resolveWorkflowSteps(
-  agentSteps: AgentStep[] | undefined,
-  toolCalls: ChatToolCall[]
-): AgentStep[] {
-  return toolCalls.map((t) => ({
-    id: `tool-${t.toolCallId}`,
-    label: toolLabel(t.name),
-    detail: formatToolArgsSummary(t.name, t.args),
-    status: t.status === "running" ? ("active" as const) : ("done" as const),
-    variant: t.status === "error" ? ("error" as const) : undefined,
-  }))
-}
-
-export function agentStepsFromToolCalls(toolCalls: ChatToolCall[]): AgentStep[] {
-  return resolveWorkflowSteps(undefined, toolCalls)
 }

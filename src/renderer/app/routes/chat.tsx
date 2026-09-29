@@ -391,14 +391,14 @@ export default function ChatRoute() {
               </p>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl pb-8">
+            <div className="mx-auto w-full max-w-5xl px-4 pb-8">
               {messages.map((m, i) => <ChatMessageBubble key={m.id} message={m} modelName={chatModelName} index={i} />)}
             </div>
           )}
         </div>
 
         <div className="shrink-0 pb-0 pt-2">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto w-full max-w-5xl px-4">
             <div className="overflow-visible rounded-[24px] border border-border/70 bg-background/70 shadow-sm backdrop-blur-sm transition-shadow focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/25 dark:border-border/50 dark:bg-card/60">
               {attachedFile && (
                 <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2">

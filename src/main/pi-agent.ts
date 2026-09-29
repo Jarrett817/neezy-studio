@@ -24,6 +24,7 @@ import {
 import { getPiModelRuntime, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { resolveAgentThinkingLevel, resolvePiChatModel } from "./pi-model"
 import { applyDashScopeAgentFixes } from "./dashscope-compat"
+import { applyRequestMaxTokensClamp } from "./clamp-request-max-tokens"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 import { getNeezyCustomTools } from "./pi-tool-registry"
 import {
@@ -232,6 +233,7 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
 
   session.agent.toolExecution = "parallel"
   applyDashScopeAgentFixes(session)
+  applyRequestMaxTokensClamp(session)
   return session
 }
 

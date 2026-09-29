@@ -319,6 +319,68 @@ const COMPACTION_REASON_LABEL: Record<string, string> = {
   overflow: "上下文溢出",
 }
 
+export function patchCompactionActivity(
+  activity: AssistantActivityItem[],
+  phase: "start" | "end",
+  reason?: string
+): AssistantActivityItem[] {
+  const id = "compaction"
+  const reasonLabel = reason
+    ? (COMPACTION_REASON_LABEL[reason] ?? reason)
+    : undefined
+  if (phase === "start") {
+    const rest = activity.filter((a) => a.kind !== "workflow" || a.id !== id)
+    return [
+      ...rest,
+      {
+        kind: "workflow",
+        id,
+        label: "压缩对话上下文",
+        detail: reasonLabel ? `${reasonLabel} · 生成摘要…` : "生成摘要…",
+        status: "active",
+      },
+    ]
+  }
+  return activity.map((a) =>
+    a.kind === "workflow" && a.id === id
+      ? {
+          ...a,
+          status: "done" as const,
+          detail: reasonLabel ? `${reasonLabel} · 已完成` : "已完成",
+        }
+      : a
+  )
+}
+
+export function patchRetryActivity(
+  activity: AssistantActivityItem[],
+  phase: "start" | "end",
+  meta: { attempt: number; maxAttempts: number; errorMessage?: string; success?: boolean }
+): AssistantActivityItem[] {
+  const id = "retry"
+  if (phase === "start") {
+    const err = meta.errorMessage?.trim()
+    const detail = err
+      ? `第 ${meta.attempt}/${meta.maxAttempts} 次 · ${truncateThinkingPreview(err, 80)}`
+      : `第 ${meta.attempt}/${meta.maxAttempts} 次`
+    const rest = activity.filter((a) => a.kind !== "workflow" || a.id !== id)
+    return [
+      ...rest,
+      { kind: "workflow", id, label: "重试模型请求", detail, status: "active" },
+    ]
+  }
+  return activity.map((a) =>
+    a.kind === "workflow" && a.id === id
+      ? {
+          ...a,
+          status: "done" as const,
+          detail: meta.success ? "已恢复" : "仍失败",
+          variant: meta.success ? undefined : ("error" as const),
+        }
+      : a
+  )
+}
+
 export function setCompactionStep(
   steps: AgentStep[],
   phase: "start" | "end",

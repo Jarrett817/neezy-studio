@@ -9,11 +9,19 @@ export interface ChatWireToolCall {
   result: string
 }
 
-/** 按 Pi assistant.content 块顺序：思考 / 正文 / 工具 */
+/** 按 Pi 事件 / assistant.content 块顺序渲染，不在 UI 层重排 */
 export type ChatWireActivityItem =
   | { kind: "thinking"; id: string; text: string }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; toolCallId: string }
+  | {
+      kind: "workflow"
+      id: string
+      label: string
+      detail?: string
+      status: "active" | "done"
+      variant?: "error"
+    }
 
 /** 主进程 ↔ 渲染进程对话消息 IPC 载荷（与 UI store 的 ChatMessage 同构）。 */
 export interface ChatWireMessage {

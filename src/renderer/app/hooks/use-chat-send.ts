@@ -127,39 +127,8 @@ export function useChatSend({
               toolCalls: [],
             })
           },
-          onStream: ({ thinking, content, activity }) => {
-            updateMessage(assistantId, { thinking, content, activity })
-          },
-          onWorkflow: (steps) => {
-            updateMessage(assistantId, { agentSteps: steps })
-          },
-          onToolStart: (item) => {
-            const current = getMessage(assistantId)
-            const list = current?.toolCalls ?? []
-            const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
-            updateMessage(assistantId, {
-              toolCalls: idx >= 0
-                ? list.map((t, i) => (i === idx ? { ...t, ...item } : t))
-                : [...list, item],
-            })
-          },
-          onToolUpdate: (toolCallId, partialResult) => {
-            const current = getMessage(assistantId)
-            updateMessage(assistantId, {
-              toolCalls: (current?.toolCalls ?? []).map((t) =>
-                t.toolCallId === toolCallId ? { ...t, partialResult, status: "running" as const } : t
-              ),
-            })
-          },
-          onToolEnd: (item) => {
-            const current = getMessage(assistantId)
-            const list = current?.toolCalls ?? []
-            const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
-            updateMessage(assistantId, {
-              toolCalls: idx >= 0
-                ? list.map((t, i) => (i === idx ? { ...t, ...item } : t))
-                : [...list, item],
-            })
+          onStream: ({ thinking, content, activity, toolCalls }) => {
+            updateMessage(assistantId, { thinking, content, activity, toolCalls })
           },
           onUsage: (summary) => {
             updateMessage(assistantId, { usageSummary: summary })
@@ -191,8 +160,8 @@ export function useChatSend({
         updateMessage(assistantId, {
           content: finalContent.trim() ? finalContent : finalMsg?.content ?? "",
           thinking: finalThinking,
+          activity: finalMsg?.activity,
           isStreaming: false,
-          agentSteps: finalMsg?.agentSteps,
           toolCalls: finalMsg?.toolCalls,
           usageSummary: finalMsg?.usageSummary,
         })

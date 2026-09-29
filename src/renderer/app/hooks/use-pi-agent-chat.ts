@@ -3,24 +3,14 @@ import { useCallback, useEffect, useRef } from "react"
 import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
 import { formatWireUsage } from "../../../shared/chat-wire"
 import {
-  completeToolStep,
-  createInitialAgentSteps,
-  formatToolArgsSummary,
   formatToolPartialPreview,
-  formatToolResultPreview,
-  markAllDone,
   mergeStreamThinking,
-  setCompactionStep,
-  setRetryStep,
-  setTurnPlanning,
-  setTurnResponding,
-  setTurnThinking,
-  startToolStep,
-  updateToolStep,
-  type AgentStep,
+  patchCompactionActivity,
+  patchRetryActivity,
   type AssistantActivityItem,
   type ChatToolCall,
 } from "~/lib/agent-steps"
+import { activityFromAssistantContent } from "../../../shared/pi-assistant-activity"
 import { reduceAgentEvent, textFromAssistantMessage } from "~/lib/pi-agent-events"
 import { useAppStore } from "~/stores/app-store"
 import {
@@ -63,21 +53,11 @@ export function usePiAgentChat({
       thinking: string
       content: string
       activity: AssistantActivityItem[]
+      toolCalls: ChatToolCall[]
     }) => void) | null
   >(null)
-  const onToolStartRef = useRef<((item: ChatToolCall) => void) | null>(null)
-  const onToolUpdateRef = useRef<
-    ((toolCallId: string, partialResult: string) => void) | null
-  >(null)
-  const onToolEndRef = useRef<
-    | ((
-        item: ChatToolCall
-      ) => void)
-    | null
-  >(null)
+  const toolCallsRef = useRef<ChatToolCall[]>([])
   const onUsageRef = useRef<((summary: string) => void) | null>(null)
-  const onWorkflowRef = useRef<((steps: AgentStep[]) => void) | null>(null)
-  const agentStepsRef = useRef<AgentStep[]>(createInitialAgentSteps())
   const pendingToolArgsRef = useRef(
     new Map<string, { name: string; args: Record<string, unknown> }>()
   )
@@ -143,30 +123,53 @@ export function usePiAgentChat({
     [applySystemPrompt]
   )
 
+  const upsertToolCall = (item: ChatToolCall) => {
+    const list = toolCallsRef.current
+    const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
+    if (idx >= 0) list[idx] = { ...list[idx], ...item }
+    else list.push(item)
+  }
+
+  const emitUiPatch = () => {
+    if (!activeAssistantId.current || !onStreamRef.current) return
+    const display = mergeStreamThinking(
+      streamState.current.thinking,
+      streamState.current.content
+    )
+    onStreamRef.current({
+      thinking: display.thinking,
+      content: display.visible,
+      activity: [...activityRef.current],
+      toolCalls: [...toolCallsRef.current],
+    })
+  }
+
+  const syncActivityFromPiAssistant = (message: AssistantMessage) => {
+    const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
+    const fromPi = activityFromAssistantContent(message.content, ts)
+    const workflows = activityRef.current.filter((a) => a.kind === "workflow")
+    if (fromPi.activity.length > 0) {
+      activityRef.current = fromPi.activity
+      for (const w of workflows) {
+        if (!activityRef.current.some((a) => a.kind === "workflow" && a.id === w.id)) {
+          activityRef.current = [...activityRef.current, w]
+        }
+      }
+    }
+    if (fromPi.toolCalls.length > 0) {
+      const live = new Map(toolCallsRef.current.map((t) => [t.toolCallId, t]))
+      toolCallsRef.current = fromPi.toolCalls.map((t) => ({ ...t, ...live.get(t.toolCallId) }))
+    }
+  }
+
   useEffect(() => {
     if (!enabled || !diskSessionId) return
 
     let cancelled = false
-    const pushWorkflow = () => {
-      onWorkflowRef.current?.([...agentStepsRef.current])
-    }
 
     const unsubscribeEvents = subscribeAgentEvents((payload) => {
       if (payload.sessionId !== agentSessionId.current) return
       const ev = payload.event
-
-      const emitStream = () => {
-        if (!activeAssistantId.current || !onStreamRef.current) return
-        const display = mergeStreamThinking(
-          streamState.current.thinking,
-          streamState.current.content
-        )
-        onStreamRef.current({
-          thinking: display.thinking,
-          content: display.visible,
-          activity: [...activityRef.current],
-        })
-      }
 
       const appendThinking = (delta: string) => {
         openTextIdRef.current = null
@@ -207,67 +210,57 @@ export function usePiAgentChat({
       }
 
       if (ev.type === "agent_start") {
-        agentStepsRef.current = createInitialAgentSteps()
         activityRef.current = []
+        toolCallsRef.current = []
         openThinkingIdRef.current = null
         openTextIdRef.current = null
-        pushWorkflow()
-      }
-
-      if (ev.type === "turn_start") {
-        agentStepsRef.current = setTurnPlanning(agentStepsRef.current)
-        pushWorkflow()
       }
 
       if (ev.type === "message_update") {
         const inner = ev.assistantMessageEvent
         if (inner.type === "thinking_delta" && inner.delta) {
-          agentStepsRef.current = setTurnThinking(agentStepsRef.current)
-          pushWorkflow()
           appendThinking(inner.delta)
         }
         if (inner.type === "text_delta" && inner.delta) {
-          agentStepsRef.current = setTurnResponding(agentStepsRef.current)
-          pushWorkflow()
           appendText(inner.delta)
         }
       }
 
       if (ev.type === "compaction_start") {
-        agentStepsRef.current = setCompactionStep(
-          agentStepsRef.current,
+        activityRef.current = patchCompactionActivity(
+          activityRef.current,
           "start",
           ev.reason
         )
-        pushWorkflow()
+        emitUiPatch()
       }
 
       if (ev.type === "compaction_end") {
-        agentStepsRef.current = setCompactionStep(
-          agentStepsRef.current,
+        activityRef.current = patchCompactionActivity(
+          activityRef.current,
           "end",
           ev.reason
         )
-        pushWorkflow()
+        emitUiPatch()
       }
 
       if (ev.type === "auto_retry_start") {
-        agentStepsRef.current = setRetryStep(agentStepsRef.current, "start", {
+        activityRef.current = patchRetryActivity(activityRef.current, "start", {
           attempt: ev.attempt,
           maxAttempts: ev.maxAttempts,
           errorMessage: ev.errorMessage,
         })
-        pushWorkflow()
+        emitUiPatch()
       }
 
       if (ev.type === "auto_retry_end") {
-        agentStepsRef.current = setRetryStep(agentStepsRef.current, "end", {
+        activityRef.current = patchRetryActivity(activityRef.current, "end", {
           attempt: ev.attempt,
-          maxAttempts: ev.attempt,
+          maxAttempts: ev.maxAttempts,
           success: ev.success,
           errorMessage: ev.finalError,
         })
-        pushWorkflow()
+        emitUiPatch()
       }
 
       if (ev.type === "tool_execution_start") {
@@ -276,51 +269,31 @@ export function usePiAgentChat({
           name: ev.toolName,
           args,
         })
-        const argsDetail = formatToolArgsSummary(ev.toolName, args)
-        agentStepsRef.current = startToolStep(
-          agentStepsRef.current,
-          ev.toolCallId,
-          ev.toolName,
-          argsDetail
-        )
-        pushWorkflow()
         openThinkingIdRef.current = null
         openTextIdRef.current = null
         activityRef.current = [
           ...activityRef.current,
           { kind: "tool", toolCallId: ev.toolCallId },
         ]
-        if (activeAssistantId.current && onStreamRef.current) {
-          const display = mergeStreamThinking(
-            streamState.current.thinking,
-            streamState.current.content
-          )
-          onStreamRef.current({
-            thinking: display.thinking,
-            content: display.visible,
-            activity: [...activityRef.current],
-          })
-        }
-        onToolStartRef.current?.({
+        upsertToolCall({
           toolCallId: ev.toolCallId,
           name: ev.toolName,
           args,
           status: "running",
           result: "",
         })
+        emitUiPatch()
       }
 
       if (ev.type === "tool_execution_update") {
         const preview = formatToolPartialPreview(ev.partialResult)
         if (preview) {
-          agentStepsRef.current = updateToolStep(
-            agentStepsRef.current,
-            ev.toolCallId,
-            preview
-          )
-          pushWorkflow()
+          const current = toolCallsRef.current.find((t) => t.toolCallId === ev.toolCallId)
+          if (current) {
+            upsertToolCall({ ...current, partialResult: preview, status: "running" })
+            emitUiPatch()
+          }
         }
-        onToolUpdateRef.current?.(ev.toolCallId, preview)
       }
 
       if (ev.type === "agent_end") {
@@ -344,8 +317,6 @@ export function usePiAgentChat({
         agentEndResolve.current?.()
         agentEndResolve.current = null
         const reloadId = agentSessionId.current ?? diskSessionIdRef.current
-        agentStepsRef.current = markAllDone(agentStepsRef.current)
-        pushWorkflow()
         pendingToolArgsRef.current.clear()
         if (reloadId && onDiskMessagesReloadRef.current) {
           void loadPiChatMessages(reloadId)
@@ -366,8 +337,8 @@ export function usePiAgentChat({
             if (summary) onUsageRef.current?.(summary)
           }
           if (activeAssistantId.current) {
-            agentStepsRef.current = setTurnResponding(agentStepsRef.current)
-            pushWorkflow()
+            syncActivityFromPiAssistant(ev.message as AssistantMessage)
+            emitUiPatch()
           }
         }
       }
@@ -376,34 +347,22 @@ export function usePiAgentChat({
         const pending = pendingToolArgsRef.current.get(ev.toolCallId)
         pendingToolArgsRef.current.delete(ev.toolCallId)
         const args = pending?.args ?? {}
-        const resultPreview = formatToolResultPreview(ev.result, ev.isError)
-        agentStepsRef.current = completeToolStep(
-          agentStepsRef.current,
-          ev.toolCallId,
-          ev.toolName,
-          resultPreview,
-          ev.isError
-        )
-        pushWorkflow()
-        if (activeAssistantId.current) {
-          const resultText =
-            typeof ev.result === "string"
-              ? ev.result
-              : JSON.stringify(ev.result ?? "")
-          onToolEndRef.current?.({
-            toolCallId: ev.toolCallId,
-            name: ev.toolName,
-            args,
-            status: ev.isError ? "error" : "done",
-            result: resultText,
-          })
-        }
+        const resultText =
+          typeof ev.result === "string" ? ev.result : JSON.stringify(ev.result ?? "")
+        upsertToolCall({
+          toolCallId: ev.toolCallId,
+          name: ev.toolName,
+          args,
+          status: ev.isError ? "error" : "done",
+          result: resultText,
+        })
+        emitUiPatch()
       }
 
       if (!activeAssistantId.current || !onStreamRef.current) return
 
       streamState.current = reduceAgentEvent(ev, streamState.current)
-      emitStream()
+      emitUiPatch()
     })
 
     void withSessionLock(async () => {
@@ -459,12 +418,9 @@ export function usePiAgentChat({
         thinking: string
         content: string
         activity: AssistantActivityItem[]
+        toolCalls: ChatToolCall[]
       }) => void
-      onToolStart?: (item: ChatToolCall) => void
-      onToolUpdate?: (toolCallId: string, partialResult: string) => void
-      onToolEnd?: (item: ChatToolCall) => void
       onUsage?: (summary: string) => void
-      onWorkflow?: (steps: AgentStep[]) => void
     }): Promise<{ content: string; thinking: string }> => {
       return withSessionLock(async () => {
         const diskId = diskSessionIdRef.current
@@ -477,19 +433,14 @@ export function usePiAgentChat({
 
         params.onReady?.()
         onStreamRef.current = params.onStream
-        onToolStartRef.current = params.onToolStart ?? null
-        onToolUpdateRef.current = params.onToolUpdate ?? null
-        onToolEndRef.current = params.onToolEnd ?? null
         onUsageRef.current = params.onUsage ?? null
-        onWorkflowRef.current = params.onWorkflow ?? null
         activeAssistantId.current = params.assistantId
         streamState.current = { content: "", thinking: "" }
         activityRef.current = []
+        toolCallsRef.current = []
         openThinkingIdRef.current = null
         openTextIdRef.current = null
-        agentStepsRef.current = createInitialAgentSteps()
         pendingToolArgsRef.current.clear()
-        params.onWorkflow?.(agentStepsRef.current)
         agentErrorRef.current = null
         abortedRef.current = false
 
@@ -528,11 +479,7 @@ export function usePiAgentChat({
         } finally {
           activeAssistantId.current = null
           onStreamRef.current = null
-          onToolStartRef.current = null
-          onToolUpdateRef.current = null
-          onToolEndRef.current = null
           onUsageRef.current = null
-          onWorkflowRef.current = null
           agentEndResolve.current = null
         }
       })
@@ -548,13 +495,10 @@ export function usePiAgentChat({
     agentEndResolve.current = null
     activeAssistantId.current = null
     onStreamRef.current = null
-    onToolStartRef.current = null
-    onToolUpdateRef.current = null
-    onToolEndRef.current = null
     onUsageRef.current = null
-    onWorkflowRef.current = null
     streamState.current = { content: "", thinking: "" }
     activityRef.current = []
+    toolCallsRef.current = []
     openThinkingIdRef.current = null
     openTextIdRef.current = null
   }, [])

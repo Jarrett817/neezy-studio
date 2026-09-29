@@ -28,7 +28,6 @@ export function ChatMessageBubble({
     Boolean(message.content?.trim()) ||
     Boolean(message.thinking?.trim()) ||
     (message.activity?.length ?? 0) > 0 ||
-    (message.agentSteps?.length ?? 0) > 0 ||
     (message.toolCalls?.length ?? 0) > 0 ||
     Boolean(message.usageSummary?.trim())
 
@@ -96,11 +95,8 @@ export function ChatMessageBubble({
         </div>
         {hasPartial ? (
           <AgentActivityTimeline
-            agentSteps={message.agentSteps}
             toolCalls={message.toolCalls}
             activity={message.activity}
-            thinking={message.thinking}
-            content={message.content}
             usageSummary={message.usageSummary}
             isStreaming={message.isStreaming}
           />

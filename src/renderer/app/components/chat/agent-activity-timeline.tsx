@@ -296,30 +296,21 @@ function TimelineBlock({ item }: { item: TimelineItem }) {
 }
 
 export function AgentActivityTimeline({
-  agentSteps,
   toolCalls,
   activity,
-  thinking,
-  content,
   usageSummary,
   isStreaming,
   className,
 }: {
-  agentSteps?: AgentStep[]
   toolCalls?: ChatToolCall[]
   activity?: AssistantActivityItem[]
-  thinking?: string
-  content?: string
   usageSummary?: string
   isStreaming?: boolean
   className?: string
 }) {
   const items = buildAssistantTimeline({
-    agentSteps,
     toolCalls,
     activity,
-    thinking,
-    content,
     usageSummary,
     isStreaming,
   })

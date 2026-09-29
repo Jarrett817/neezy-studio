@@ -12,6 +12,7 @@ import {
   dashScopeThinkingFormat,
   isDashScopeOpenAiBaseUrl,
 } from "../shared/coding-plan-catalog"
+import { clampOpenAiCompatMaxTokensInPayload } from "./clamp-request-max-tokens"
 
 const dashScopeFixedAgents = new WeakSet<Agent>()
 
@@ -165,7 +166,7 @@ function patchDashScopeRequestPayload(
     }
     next.messages = merged
   }
-  return next
+  return clampOpenAiCompatMaxTokensInPayload(next, model)
 }
 
 function wrapDashScopeStreamFn(

@@ -137,21 +137,6 @@ export function formatToolResultPreview(result: unknown, isError: boolean): stri
   return truncateThinkingPreview(trimmed, isError ? 240 : 160)
 }
 
-export function formatUsageSummary(usage: {
-  input: number
-  output: number
-  totalTokens?: number
-  cost?: { total?: number }
-}): string {
-  const inTok = usage.input ?? 0
-  const outTok = usage.output ?? 0
-  const parts = [`输入 ${inTok}`, `输出 ${outTok}`]
-  if (usage.cost?.total != null && usage.cost.total > 0) {
-    parts.push(`$${usage.cost.total.toFixed(4)}`)
-  }
-  return parts.join(" · ")
-}
-
 function toolStepId(toolCallId: string) {
   return `tool-${toolCallId}`
 }

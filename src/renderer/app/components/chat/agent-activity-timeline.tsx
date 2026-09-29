@@ -168,7 +168,9 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
     <details
       className={cn(
         "overflow-hidden rounded-lg border text-xs",
-        failed ? "border-destructive/35" : "border-border/50"
+        running && "border-border/50",
+        failed && "border-destructive",
+        !running && !failed && "border-emerald-500/70"
       )}
       open={running || failed}
     >
@@ -181,7 +183,14 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
             </span>
           ) : null}
         </span>
-        <span className="shrink-0 text-muted-foreground">
+        <span
+          className={cn(
+            "shrink-0",
+            running && "text-muted-foreground",
+            failed && "text-destructive",
+            !running && !failed && "text-emerald-600 dark:text-emerald-400"
+          )}
+        >
           {running ? "执行中" : failed ? "失败" : "已完成"}
         </span>
       </summary>
@@ -242,8 +251,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           <span>思考过程</span>
         )}
       </summary>
-      <div className="border-t border-border/30 px-3 py-2.5 text-[12px] leading-relaxed text-foreground/75">
-        <MarkdownContent content={text} variant="chat" />
+      <div className="border-t border-border/30 px-3 py-2.5">
+        <MarkdownContent
+          content={text}
+          className="text-[12px] leading-relaxed text-muted-foreground/60 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_li]:text-[12px] [&_strong]:font-medium [&_strong]:text-muted-foreground/75 [&_code]:text-[11px] [&_a]:text-muted-foreground/80"
+        />
       </div>
     </details>
   )

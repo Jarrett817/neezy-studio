@@ -158,12 +158,12 @@ async function bindAgentSessionUi(
   window: BrowserWindow,
   diskSessionId: string
 ): Promise<void> {
+  // 勿传 createAgentSession({ tools })：该字段是 allowlist，会屏蔽扩展工具。
+  // 不传时 SDK 默认激活 read/bash/edit/write；bindExtensions 会把新注册的扩展工具并入 active。
   await session.bindExtensions({
     uiContext: createElectronPermissionUi(window, diskSessionId),
   })
-  // 勿传 createAgentSession({ tools })：该字段是 allowlist，会屏蔽扩展工具。
-  // 不传时 SDK 仅默认激活 read/bash/edit/write；此处把 registry 内工具全部设为 active。
-  session.setActiveToolsByName(session.getAllTools().map((t) => t.name))
+  log.info("[pi-agent] active tools:", session.getActiveToolNames().join(", "))
 }
 
 async function syncSessionChatRoute(session: AgentSession, userMessage?: string): Promise<void> {
@@ -221,7 +221,8 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
     model: model as Model<Api>,
     thinkingLevel: resolveAgentThinkingLevel(model),
     settingsManager,
-    // 勿传 tools 白名单：SDK 规定传入后仅启用列出的工具，会屏蔽 pi-web-access 等扩展工具
+    // 与 CLI 默认一致；勿用 tools 白名单（会屏蔽扩展工具）
+    excludeTools: ["grep", "find", "ls", "powershell"],
     customTools: getNeezyCustomTools(),
     sessionManager,
     resourceLoader: await getResourceLoader(cwd, agentDir, dataRoot, settingsManager),

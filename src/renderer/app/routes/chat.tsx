@@ -53,7 +53,7 @@ import { cn } from "~/lib/utils"
 const ChatOptionsSheet = lazy(() => import("~/components/chat/chat-options-sheet"))
 
 const SYSTEM_PROMPT =
-  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd，可用 Pi 内置 read/bash/edit/write/grep/find/ls 操作文件；联网 web_search、fetch_content、code_search。已导入的 skill 会自动加载可直接使用。soul_write 用于把有长期价值的偏好、结论、约定沉淀到 soul.md。需要时直接调用工具，勿声称工具不存在。`.trim()
+  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd。已导入的 skill 会自动加载可直接使用。需要时直接调用工具，勿声称工具不存在。`.trim()
 
 const SCROLL_NEAR_BOTTOM_PX = 80
 const CONTEXT_RING_R = 6

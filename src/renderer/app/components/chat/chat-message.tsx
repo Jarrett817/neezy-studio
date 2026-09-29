@@ -22,8 +22,15 @@ export function ChatMessageBubble({
 }) {
   void index
   const isUser = message.role === "user"
-  const isError = message.role === "error" || Boolean(message.failed)
   const isAssistant = message.role === "assistant"
+  const errorText = message.errorMessage?.trim() || (message.role === "error" ? message.content : "")
+  const hasPartial =
+    Boolean(message.content?.trim()) ||
+    Boolean(message.thinking?.trim()) ||
+    (message.activity?.length ?? 0) > 0 ||
+    (message.agentSteps?.length ?? 0) > 0 ||
+    (message.toolCalls?.length ?? 0) > 0 ||
+    Boolean(message.usageSummary?.trim())
 
   if (isUser) {
     const longText = !message.contentJson && message.content.length > 1200
@@ -48,21 +55,20 @@ export function ChatMessageBubble({
     )
   }
 
-  if (isError) {
+  if ((message.role === "error" || message.failed) && !hasPartial) {
     return (
       <motion.div {...enter} className="py-3">
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide opacity-80">请求失败</p>
-          <div className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words leading-relaxed">
+            {errorText || message.content || "生成失败"}
+          </div>
         </div>
       </motion.div>
     )
   }
 
-  const isInitialLoading = isAssistant && message.isStreaming &&
-    !message.content?.trim() && !message.thinking?.trim() &&
-    !(message.activity?.length ?? 0) &&
-    !(message.agentSteps?.length ?? 0) && !(message.toolCalls?.length ?? 0)
+  const isInitialLoading = isAssistant && message.isStreaming && !hasPartial
 
   if (isInitialLoading) {
     return (
@@ -80,11 +86,6 @@ export function ChatMessageBubble({
     )
   }
 
-  const hasContent = Boolean(message.content?.trim()) || Boolean(message.thinking?.trim()) ||
-    (message.activity?.length ?? 0) > 0 ||
-    (message.agentSteps?.length ?? 0) > 0 || (message.toolCalls?.length ?? 0) > 0 ||
-    Boolean(message.usageSummary?.trim())
-
   return (
     <motion.div {...enter} className="flex gap-3 py-3">
       <NomiFace mood={message.isStreaming ? "talking" : "idle"} className="mt-0.5 size-7 shrink-0" />
@@ -93,7 +94,7 @@ export function ChatMessageBubble({
           <span className="text-xs font-medium text-foreground/70">{modelName}</span>
           {message.isStreaming && <span className="size-1.5 rounded-full bg-primary/50 animate-pulse" />}
         </div>
-        {hasContent ? (
+        {hasPartial ? (
           <AgentActivityTimeline
             agentSteps={message.agentSteps}
             toolCalls={message.toolCalls}
@@ -103,6 +104,12 @@ export function ChatMessageBubble({
             usageSummary={message.usageSummary}
             isStreaming={message.isStreaming}
           />
+        ) : null}
+        {message.failed && errorText ? (
+          <div className="mt-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide opacity-80">请求失败</p>
+            <div className="whitespace-pre-wrap break-words leading-relaxed">{errorText}</div>
+          </div>
         ) : null}
       </div>
     </motion.div>

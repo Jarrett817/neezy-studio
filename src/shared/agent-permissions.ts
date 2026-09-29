@@ -31,11 +31,9 @@ export interface AgentPermissionSettings {
 
 export const PI_BUILTIN_TOOL_NAMES = [
   "read",
+  "bash",
   "write",
   "edit",
-  "grep",
-  "find",
-  "ls",
 ] as const
 
 export const DEFAULT_PERMISSION_POLICY: AgentPermissionPolicy = {
@@ -50,9 +48,7 @@ export const DEFAULT_PERMISSION_POLICY: AgentPermissionPolicy = {
     read: "ask",
     write: "ask",
     edit: "ask",
-    grep: "allow",
-    find: "allow",
-    ls: "ask",
+    bash: "ask",
     browser_navigate: "ask",
     browser_click: "ask",
     browser_type: "ask",
@@ -115,9 +111,7 @@ export const PERMISSION_PRESETS: Record<PermissionPresetId, AgentPermissionPolic
       read: "allow",
       write: "ask",
       edit: "ask",
-      grep: "allow",
-      find: "allow",
-      ls: "allow",
+      bash: "ask",
     },
     bash: { "*": "ask" },
     mcp: {},

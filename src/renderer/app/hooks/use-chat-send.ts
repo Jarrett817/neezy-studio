@@ -178,7 +178,11 @@ export function useChatSend({
 
         if (!finalContent.trim() && !finalThinking.trim() && !hasTools) {
           const emptyMsg = "模型未返回内容，请检查连接或 API 配置"
-          updateMessage(assistantId, { isStreaming: false, failed: true, content: emptyMsg })
+          updateMessage(assistantId, {
+            isStreaming: false,
+            failed: true,
+            errorMessage: emptyMsg,
+          })
           toast.error(emptyMsg)
           return
         }
@@ -196,7 +200,11 @@ export function useChatSend({
       } catch (error) {
         const message = error instanceof Error ? error.message : "生成失败"
         if (getMessage(assistantId)) {
-          updateMessage(assistantId, { isStreaming: false, failed: true, content: message })
+          updateMessage(assistantId, {
+            isStreaming: false,
+            failed: true,
+            errorMessage: message,
+          })
         }
         toast.error(message)
       } finally {

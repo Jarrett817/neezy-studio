@@ -16,6 +16,8 @@ export type ChatMessage = {
   agentSteps?: AgentStep[]
   isStreaming?: boolean
   failed?: boolean
+  /** 失败原因；有正文时不覆盖 content，单独展示 */
+  errorMessage?: string
   toolCalls?: ChatToolCall[]
   usageSummary?: string
   timestamp: number

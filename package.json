@@ -12,6 +12,7 @@
     "build": "electron-vite build",
     "pack:win": "electron-vite build && electron-builder --win --publish never",
     "pack:win:dir": "electron-vite build && electron-builder --win dir --publish never",
+    "pack:unpack": "electron-vite build && electron-builder --win dir --x64 --publish never",
     "start": "electron-vite preview",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
@@ -34,6 +35,7 @@
     "appId": "com.neezy.studio",
     "productName": "Neezy",
     "afterPack": "./scripts/sign-win-exe.mjs",
+    "electronLanguages": ["zh-CN", "en-US"],
     "directories": {
       "output": "release"
     },

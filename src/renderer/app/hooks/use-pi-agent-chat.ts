@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef } from "react"
 
 import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
+import { formatWireUsage } from "../../../shared/chat-wire"
 import {
   completeToolStep,
   createInitialAgentSteps,
   formatToolArgsSummary,
   formatToolPartialPreview,
   formatToolResultPreview,
-  formatUsageSummary,
   markAllDone,
   mergeStreamThinking,
   setCompactionStep,
@@ -33,8 +33,6 @@ import {
 } from "~/services/pi-agent-client"
 import { loadPiChatMessages } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
-
-const AGENT_PROMPT_TIMEOUT_MS = 120_000
 
 type UsePiAgentChatOptions = {
   systemPrompt: string
@@ -94,7 +92,6 @@ export function usePiAgentChat({
       ) => void)
     | null
   >(null)
-  const usageAccRef = useRef({ input: 0, output: 0, cost: 0 })
   const onUsageRef = useRef<((summary: string) => void) | null>(null)
   const onWorkflowRef = useRef<((steps: AgentStep[]) => void) | null>(null)
   const agentStepsRef = useRef<AgentStep[]>(createInitialAgentSteps())
@@ -382,21 +379,8 @@ export function usePiAgentChat({
         if (failure) agentErrorRef.current = failure
         if (ev.message.role === "assistant") {
           if ("usage" in ev.message && ev.message.usage) {
-            const u = ev.message.usage
-            usageAccRef.current = {
-              input: usageAccRef.current.input + (u.input ?? 0),
-              output: usageAccRef.current.output + (u.output ?? 0),
-              cost: usageAccRef.current.cost + (u.cost?.total ?? 0),
-            }
-            onUsageRef.current?.(
-              formatUsageSummary({
-                input: usageAccRef.current.input,
-                output: usageAccRef.current.output,
-                cost: usageAccRef.current.cost > 0
-                  ? { total: usageAccRef.current.cost }
-                  : undefined,
-              })
-            )
+            const summary = formatWireUsage(ev.message.usage)
+            if (summary) onUsageRef.current?.(summary)
           }
           if (activeAssistantId.current) {
             agentStepsRef.current = setTurnResponding(agentStepsRef.current)
@@ -520,14 +504,11 @@ export function usePiAgentChat({
         activityRef.current = []
         openThinkingIdRef.current = null
         openTextIdRef.current = null
-        usageAccRef.current = { input: 0, output: 0, cost: 0 }
         agentStepsRef.current = createInitialAgentSteps()
         pendingToolArgsRef.current.clear()
         params.onWorkflow?.(agentStepsRef.current)
         agentErrorRef.current = null
         abortedRef.current = false
-
-        let timeoutId: ReturnType<typeof setTimeout> | undefined
 
         try {
           await pushRuntimeSettingsToMain()
@@ -547,13 +528,6 @@ export function usePiAgentChat({
             }
           })
 
-          timeoutId = setTimeout(() => {
-            agentErrorRef.current =
-              agentErrorRef.current ?? "模型响应超时，请检查网络或 API 配置"
-            agentEndResolve.current?.()
-            agentEndResolve.current = null
-          }, AGENT_PROMPT_TIMEOUT_MS)
-
           try {
             await promptAgent(agentId, params.userMessage, params.images)
           } catch (error) {
@@ -569,7 +543,6 @@ export function usePiAgentChat({
           )
           return { content: display.visible, thinking: display.thinking }
         } finally {
-          if (timeoutId) clearTimeout(timeoutId)
           activeAssistantId.current = null
           onStreamRef.current = null
           onToolStartRef.current = null

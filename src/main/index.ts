@@ -16,6 +16,7 @@ import { initMainLogger, log } from "./logger"
 import * as storagePaths from "./storage-paths"
 import { registerCoreIpcHandlers } from "./core-ipc"
 import { registerIpcHandlers } from "./ipc-handlers"
+import { installCsp } from "./csp"
 import type { StoragePaths } from "./types"
 
 const mainDir =
@@ -57,7 +58,7 @@ const ipcCtx = {
 registerCoreIpcHandlers()
 registerIpcHandlers(ipcCtx)
 
-console.log("[main] IPC handlers registered")
+log.info("[main] IPC handlers registered")
 
 async function createWindow() {
   mainWindow = new BrowserWindowCtor({
@@ -78,7 +79,7 @@ async function createWindow() {
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, code, description, validatedURL) => {
-      console.error(
+      log.error(
         `[main] renderer load failed: ${validatedURL} (${code}) ${description}`
       )
     }
@@ -98,34 +99,46 @@ async function createWindow() {
   }
 }
 
-app.whenReady().then(async () => {
-  try {
-    Menu.setApplicationMenu(null)
-    await initMainLogger()
-    const paths = getPaths()
-    await storagePaths.ensureStorageDirs(paths)
-    const appConfig = loadAppConfig(app)
-    applyAppConfig(app, appConfig)
-
-    await createWindow()
-  } catch (error) {
-    console.error("[main] startup failed:", error)
-    dialog.showErrorBox(
-      "Neezy Studio 启动失败",
-      error instanceof Error ? error.message : String(error)
-    )
-    app.quit()
-  }
-
-  app.on("activate", () => {
-    if (BrowserWindowCtor.getAllWindows().length === 0) {
-      createWindow().catch((error) => console.error("[main] createWindow failed:", error))
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
     }
   })
-})
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit()
-})
+  app.whenReady().then(async () => {
+    try {
+      Menu.setApplicationMenu(null)
+      await initMainLogger()
+      installCsp(app)
+      const paths = getPaths()
+      await storagePaths.ensureStorageDirs(paths)
+      const appConfig = loadAppConfig(app)
+      applyAppConfig(app, appConfig)
+
+      await createWindow()
+    } catch (error) {
+      log.error("[main] startup failed:", error)
+      dialog.showErrorBox(
+        "Neezy Studio 启动失败",
+        error instanceof Error ? error.message : String(error)
+      )
+      app.quit()
+    }
+
+    app.on("activate", () => {
+      if (BrowserWindowCtor.getAllWindows().length === 0) {
+        createWindow().catch((error) => log.error("[main] createWindow failed:", error))
+      }
+    })
+  })
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit()
+  })
+}
 
 

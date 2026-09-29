@@ -14,37 +14,37 @@ import {
 export type { SessionInfoDto }
 
 export async function getPiSessionsDir(): Promise<string> {
-  return getElectronApi().invoke<string>("pi-sessions:get-dir")
+  return getElectronApi().piSessionsGetDir()
 }
 
 export async function listPiChatSessions(): Promise<SessionInfoDto[]> {
-  return getElectronApi().invoke("pi-sessions:list")
+  return getElectronApi().piSessionsList()
 }
 
 export async function listPiChatSessionsWithMessages(): Promise<SessionInfoDto[]> {
-  return getElectronApi().invoke("pi-sessions:list-with-messages")
+  return getElectronApi().piSessionsListWithMessages()
 }
 
 export async function createPiChatSessionRecord(): Promise<SessionInfoDto> {
-  return getElectronApi().invoke("pi-sessions:create")
+  return getElectronApi().piSessionsCreate()
 }
 
 export async function loadPiChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  return getElectronApi().invoke("pi-sessions:load-messages", sessionId)
+  return getElectronApi().piSessionsLoadMessages(sessionId)
 }
 
 export async function renamePiChatSession(sessionId: string, name: string): Promise<void> {
-  await getElectronApi().invoke("pi-sessions:rename", { sessionId, name })
+  await getElectronApi().piSessionsRename({ sessionId, name })
 }
 
 export async function deletePiChatSession(sessionId: string): Promise<void> {
-  await getElectronApi().invoke("pi-sessions:delete", sessionId)
+  await getElectronApi().piSessionsDelete(sessionId)
 }
 
 export async function pruneEmptyPiChatSessions(
   keepSessionId?: string | null
 ): Promise<number> {
-  return getElectronApi().invoke("pi-sessions:prune-empty", keepSessionId ?? null)
+  return getElectronApi().piSessionsPruneEmpty(keepSessionId ?? null)
 }
 
 export async function getActiveSessionId(): Promise<string | null> {

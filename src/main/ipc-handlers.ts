@@ -45,6 +45,7 @@ import type { McpServerDraft } from "../shared/mcp-config"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
+import { assertPathAllowed } from "./path-guard"
 import { log } from "./logger"
 import type { IpcContext } from "./types"
 
@@ -88,23 +89,29 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   })
   ipcMain.handle("path:app-data-dir", () => ctx.appDataDir())
   ipcMain.handle("path:join", (_event, ...parts: string[]) => ctx.path.join(...parts))
-  ipcMain.handle("fs:exists", async (_event, targetPath: string) =>
-    ctx.fsSync.existsSync(targetPath)
-  )
-  ipcMain.handle("fs:mkdir", async (_event, targetPath: string, options?: { recursive?: boolean }) =>
-    ctx.fs.mkdir(targetPath, options)
-  )
-  ipcMain.handle("fs:read-text-file", async (_event, targetPath: string) =>
-    ctx.fs.readFile(targetPath, "utf8")
-  )
-  ipcMain.handle("fs:write-text-file", async (_event, targetPath: string, content: string) => {
+  ipcMain.handle("fs:exists", async (event, targetPath: string) => {
+    await assertPathAllowed(ctx, event, targetPath, "检查")
+    return ctx.fsSync.existsSync(targetPath)
+  })
+  ipcMain.handle("fs:mkdir", async (event, targetPath: string, options?: { recursive?: boolean }) => {
+    await assertPathAllowed(ctx, event, targetPath, "创建目录")
+    return ctx.fs.mkdir(targetPath, options)
+  })
+  ipcMain.handle("fs:read-text-file", async (event, targetPath: string) => {
+    await assertPathAllowed(ctx, event, targetPath, "读取")
+    return ctx.fs.readFile(targetPath, "utf8")
+  })
+  ipcMain.handle("fs:write-text-file", async (event, targetPath: string, content: string) => {
+    await assertPathAllowed(ctx, event, targetPath, "写入")
     await ctx.fs.mkdir(ctx.path.dirname(targetPath), { recursive: true })
     await ctx.fs.writeFile(targetPath, content, "utf8")
   })
-  ipcMain.handle("fs:remove", async (_event, targetPath: string) =>
-    ctx.fs.rm(targetPath, { recursive: true, force: true })
-  )
-  ipcMain.handle("fs:read-dir", async (_event, targetPath: string) => {
+  ipcMain.handle("fs:remove", async (event, targetPath: string) => {
+    await assertPathAllowed(ctx, event, targetPath, "删除")
+    return ctx.fs.rm(targetPath, { recursive: true, force: true })
+  })
+  ipcMain.handle("fs:read-dir", async (event, targetPath: string) => {
+    await assertPathAllowed(ctx, event, targetPath, "列出目录")
     const entries = await ctx.fs.readdir(targetPath, { withFileTypes: true })
     return entries.map((entry) => ({
       name: entry.name,

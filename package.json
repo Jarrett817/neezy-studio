@@ -16,7 +16,9 @@
     "start": "electron-vite preview",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
-    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "format": "biome format --write",
+    "lint": "biome lint",
+    "check": "biome check --write",
     "knip": "knip",
     "knip:fix": "knip --fix --fix-type exports,types,dependencies",
     "knip:clean": "knip --fix --fix-type exports,types,dependencies,files --allow-remove-files"
@@ -71,6 +73,7 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/sora": "^5.2.8",
@@ -101,8 +104,6 @@
     "lucide-react": "^1.16.0",
     "nanoid": "^5.1.11",
     "next-themes": "^0.4.6",
-    "prettier": "^3.8.3",
-    "prettier-plugin-tailwindcss": "^0.8.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

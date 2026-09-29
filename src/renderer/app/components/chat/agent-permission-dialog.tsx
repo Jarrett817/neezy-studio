@@ -26,7 +26,7 @@ async function respondPermission(
   requestId: string,
   payload: { action?: PermissionDialogAction; value?: string }
 ) {
-  await getElectronApi().invoke("agent:permission-respond", {
+  await getElectronApi().agentPermissionRespond({
     sessionId,
     requestId,
     ...payload,
@@ -47,32 +47,29 @@ export function useAgentPermissionDialog(activeSessionId: string | null) {
   )
 
   useEffect(() => {
-    return getElectronApi().on(
-      "agent:permission-prompt",
-      (_event: unknown, payload: AgentPermissionPrompt) => {
-        if (!activeSessionId || payload.sessionId !== activeSessionId) return
-        setPrompt(payload)
-      }
-    )
+    return getElectronApi().onAgentPermissionPrompt((payload) => {
+      const p = payload as AgentPermissionPrompt
+      if (!activeSessionId || p.sessionId !== activeSessionId) return
+      setPrompt(p)
+    })
   }, [activeSessionId])
 
   useEffect(() => {
-    return getElectronApi().on(
-      "agent:permission-notify",
-      (
-        _event: unknown,
-        payload: { sessionId: string; message: string; type?: string }
-      ) => {
-        if (!activeSessionId || payload.sessionId !== activeSessionId) return
-        const fn =
-          payload.type === "error"
-            ? toast.error
-            : payload.type === "warning"
-              ? toast.warning
-              : toast.info
-        fn(payload.message)
+    return getElectronApi().onAgentPermissionNotify((payload) => {
+      const p = payload as {
+        sessionId: string
+        message: string
+        type?: string
       }
-    )
+      if (!activeSessionId || p.sessionId !== activeSessionId) return
+      const fn =
+        p.type === "error"
+          ? toast.error
+          : p.type === "warning"
+            ? toast.warning
+            : toast.info
+      fn(p.message)
+    })
   }, [activeSessionId])
 
   return prompt ? (

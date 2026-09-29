@@ -27,3 +27,6 @@
 /pkg
 /pkg2
 /release*
+
+# TypeScript 增量构建缓存
+*.tsbuildinfo

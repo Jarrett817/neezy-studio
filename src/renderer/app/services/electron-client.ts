@@ -6,6 +6,9 @@ import type {
 } from "../../../shared/agent-permissions"
 import type { McpConfigSnapshot, McpServerDraft } from "../../../shared/mcp-config"
 import type { SkillPublisherId } from "../../../shared/skill-registry"
+import type { ContextUsageWire } from "../../../shared/chat-wire"
+import type { SessionInfoDto } from "../../../shared/pi-session-dto"
+import type { ChatMessage } from "~/stores/app-store"
 import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
 
 export type ModelTier = "light" | "balanced" | "performance"
@@ -135,21 +138,16 @@ export type StoragePathsSaveResult = StoragePaths & {
 }
 
 type ElectronApi = {
-  invoke: <T = unknown>(channel: string, data?: unknown) => Promise<T>
-  on: <T = unknown>(
-    channel: string,
-    handler: (event: unknown, data: T) => void
-  ) => () => void
   getBuildInfo: () => Promise<BuildInfo>
   syncRuntimeSettings: (settings: Record<string, unknown>) => Promise<void>
-  getAppConfig?: () => Promise<AppConfig>
-  saveAppConfig?: (config: AppConfig) => Promise<AppConfig>
+  getAppConfig: () => Promise<AppConfig>
+  saveAppConfig: (config: AppConfig) => Promise<AppConfig>
   testLlmConnection: () => Promise<{
     ok: boolean
     latencyMs: number
     error?: string
   }>
-  listOpenAiModels?: (payload: {
+  listOpenAiModels: (payload: {
     baseUrl: string
     apiKey: string
   }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
@@ -201,17 +199,57 @@ type ElectronApi = {
   getMcpConfig: () => Promise<McpConfigSnapshot>
   saveMcpConfig: (servers: McpServerDraft[]) => Promise<McpConfigSnapshot>
   getPathForFile: (file: File) => string
+
+  // Agent
+  agentCreate: (options?: {
+    diskSessionId?: string
+    createNew?: boolean
+    sceneSkillIds?: string[]
+  }) => Promise<string>
+  agentConfigure: (payload: {
+    sessionId: string
+    systemPrompt: string
+  }) => Promise<{ ok: boolean }>
+  agentPrompt: (payload: {
+    sessionId: string
+    message: string
+    images?: unknown
+  }) => Promise<{ ok: boolean }>
+  agentAbort: (sessionId: string) => Promise<{ ok: boolean }>
+  agentDestroy: (sessionId: string) => Promise<{ ok: boolean }>
+  agentContextUsage: (sessionId: string) => Promise<ContextUsageWire | null>
+  agentSkillCommands: (
+    sessionId: string
+  ) => Promise<Array<{ name: string; description: string }>>
+  agentPermissionRespond: (payload: {
+    sessionId: string
+    requestId: string
+    action?: string
+    value?: string
+  }) => Promise<void>
+
+  // Pi sessions
+  piSessionsGetDir: () => Promise<string>
+  piSessionsList: () => Promise<SessionInfoDto[]>
+  piSessionsListWithMessages: () => Promise<SessionInfoDto[]>
+  piSessionsCreate: () => Promise<SessionInfoDto>
+  piSessionsLoadMessages: (sessionId: string) => Promise<ChatMessage[]>
+  piSessionsRename: (payload: {
+    sessionId: string
+    name: string
+  }) => Promise<void>
+  piSessionsDelete: (sessionId: string) => Promise<void>
+  piSessionsPruneEmpty: (keepSessionId?: string | null) => Promise<number>
+
+  // 事件订阅（返回取消订阅函数）
+  onAgentEvent: (handler: (payload: unknown) => void) => () => void
+  onAgentPermissionPrompt: (handler: (payload: unknown) => void) => () => void
+  onAgentPermissionNotify: (handler: (payload: unknown) => void) => () => void
 }
 
 declare global {
   interface Window {
-    electronAPI?: ElectronApi & {
-      invoke: <T = unknown>(channel: string, data?: unknown) => Promise<T>
-      on: <T = unknown>(
-        channel: string,
-        handler: (event: unknown, data: T) => void
-      ) => () => void
-    }
+    electronAPI?: ElectronApi
   }
 }
 
@@ -231,24 +269,15 @@ export async function getBuildInfo(): Promise<BuildInfo> {
 export async function syncRuntimeSettingsToMain(
   settings: Record<string, unknown>
 ): Promise<void> {
-  const api = getElectronApi()
-  if (api.syncRuntimeSettings) {
-    await api.syncRuntimeSettings(settings)
-    return
-  }
-  await api.invoke("app:sync-runtime-settings", settings)
+  await getElectronApi().syncRuntimeSettings(settings)
 }
 
 export async function getAppConfig(): Promise<AppConfig> {
-  const api = getElectronApi()
-  if (api.getAppConfig) return api.getAppConfig()
-  return api.invoke<AppConfig>("app:get-app-config")
+  return getElectronApi().getAppConfig()
 }
 
 export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
-  const api = getElectronApi()
-  if (api.saveAppConfig) return api.saveAppConfig(config)
-  return api.invoke<AppConfig>("app:save-app-config", config)
+  return getElectronApi().saveAppConfig(config)
 }
 
 export async function testLlmConnection(): Promise<{
@@ -256,20 +285,14 @@ export async function testLlmConnection(): Promise<{
   latencyMs: number
   error?: string
 }> {
-  const api = getElectronApi()
-  if (api.testLlmConnection) {
-    return api.testLlmConnection()
-  }
-  return getElectronApi().invoke("app:test-llm-connection")
+  return getElectronApi().testLlmConnection()
 }
 
 export async function listOpenAiModels(payload: {
   baseUrl: string
   apiKey: string
 }): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
-  const api = getElectronApi()
-  if (api.listOpenAiModels) return api.listOpenAiModels(payload)
-  return api.invoke("app:list-openai-models", payload)
+  return getElectronApi().listOpenAiModels(payload)
 }
 
 /** 渲染进程在 Electron 壳内（有 electronAPI） */

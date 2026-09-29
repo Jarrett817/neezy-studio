@@ -8,9 +8,10 @@ import { Badge } from "~/components/ui/badge"
 import {
   importSkillFromPath,
   importSkillsFromDrop,
+  listSkills,
+  type AgentSkill,
   uninstallSkill,
 } from "~/services/skills"
-import { listSkills, type AgentSkill } from "~/services/workspace"
 import { getElectronApi } from "~/services/electron-client"
 import { cn } from "~/lib/utils"
 

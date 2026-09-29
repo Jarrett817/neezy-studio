@@ -11,8 +11,7 @@
     "composite": true,
     "jsx": "react-jsx",
     "paths": {
-      "~/*": ["./src/renderer/app/*"],
-      "@renderer/*": ["./src/renderer/src/*"]
+      "~/*": ["./src/renderer/app/*"]
     },
     "types": ["vite/client", "vite-plugin-svgr/client"],
     "noUnusedLocals": false,

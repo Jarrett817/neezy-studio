@@ -41,14 +41,60 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getMcpConfig: () => ipcRenderer.invoke("mcp:get-config"),
   saveMcpConfig: (servers: unknown) => ipcRenderer.invoke("mcp:save-config", servers),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
-  invoke: <T = unknown>(channel: string, data?: unknown): Promise<T> =>
-    ipcRenderer.invoke(channel, data),
-  on: <T = unknown>(
-    channel: string,
-    handler: (event: unknown, data: T) => void
-  ) => {
-    const listener = (_event: unknown, data: T) => handler(_event, data)
-    ipcRenderer.on(channel, listener as Parameters<typeof ipcRenderer.on>[1])
-    return () => ipcRenderer.removeListener(channel, listener as Parameters<typeof ipcRenderer.on>[1])
+
+  // ---- Agent ----
+  agentCreate: (options?: {
+    diskSessionId?: string
+    createNew?: boolean
+    sceneSkillIds?: string[]
+  }) => ipcRenderer.invoke("agent:create", options),
+  agentConfigure: (payload: { sessionId: string; systemPrompt: string }) =>
+    ipcRenderer.invoke("agent:configure", payload),
+  agentPrompt: (payload: { sessionId: string; message: string; images?: unknown }) =>
+    ipcRenderer.invoke("agent:prompt", payload),
+  agentAbort: (sessionId: string) =>
+    ipcRenderer.invoke("agent:abort", { sessionId }),
+  agentDestroy: (sessionId: string) =>
+    ipcRenderer.invoke("agent:destroy", { sessionId }),
+  agentContextUsage: (sessionId: string) =>
+    ipcRenderer.invoke("agent:context-usage", { sessionId }),
+  agentSkillCommands: (sessionId: string) =>
+    ipcRenderer.invoke("agent:skill-commands", { sessionId }),
+  agentPermissionRespond: (payload: {
+    sessionId: string
+    requestId: string
+    action?: string
+    value?: string
+  }) => ipcRenderer.invoke("agent:permission-respond", payload),
+
+  // ---- Pi sessions ----
+  piSessionsGetDir: () => ipcRenderer.invoke("pi-sessions:get-dir"),
+  piSessionsList: () => ipcRenderer.invoke("pi-sessions:list"),
+  piSessionsListWithMessages: () => ipcRenderer.invoke("pi-sessions:list-with-messages"),
+  piSessionsCreate: () => ipcRenderer.invoke("pi-sessions:create"),
+  piSessionsLoadMessages: (sessionId: string) =>
+    ipcRenderer.invoke("pi-sessions:load-messages", sessionId),
+  piSessionsRename: (payload: { sessionId: string; name: string }) =>
+    ipcRenderer.invoke("pi-sessions:rename", payload),
+  piSessionsDelete: (sessionId: string) =>
+    ipcRenderer.invoke("pi-sessions:delete", sessionId),
+  piSessionsPruneEmpty: (keepSessionId?: string | null) =>
+    ipcRenderer.invoke("pi-sessions:prune-empty", keepSessionId ?? null),
+
+  // ---- 事件订阅（返回取消订阅函数）----
+  onAgentEvent: (handler: (payload: unknown) => void) => {
+    const listener = (_e: unknown, payload: unknown) => handler(payload)
+    ipcRenderer.on("agent:event", listener)
+    return () => ipcRenderer.removeListener("agent:event", listener)
+  },
+  onAgentPermissionPrompt: (handler: (payload: unknown) => void) => {
+    const listener = (_e: unknown, payload: unknown) => handler(payload)
+    ipcRenderer.on("agent:permission-prompt", listener)
+    return () => ipcRenderer.removeListener("agent:permission-prompt", listener)
+  },
+  onAgentPermissionNotify: (handler: (payload: unknown) => void) => {
+    const listener = (_e: unknown, payload: unknown) => handler(payload)
+    ipcRenderer.on("agent:permission-notify", listener)
+    return () => ipcRenderer.removeListener("agent:permission-notify", listener)
   },
 })

@@ -20,13 +20,20 @@ export const log: MainLogger = {
   verbose: noop,
 }
 
-/** 仅开发/未打包环境启用 electron-log；生产包使用 noop */
+/**
+ * 启用 electron-log：
+ * - dev：文件 + 控制台，全量 debug
+ * - 生产：写文件到 userData/logs，level info+；控制台关闭（避免 stdout 噪声）
+ */
 export async function initMainLogger(): Promise<void> {
-  if (app.isPackaged) return
-
   const { default: electronLog } = await import("electron-log")
-  electronLog.transports.file.level = "debug"
-  electronLog.transports.console.level = "debug"
+  if (app.isPackaged) {
+    electronLog.transports.file.level = "info"
+    electronLog.transports.console.level = false
+  } else {
+    electronLog.transports.file.level = "debug"
+    electronLog.transports.console.level = "debug"
+  }
   electronLog.initialize({ preload: false })
 
   log.info = electronLog.info.bind(electronLog)
@@ -35,5 +42,5 @@ export async function initMainLogger(): Promise<void> {
   log.debug = electronLog.debug.bind(electronLog)
   log.verbose = electronLog.verbose.bind(electronLog)
 
-  log.info("[logger] electron-log enabled (dev)")
+  log.info("[logger] electron-log enabled")
 }

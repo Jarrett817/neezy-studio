@@ -17,8 +17,6 @@ const MAIN_NATIVE_EXTERNALS = [
   "typebox",
   "pi-web-access",
   "pi-permission-system",
-  "pi-sandbox",
-  "@carderne/sandbox-runtime",
 ] as const
 
 export default defineConfig({

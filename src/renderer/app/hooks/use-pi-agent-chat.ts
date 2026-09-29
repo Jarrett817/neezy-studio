@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react"
 
-import type { ImageContent } from "../../../shared/pi-sdk"
+import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
 import {
   completeToolStep,
   createInitialAgentSteps,
@@ -21,7 +21,7 @@ import {
   type AssistantActivityItem,
   type ChatToolCall,
 } from "~/lib/agent-steps"
-import { reduceAgentEvent } from "~/lib/pi-agent-events"
+import { reduceAgentEvent, textFromAssistantMessage } from "~/lib/pi-agent-events"
 import { useAppStore } from "~/stores/app-store"
 import {
   abortAgentSession,
@@ -350,6 +350,17 @@ export function usePiAgentChat({
           last && last.role === "assistant" ? last : undefined
         )
         if (failure) agentErrorRef.current = failure
+        if (
+          last &&
+          last.role === "assistant" &&
+          !streamState.current.content &&
+          !streamState.current.thinking
+        ) {
+          const fromMsg = textFromAssistantMessage(last as AssistantMessage)
+          if (fromMsg.content || fromMsg.thinking) {
+            streamState.current = fromMsg
+          }
+        }
         agentEndResolve.current?.()
         agentEndResolve.current = null
         const reloadId = agentSessionId.current ?? diskSessionIdRef.current
@@ -476,6 +487,7 @@ export function usePiAgentChat({
       userMessage: string
       images?: ImageContent[]
       assistantId: string
+      onReady?: () => void
       onStream: (patch: {
         thinking: string
         content: string
@@ -496,6 +508,7 @@ export function usePiAgentChat({
         const agentId = agentSessionId.current
         if (!agentId) throw new Error("Agent 未就绪，请稍后重试")
 
+        params.onReady?.()
         onStreamRef.current = params.onStream
         onToolStartRef.current = params.onToolStart ?? null
         onToolUpdateRef.current = params.onToolUpdate ?? null

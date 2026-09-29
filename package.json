@@ -26,7 +26,6 @@
     "@earendil-works/pi-coding-agent": "^0.87.1",
     "jsonc-parser": "^3.3.1",
     "pi-permission-system": "^0.8.0",
-    "pi-sandbox": "^0.4.3",
     "pi-web-access": "^0.10.7",
     "typebox": "^1.1.38"
   },
@@ -44,9 +43,7 @@
       "node_modules/**",
       "!**/*.map",
       "!**/*.{darwin,linux}-*.node",
-      "!node_modules/@mariozechner/clipboard-{darwin,linux,win32-arm64}-*/**",
-      "!node_modules/pi-sandbox/**",
-      "!node_modules/@carderne/**"
+      "!node_modules/@mariozechner/clipboard-{darwin,linux,win32-arm64}-*/**"
     ],
     "win": {
       "signAndEditExecutable": false,

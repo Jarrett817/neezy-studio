@@ -54,11 +54,11 @@ function StoragePathsSection() {
       queryClient.setQueryData(["storage-paths"], next)
       setDraft({ dataRoot: next.dataRoot })
       if (next.migration && next.migration.movedCount > 0) {
-        toast.success("工作区路径已保存，数据已迁移", {
+        toast.success("数据目录已保存，数据已迁移", {
           description: `已移动 ${next.migration.movedCount} 项至新目录，请重启应用后继续使用。`,
         })
       } else {
-        toast.success("工作区路径已保存", {
+        toast.success("数据目录已保存", {
           description: "请重启应用以确保生效。",
         })
       }
@@ -121,8 +121,8 @@ function StoragePathsSection() {
       <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
         <PathField
           id="dataRoot"
-          label="工作区目录"
-          hint="Agent 的工作目录（cwd），存放 soul.md、skills/ 及会话与文件产物。修改目录时会自动迁移已有数据（目标须为空目录）"
+          label="数据目录"
+          hint="存放会话、soul.md、skills/、数据库等应用数据。修改时会自动迁移（目标须为空目录）。Agent 工具工作区请在对话页选择文件夹。"
           value={draft.dataRoot}
           onChange={(value) => setDraft({ ...draft, dataRoot: value })}
           onBrowse={() => pickFolder("dataRoot")}

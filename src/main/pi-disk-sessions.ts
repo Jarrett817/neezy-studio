@@ -11,7 +11,7 @@ import {
   toSessionInfoDto,
   type SessionInfoDto,
 } from "../shared/pi-session-dto"
-import { resolveStoragePaths } from "./storage-paths"
+import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
 import path from "node:path"
 
 export const PI_SESSIONS_DIR_NAME = "pi-sessions"
@@ -53,8 +53,9 @@ function piSessionDirs(app: App) {
 }
 
 export async function listPiChatSessions(app: App): Promise<SessionInfoDto[]> {
-  const { dataRoot, sessionDir } = piSessionDirs(app)
-  const infos = await SessionManager.list(dataRoot, sessionDir)
+  const { sessionDir } = piSessionDirs(app)
+  // 自定义 sessionDir 下 list(cwd) 会按 header.cwd 过滤；工作区切换后仍需看到全部会话
+  const infos = await SessionManager.listAll(sessionDir)
   return infos.map(toSessionInfoDto).sort((a, b) => b.modified - a.modified)
 }
 
@@ -90,19 +91,21 @@ export async function findPiSessionById(
 }
 
 export function openPiSessionManager(app: App, sessionFile: string): SessionManager {
-  const { dataRoot, sessionDir } = piSessionDirs(app)
-  return SessionManager.open(sessionFile, sessionDir, dataRoot)
+  const { sessionDir } = piSessionDirs(app)
+  // cwdOverride：工具操作落在当前工作区，而非会话创建时的 dataRoot
+  return SessionManager.open(sessionFile, sessionDir, resolveWorkspaceDir(app))
 }
 
 export function createPiSessionManager(app: App): SessionManager {
-  const { dataRoot, sessionDir } = piSessionDirs(app)
-  const sm = SessionManager.create(dataRoot, sessionDir)
+  const { sessionDir } = piSessionDirs(app)
+  const cwd = resolveWorkspaceDir(app)
+  const sm = SessionManager.create(cwd, sessionDir)
   const file = sm.getSessionFile()
   if (!file) {
     throw new Error("Pi 会话文件路径未初始化")
   }
   flushPiSessionHeaderFile(sm)
-  return SessionManager.open(file, sessionDir, dataRoot)
+  return SessionManager.open(file, sessionDir, cwd)
 }
 
 function textFromContent(content: unknown): { text: string; thinking: string } {

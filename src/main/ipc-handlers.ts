@@ -6,6 +6,7 @@ import {
   configureAgentSession,
   createAgentSession,
   destroyAgentSession,
+  destroyAllAgentSessions,
   getAgentContextUsage,
   getPiSessionsDirectory,
   invalidatePiResourceLoaderCache,
@@ -67,6 +68,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle("app:reset-storage-paths", async () => {
     const paths = await storagePaths.resetStoragePaths(app)
     applyAppConfig(app, loadAppConfig(app))
+    return paths
+  })
+  ipcMain.handle("app:save-workspace-dir", async (_event, workspaceDir: string | null) => {
+    const paths = await storagePaths.saveWorkspaceDir(app, workspaceDir)
+    await destroyAllAgentSessions()
     return paths
   })
   ipcMain.handle("app:pick-directory", async (_event, options: { title?: string; defaultPath?: string } = {}) => {

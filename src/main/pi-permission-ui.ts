@@ -5,8 +5,6 @@ import { randomUUID } from "node:crypto"
 import type { PermissionGrantTarget } from "../shared/permission-prompt-grant"
 import { parsePermissionPromptGrant } from "../shared/permission-prompt-grant"
 
-export type SandboxPermissionAction = "abort" | "session" | "project" | "global"
-
 /** 与 pi-permission-system permission-dialog.ts 一致 */
 const PI_APPROVE_OPTION = "Yes"
 const PI_DENY_OPTION = "No"
@@ -26,19 +24,12 @@ export type PermissionDialogAction =
 export interface PermissionPromptPayload {
   sessionId: string
   requestId: string
-  kind: "select" | "input" | "sandbox" | "permission" | "confirm"
+  kind: "select" | "input" | "permission" | "confirm"
   title: string
   options?: string[]
   placeholder?: string
   grantTarget?: PermissionGrantTarget | null
 }
-
-const SANDBOX_UI_ACTIONS: SandboxPermissionAction[] = [
-  "session",
-  "abort",
-  "project",
-  "global",
-]
 
 function stripAnsi(text: string): string {
   return text.replace(/\u001b\[[0-9;]*m/g, "").trim()
@@ -123,22 +114,6 @@ function promptUser(
   })
 }
 
-async function promptSandboxAction(
-  window: BrowserWindow,
-  sessionId: string,
-  title: string
-): Promise<SandboxPermissionAction> {
-  const value = await promptUser(window, sessionId, {
-    kind: "sandbox",
-    title,
-    options: [...SANDBOX_UI_ACTIONS],
-  })
-  if (value === "session" || value === "project" || value === "global") {
-    return value
-  }
-  return "abort"
-}
-
 async function runExtensionCustomPrompt<T>(
   window: BrowserWindow,
   sessionId: string,
@@ -153,6 +128,10 @@ async function runExtensionCustomPrompt<T>(
     resolved = result as T
   })
 
+  if (resolved !== undefined) {
+    return resolved
+  }
+
   const lines =
     typeof component === "object" &&
     component !== null &&
@@ -160,13 +139,9 @@ async function runExtensionCustomPrompt<T>(
     typeof component.render === "function"
       ? component.render(120)
       : []
-  const title = stripAnsi(lines[0] ?? "") || "沙箱权限确认"
-
-  if (resolved !== undefined) {
-    return resolved
-  }
-
-  return (await promptSandboxAction(window, sessionId, title)) as T
+  const title = stripAnsi(lines[0] ?? "") || "需要确认"
+  const value = await promptUser(window, sessionId, { kind: "confirm", title })
+  return (value === "true") as T
 }
 
 const noopUiMethods: Omit<ExtensionUIContext, "select" | "input" | "notify" | "custom" | "confirm"> = {

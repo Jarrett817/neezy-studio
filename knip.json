@@ -29,7 +29,6 @@
     "@fontsource-variable/sora",
     "pi-chrome",
     "pi-permission-system",
-    "pi-sandbox",
     "pi-textbrowser",
     "pi-web-access"
   ],

@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url"
 const BUNDLED_PI_PACKAGES = [
   "pi-web-access",
   "pi-permission-system",
-  ...(process.platform === "darwin" || process.platform === "linux" ? (["pi-sandbox"] as const) : []),
 ] as const
 
 /** 主进程 bundle 在 out/main，须从仓库根定位 node_modules */

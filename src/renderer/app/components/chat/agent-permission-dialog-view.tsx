@@ -16,33 +16,7 @@ import { Textarea } from '~/components/ui/textarea'
 import type {
   AgentPermissionPrompt,
   PermissionDialogAction,
-  SandboxPermissionAction,
 } from './agent-permission-dialog'
-
-const SANDBOX_UI_ACTIONS: SandboxPermissionAction[] = [
-  "session",
-  "abort",
-  "project",
-  "global",
-]
-
-const SANDBOX_ACTION_LABELS: Record<
-  SandboxPermissionAction,
-  { label: string; hint?: string; needsConfirm?: boolean }
-> = {
-  session: { label: "仅本次会话允许" },
-  abort: { label: "拒绝（保持拦截）" },
-  project: {
-    label: "允许并写入项目配置",
-    hint: ".pi/sandbox.json",
-    needsConfirm: true,
-  },
-  global: {
-    label: "允许并写入全局配置",
-    hint: "pi-agent/sandbox.json",
-    needsConfirm: true,
-  },
-}
 
 interface AgentPermissionDialogViewProps {
   prompt: AgentPermissionPrompt
@@ -51,88 +25,10 @@ interface AgentPermissionDialogViewProps {
 
 export default function AgentPermissionDialogView({ prompt, onDismiss }: AgentPermissionDialogViewProps) {
   const [denyReason, setDenyReason] = useState("")
-  const [sandboxConfirm, setSandboxConfirm] =
-    useState<SandboxPermissionAction | null>(null)
   const titleLine = prompt.title.split("\n")[0] ?? "需要你的确认"
   const body = prompt.title.includes("\n")
     ? prompt.title.slice(prompt.title.indexOf("\n") + 1).trim()
     : ""
-
-  if (prompt.kind === "sandbox") {
-    if (sandboxConfirm) {
-      const meta = SANDBOX_ACTION_LABELS[sandboxConfirm]
-      return (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              setSandboxConfirm(null)
-              void onDismiss({ value: "abort" })
-            }
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认持久放行？</AlertDialogTitle>
-              <AlertDialogDescription>
-                {meta.label}
-                {meta.hint ? `（${meta.hint}）` : ""}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setSandboxConfirm(null)}>
-                返回
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => void onDismiss({ value: sandboxConfirm })}
-              >
-                确认
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )
-    }
-
-    return (
-      <AlertDialog open onOpenChange={(open) => !open && void onDismiss({ value: "abort" })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{titleLine}</AlertDialogTitle>
-            {body ? (
-              <AlertDialogDescription className="whitespace-pre-wrap">
-                {body}
-              </AlertDialogDescription>
-            ) : null}
-          </AlertDialogHeader>
-          <div className="flex flex-col gap-2">
-            {SANDBOX_UI_ACTIONS.map((action) => {
-              const meta = SANDBOX_ACTION_LABELS[action]
-              return (
-                <Button
-                  key={action}
-                  variant={action === "session" ? "default" : "outline"}
-                  className="h-auto min-h-9 flex-col items-start gap-0.5 py-2 text-left"
-                  onClick={() => {
-                    if (meta.needsConfirm) {
-                      setSandboxConfirm(action)
-                      return
-                    }
-                    void onDismiss({ value: action })
-                  }}
-                >
-                  <span>{meta.label}</span>
-                  {meta.hint ? (
-                    <span className="text-xs text-muted-foreground">{meta.hint}</span>
-                  ) : null}
-                </Button>
-              )
-            })}
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
-    )
-  }
 
   if (prompt.kind === "input") {
     return (

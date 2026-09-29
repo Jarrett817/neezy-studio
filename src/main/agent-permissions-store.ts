@@ -8,11 +8,9 @@ import {
   DEFAULT_PERMISSION_POLICY,
   normalizeAgentPermissionPolicy,
   normalizePermissionExtensionConfig,
-  normalizeSandboxPolicy,
   type AgentPermissionPolicy,
   type AgentPermissionSettings,
   type PermissionExtensionConfig,
-  type SandboxPolicyConfig,
 } from "../shared/agent-permissions"
 import {
   applyPermissionGrantToPolicy,
@@ -57,23 +55,6 @@ function ensureExtensionConfigFile(agentDir: string): string {
   return configPath
 }
 
-function ensureSandboxFile(agentDir: string, enabled: boolean): string {
-  const sandboxPath = path.join(agentDir, "sandbox.json")
-  if (!fs.existsSync(sandboxPath)) {
-    writeJsonFile(sandboxPath, {
-      enabled,
-      network: { allowedDomains: ["github.com", "*.github.com"], deniedDomains: [] },
-      filesystem: {
-        denyRead: [],
-        allowRead: [".", "~"],
-        allowWrite: [".", "~"],
-        denyWrite: [".env", ".env.*", "*.pem", "*.key"],
-      },
-    })
-  }
-  return sandboxPath
-}
-
 function loadPolicyFile(policyPath: string): AgentPermissionPolicy {
   if (!fs.existsSync(policyPath)) {
     return structuredClone(DEFAULT_PERMISSION_POLICY)
@@ -96,44 +77,27 @@ function loadExtensionConfig(configPath: string): PermissionExtensionConfig {
   }
 }
 
-function loadSandboxConfig(sandboxPath: string): SandboxPolicyConfig {
-  if (!fs.existsSync(sandboxPath)) {
-    return { enabled: process.platform === "darwin" || process.platform === "linux" }
-  }
-  try {
-    return normalizeSandboxPolicy(readJsoncFile(sandboxPath))
-  } catch {
-    return { enabled: false }
-  }
-}
-
 export function loadAgentPermissionSettings(app: App): AgentPermissionSettings {
   const agentDir = getPiAgentDir(app)
   const dataRoot = resolveStoragePaths(app).dataRoot
-  const sandboxSupported = process.platform === "darwin" || process.platform === "linux"
 
   ensurePermissionExtensionEnv(agentDir)
   const globalPolicyPath = ensureGlobalPolicyFile(agentDir)
   const extensionConfigPath = ensureExtensionConfigFile(agentDir)
-  const sandboxConfigPath = ensureSandboxFile(agentDir, sandboxSupported)
   const projectPolicyPath = path.join(dataRoot, ".pi", "agent", "pi-permissions.jsonc")
 
   return {
     globalPolicyPath,
     projectPolicyPath,
     extensionConfigPath,
-    sandboxConfigPath,
-    sandboxSupported,
     policy: loadPolicyFile(globalPolicyPath),
     extension: loadExtensionConfig(extensionConfigPath),
-    sandbox: loadSandboxConfig(sandboxConfigPath),
   }
 }
 
 export interface SaveAgentPermissionInput {
   policy: AgentPermissionPolicy
   extension: PermissionExtensionConfig
-  sandbox: SandboxPolicyConfig
 }
 
 export function saveAgentPermissionSettings(
@@ -143,25 +107,9 @@ export function saveAgentPermissionSettings(
   const current = loadAgentPermissionSettings(app)
   const policy = normalizeAgentPermissionPolicy(input.policy)
   const extension = normalizePermissionExtensionConfig(input.extension)
-  const sandbox = normalizeSandboxPolicy(input.sandbox)
 
   writeJsonFile(current.globalPolicyPath, policy)
   writeJsonFile(current.extensionConfigPath, extension)
-
-  if (current.sandboxSupported) {
-    let sandboxRaw: Record<string, unknown> = {}
-    if (fs.existsSync(current.sandboxConfigPath)) {
-      try {
-        const parsed = readJsoncFile(current.sandboxConfigPath)
-        if (parsed && typeof parsed === "object") {
-          sandboxRaw = parsed as Record<string, unknown>
-        }
-      } catch {
-        sandboxRaw = {}
-      }
-    }
-    writeJsonFile(current.sandboxConfigPath, { ...sandboxRaw, enabled: sandbox.enabled })
-  }
 
   return loadAgentPermissionSettings(app)
 }
@@ -180,20 +128,5 @@ export function resetAgentPermissionSettings(app: App): AgentPermissionSettings 
   const current = loadAgentPermissionSettings(app)
   writeJsonFile(current.globalPolicyPath, DEFAULT_PERMISSION_POLICY)
   writeJsonFile(current.extensionConfigPath, DEFAULT_PERMISSION_EXTENSION)
-  if (current.sandboxSupported && fs.existsSync(current.sandboxConfigPath)) {
-    let sandboxRaw: Record<string, unknown> = {}
-    try {
-      const parsed = readJsoncFile(current.sandboxConfigPath)
-      if (parsed && typeof parsed === "object") {
-        sandboxRaw = parsed as Record<string, unknown>
-      }
-    } catch {
-      sandboxRaw = {}
-    }
-    writeJsonFile(current.sandboxConfigPath, {
-      ...sandboxRaw,
-      enabled: process.platform === "darwin" || process.platform === "linux",
-    })
-  }
   return loadAgentPermissionSettings(app)
 }

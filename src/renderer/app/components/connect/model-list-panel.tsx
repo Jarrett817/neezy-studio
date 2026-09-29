@@ -5,7 +5,6 @@ import { toast } from "sonner"
 
 import {
   createChatModelEntry,
-  entryDisplayName,
   enforceChatModelRules,
   resolveEntryApiBase,
   resolveEntryApiKey,
@@ -135,7 +134,7 @@ export function ModelListPanel() {
     updateApi(id, {
       preset,
       baseUrl: preset === "custom" ? entry.baseUrl ?? "" : base,
-      label: getCodingPlanVendor(preset)?.label ?? entry.label,
+      label: entry.label.trim() || getCodingPlanVendor(preset)?.label || entry.label,
     })
   }
 
@@ -198,38 +197,30 @@ export function ModelListPanel() {
                     !entry.enabled && "opacity-60"
                   )}
                 >
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-xs text-muted-foreground">
-                      {entryDisplayName(entry)}
-                      {!entry.enabled ? (
-                        <span className="ml-1.5 text-foreground/70">（已关闭）</span>
-                      ) : null}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Label
-                        htmlFor={`api-enabled-${entry.id}`}
-                        className="text-xs text-muted-foreground"
-                      >
-                        启用
-                      </Label>
-                      <Switch
-                        id={`api-enabled-${entry.id}`}
-                        checked={entry.enabled}
-                        onCheckedChange={(on) =>
-                          updateApi(entry.id, { enabled: on })
-                        }
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        onClick={() => removeApi(entry.id)}
-                        aria-label="删除"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
+                  <div className="mb-3 flex items-center justify-end gap-2">
+                    <Label
+                      htmlFor={`api-enabled-${entry.id}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      启用
+                    </Label>
+                    <Switch
+                      id={`api-enabled-${entry.id}`}
+                      checked={entry.enabled}
+                      onCheckedChange={(on) =>
+                        updateApi(entry.id, { enabled: on })
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => removeApi(entry.id)}
+                      aria-label="删除"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
                   </div>
                   <div
                     className={cn(
@@ -237,6 +228,17 @@ export function ModelListPanel() {
                       !entry.enabled && "pointer-events-none"
                     )}
                   >
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">显示名称</Label>
+                      <Input
+                        className="h-9 text-xs"
+                        value={entry.label}
+                        placeholder={entry.model.trim() || "未命名模型"}
+                        onChange={(e) =>
+                          updateApi(entry.id, { label: e.target.value })
+                        }
+                      />
+                    </div>
                     <div className="space-y-1 sm:col-span-2">
                       <Label className="text-xs">套餐</Label>
                       <Select

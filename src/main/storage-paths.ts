@@ -1,5 +1,6 @@
 import type { App } from "electron"
 import fs from "node:fs/promises"
+import fsSync from "node:fs"
 import path from "node:path"
 
 import { loadAppConfig, saveAppConfig } from "./app-config"
@@ -27,12 +28,32 @@ function normalizeAbsolutePath(value: string, label: string): string {
   return resolved
 }
 
-function buildResolved(app: App, dataRoot: string): StoragePaths {
+function assertExistingDirectory(dir: string, label: string): string {
+  const resolved = normalizeAbsolutePath(dir, label)
+  let stat: fsSync.Stats
+  try {
+    stat = fsSync.statSync(resolved)
+  } catch {
+    throw new Error(`${label}不存在`)
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${label}必须是文件夹`)
+  }
+  return resolved
+}
+
+function buildResolved(app: App, dataRoot: string, workspaceDirRaw: string): StoragePaths {
   const systemDefaults = getSystemDefaultPaths(app)
   const modelsDir = path.join(dataRoot, "models")
+  const workspaceCustomized = Boolean(workspaceDirRaw.trim())
+  const workspaceDir = workspaceCustomized
+    ? normalizeAbsolutePath(workspaceDirRaw, "工作区")
+    : dataRoot
 
   return {
     dataRoot,
+    workspaceDir,
+    workspaceCustomized,
     modelsDir,
     databaseFile: path.join(dataRoot, "memories.db"),
     memoriesDir: path.join(dataRoot, "memories"),
@@ -57,8 +78,13 @@ export function resolveStoragePaths(
   const dataRoot = config.dataRoot?.trim()
     ? normalizeAbsolutePath(config.dataRoot, "存储目录")
     : systemDefaults.dataRoot
-  cachedPaths = buildResolved(app, dataRoot)
+  cachedPaths = buildResolved(app, dataRoot, config.workspaceDir ?? "")
   return cachedPaths
+}
+
+/** Agent 工具 cwd：自定义工作区或回退 dataRoot */
+export function resolveWorkspaceDir(app: App): string {
+  return resolveStoragePaths(app).workspaceDir
 }
 
 export function invalidateStoragePathsCache(): void {
@@ -114,4 +140,18 @@ export async function saveStoragePaths(
 export async function resetStoragePaths(app: App): Promise<StoragePathsSaveResult> {
   const systemDefaults = getSystemDefaultPaths(app)
   return applyDataRootChange(app, systemDefaults.dataRoot)
+}
+
+/** 设置 Agent 工作区；传 null/空 则回退 dataRoot */
+export async function saveWorkspaceDir(
+  app: App,
+  workspaceDir: string | null
+): Promise<StoragePaths> {
+  const config = loadAppConfig(app)
+  const next = workspaceDir?.trim()
+    ? assertExistingDirectory(workspaceDir, "工作区")
+    : ""
+  await saveAppConfig(app, { ...config, workspaceDir: next })
+  invalidateStoragePathsCache()
+  return resolveStoragePaths(app, { fresh: true })
 }

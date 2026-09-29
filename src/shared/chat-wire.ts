@@ -34,16 +34,16 @@ export interface ContextUsageWire {
   percent: number | null
 }
 
-function formatTokenCount(n: number): string {
+export function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`
   return String(n)
 }
 
-export function formatContextUsage(usage: ContextUsageWire): string {
+export function formatContextUsageTooltip(usage: ContextUsageWire): string {
   const limit = formatTokenCount(usage.contextWindow)
-  if (usage.tokens == null || usage.percent == null) return `上下文 — / ${limit}`
-  return `上下文 ${formatTokenCount(usage.tokens)} / ${limit} · ${Math.round(usage.percent)}%`
+  if (usage.tokens == null) return `已用 — · 上限 ${limit}`
+  return `已用 ${formatTokenCount(usage.tokens)} · 上限 ${limit}`
 }
 
 export function formatWireUsage(usage: {

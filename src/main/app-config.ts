@@ -23,9 +23,17 @@ function normalizeDataRoot(app: App, value: string | undefined): string {
   return resolved
 }
 
+function normalizeWorkspaceDir(value: string | undefined): string {
+  if (!value?.trim()) return ""
+  const resolved = path.resolve(value.trim())
+  if (!path.isAbsolute(resolved)) return ""
+  return resolved
+}
+
 function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
   const dataRoot = normalizeDataRoot(app, stored?.dataRoot)
-  const base = { ...DEFAULT_APP_CONFIG, ...(stored ?? {}), dataRoot }
+  const workspaceDir = normalizeWorkspaceDir(stored?.workspaceDir)
+  const base = { ...DEFAULT_APP_CONFIG, ...(stored ?? {}), dataRoot, workspaceDir }
   return {
     ...base,
     version: APP_CONFIG_VERSION,

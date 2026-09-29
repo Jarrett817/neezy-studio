@@ -1,8 +1,8 @@
 import {
-  getModel,
-  getModels,
-  getProviders,
-} from "@earendil-works/pi-ai/compat"
+  getBuiltinModel,
+  getBuiltinModels,
+  getBuiltinProviders,
+} from "@earendil-works/pi-ai/providers/all"
 import type {
   Api,
   AssistantMessage,
@@ -69,149 +69,94 @@ function resolveEntryBaseUrl(
 
 
 function isKnownProvider(provider: string): provider is KnownProvider {
-
-  return (getProviders() as readonly string[]).includes(provider)
-
+  return (getBuiltinProviders() as readonly string[]).includes(provider)
 }
-
-
 
 function findPiCatalogModel(provider: KnownProvider, modelId: string): Model<Api> | undefined {
-
-  const direct = getModel(provider, modelId as never)
-
+  const direct = getBuiltinModel(provider, modelId as never)
   if (direct) return direct as Model<Api>
 
-
-
   const needle = modelId.trim().toLowerCase()
-
-  return getModels(provider).find((m) => m.id.toLowerCase() === needle) as Model<Api> | undefined
-
+  return getBuiltinModels(provider).find((m) => m.id.toLowerCase() === needle) as Model<Api> | undefined
 }
-
-
 
 /** 自定义端点时：按 modelId 在 pi-ai 全目录回查 context/maxTokens（供应商元数据来自目录，非运行时探测） */
-
 function lookupCatalogModelById(modelId: string): Model<Api> | undefined {
-
   const needle = modelId.trim().toLowerCase()
-
   if (!needle) return undefined
-
-  for (const provider of getProviders() as readonly string[]) {
-
+  for (const provider of getBuiltinProviders() as readonly string[]) {
     if (!isKnownProvider(provider)) continue
-
-    const hit = getModels(provider).find((m) => {
-
+    const hit = getBuiltinModels(provider).find((m) => {
       const id = m.id.toLowerCase()
-
       return id === needle || id.endsWith(`/${needle}`) || id.split("/").pop() === needle
-
     })
-
     if (hit) return hit as Model<Api>
-
   }
-
   return undefined
-
 }
 
-
-
 function fallbackAnthropicTemplate(provider: KnownProvider): Model<Api> | undefined {
-
   if (provider === "minimax-cn") {
-
-    return getModel("minimax-cn", "MiniMax-M2.7") as Model<Api> | undefined
-
+    return getBuiltinModel("minimax-cn", "MiniMax-M2.7") as Model<Api> | undefined
   }
-
-  return getModels(provider).find((m) => m.api === "anthropic-messages") as Model<Api> | undefined
-
+  return getBuiltinModels(provider).find((m) => m.api === "anthropic-messages") as Model<Api> | undefined
 }
 
 
 
 function buildApiModel(
-
   modelId: string,
-
   apiKind: ChatApiKind,
-
   baseUrl: string,
-
   provider: string,
-
   reasoning: boolean,
-
   compat?: Record<string, unknown>
-
 ): Model<Api> {
-
   // 优先用 pi-ai 内置目录里该模型的上限；目录没有才退保守默认（不假装探测到了供应商）
-
   const catalog = lookupCatalogModelById(modelId)
-
   const contextWindow = catalog?.contextWindow ?? 128_000
-
   const maxTokens = catalog?.maxTokens ?? 16_384
 
-
+  // 自定义 OpenAI 兼容端点：走 max_tokens（多数网关不认 max_completion_tokens）
+  // finish_reason：pi 默认严格要求，部分网关末包省略 → 用官方 compat 关闭
+  const openaiCompatDefaults =
+    apiKind === "openai-completions"
+      ? {
+          maxTokensField: "max_tokens" as const,
+          supportsFinishReason: false,
+          supportsUsageInStreaming: false,
+          supportsStore: false,
+        }
+      : undefined
 
   return {
-
     id: modelId,
-
     name: modelId,
-
     api: apiKind,
-
     provider,
-
     baseUrl,
-
     reasoning: reasoning || Boolean(catalog?.reasoning),
-
     input: catalog?.input?.length ? [...catalog.input] : ["text"],
-
     cost: catalog?.cost ?? EMPTY_COST,
-
     contextWindow,
-
     maxTokens,
-
-    ...(compat ? { compat } : {}),
-
+    ...(openaiCompatDefaults || compat
+      ? { compat: { ...openaiCompatDefaults, ...(compat ?? {}) } }
+      : {}),
   } as Model<Api>
-
 }
 
-
-
 function buildDashScopeCompat(): Record<string, unknown> {
-
   return {
-
     maxTokensField: "max_tokens" as const,
-
     supportsStore: false,
-
     supportsDeveloperRole: false,
-
     supportsReasoningEffort: false,
-
     // 百炼末包可能仅含 usage、无 finish_reason
-
     supportsUsageInStreaming: false,
-
+    supportsFinishReason: false,
     thinkingFormat: dashScopeThinkingFormat(),
-
   }
-
 }
 
 

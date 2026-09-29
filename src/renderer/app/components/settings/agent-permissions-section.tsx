@@ -91,7 +91,6 @@ export function AgentPermissionsSection() {
       return saveAgentPermissionSettings({
         policy: draft.policy,
         extension: draft.extension,
-        sandbox: draft.sandbox,
       })
     },
     onSuccess: (saved) => {
@@ -295,33 +294,6 @@ export function AgentPermissionsSection() {
               </p>
             </div>
           </div>
-
-          {draft.sandboxSupported ? (
-            <div className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                id="sandboxEnabled"
-                checked={draft.sandbox.enabled}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    sandbox: { enabled: e.target.checked },
-                  })
-                }
-                className="mt-1 size-4 rounded"
-              />
-              <div>
-                <Label htmlFor="sandboxEnabled">启用 pi-sandbox（macOS / Linux）</Label>
-                <p className="text-xs text-muted-foreground">
-                  OS 级 bash 隔离 + read/write/edit 路径策略；与上方权限规则叠加。
-                </p>
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              当前系统（Windows）不加载 pi-sandbox，仅使用 pi-permission-system 弹窗策略。
-            </p>
-          )}
         </div>
 
         <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
@@ -329,7 +301,6 @@ export function AgentPermissionsSection() {
           <ul className="mt-2 space-y-1 font-mono break-all">
             <li>全局：{draft.globalPolicyPath}</li>
             <li>扩展：{draft.extensionConfigPath}</li>
-            {draft.sandboxSupported ? <li>沙箱：{draft.sandboxConfigPath}</li> : null}
             <li>项目（可选覆盖）：{draft.projectPolicyPath}</li>
           </ul>
         </div>

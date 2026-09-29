@@ -5,7 +5,7 @@ export type PiAgentStreamState = {
   thinking: string
 }
 
-function textFromAssistant(message: AssistantMessage): PiAgentStreamState {
+export function textFromAssistantMessage(message: AssistantMessage): PiAgentStreamState {
   if (!Array.isArray(message.content)) {
     return { content: "", thinking: "" }
   }
@@ -32,14 +32,16 @@ export function reduceAgentEvent(
         return { ...prev, thinking: prev.thinking + inner.delta }
       }
       if (event.message.role === "assistant") {
-        const fromMsg = textFromAssistant(event.message)
+        const fromMsg = textFromAssistantMessage(event.message)
         if (fromMsg.content || fromMsg.thinking) return fromMsg
       }
       return prev
     }
     case "message_end": {
       if (event.message.role === "assistant") {
-        return textFromAssistant(event.message)
+        const fromMsg = textFromAssistantMessage(event.message)
+        // 部分网关末包无 content；勿用空消息覆盖已累计的 delta
+        if (fromMsg.content || fromMsg.thinking) return fromMsg
       }
       return prev
     }

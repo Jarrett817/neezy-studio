@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveStoragePaths: (input: { dataRoot: string }) =>
     ipcRenderer.invoke("app:save-storage-paths", input),
   resetStoragePaths: () => ipcRenderer.invoke("app:reset-storage-paths"),
+  saveWorkspaceDir: (workspaceDir: string | null) =>
+    ipcRenderer.invoke("app:save-workspace-dir", workspaceDir),
   pickDirectory: (options?: { title?: string; defaultPath?: string }) =>
     ipcRenderer.invoke("app:pick-directory", options),
   join: (...parts: string[]) => ipcRenderer.invoke("path:join", ...parts),

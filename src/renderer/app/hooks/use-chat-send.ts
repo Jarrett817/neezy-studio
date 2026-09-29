@@ -36,7 +36,9 @@ export function useChatSend({
     []
   )
   const [isGenerating, setIsGenerating] = useState(false)
+  const inflightRef = useRef(0)
   const activeAssistantId = useRef<string | null>(null)
+  const abortRequestedRef = useRef(false)
 
   const { runPrompt, abort: abortPiAgent, resetAgent } = usePiAgentChat({
     systemPrompt: agentSystemPrompt,
@@ -44,11 +46,22 @@ export function useChatSend({
     enabled: sessionsReady && Boolean(activeSessionId),
   })
 
+  const beginInflight = () => {
+    inflightRef.current += 1
+    setIsGenerating(true)
+  }
+
+  const endInflight = () => {
+    inflightRef.current = Math.max(0, inflightRef.current - 1)
+    setIsGenerating(inflightRef.current > 0)
+  }
+
   const abort = useCallback(() => {
+    abortRequestedRef.current = true
     const id = activeAssistantId.current
     if (id) updateMessage(id, { isStreaming: false })
     abortPiAgent()
-    setIsGenerating(false)
+    setIsGenerating(inflightRef.current > 1)
     activeAssistantId.current = null
   }, [updateMessage, abortPiAgent])
 
@@ -58,7 +71,7 @@ export function useChatSend({
       options?: { contentJson?: unknown; images?: ImageContent[] }
     ) => {
       const images = options?.images?.length ? options.images : undefined
-      if (isGenerating || (!userContent && !images?.length)) return
+      if (!userContent && !images?.length) return
 
       let sid = sessionIdRef.current
       let createdSession = false
@@ -75,9 +88,6 @@ export function useChatSend({
 
       const userId = crypto.randomUUID()
       const assistantId = crypto.randomUUID()
-      activeAssistantId.current = assistantId
-
-      setIsGenerating(true)
 
       addMessage({
         id: userId,
@@ -86,30 +96,37 @@ export function useChatSend({
         contentJson: options?.contentJson as never,
         thinking: "",
       })
-      addMessage({
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        thinking: "",
-        isStreaming: true,
-        toolCalls: [],
-      })
 
-      if (createdSession && sid) {
-        await resetAgent([], sid)
-      }
-
-      const settingsForSend = await getRuntimeSettings()
-      const entryForSend = resolveChatModelEntry(settingsForSend)
-      const modelFile = entryForSend?.model ?? chatEntry?.model
+      beginInflight()
+      abortRequestedRef.current = false
 
       try {
+        if (createdSession && sid) {
+          await resetAgent([], sid)
+        }
+
+        const settingsForSend = await getRuntimeSettings()
+        const entryForSend = resolveChatModelEntry(settingsForSend)
+        const modelFile = entryForSend?.model ?? chatEntry?.model
         const userForAgent = appendModelReplyHints(userContent, modelFile)
 
+        // runPrompt 经 sessionLock 串行：生成中再发会排队，轮到时再挂 assistant 气泡
         const result = await runPrompt({
           userMessage: userForAgent,
           images,
           assistantId,
+          onReady: () => {
+            abortRequestedRef.current = false
+            activeAssistantId.current = assistantId
+            addMessage({
+              id: assistantId,
+              role: "assistant",
+              content: "",
+              thinking: "",
+              isStreaming: true,
+              toolCalls: [],
+            })
+          },
           onStream: ({ thinking, content, activity }) => {
             updateMessage(assistantId, { thinking, content, activity })
           },
@@ -149,11 +166,17 @@ export function useChatSend({
           },
         })
 
+        if (abortRequestedRef.current) {
+          updateMessage(assistantId, { isStreaming: false })
+          return
+        }
+
         const parsed = parseModelThinking(result.content)
         const finalThinking = getMessage(assistantId)?.thinking?.trim() || result.thinking || parsed.thinking
         const finalContent = parsed.visible || result.content
+        const hasTools = (getMessage(assistantId)?.toolCalls?.length ?? 0) > 0
 
-        if (!finalContent.trim()) {
+        if (!finalContent.trim() && !finalThinking.trim() && !hasTools) {
           const emptyMsg = "模型未返回内容，请检查连接或 API 配置"
           updateMessage(assistantId, { isStreaming: false, failed: true, content: emptyMsg })
           toast.error(emptyMsg)
@@ -162,7 +185,7 @@ export function useChatSend({
 
         const finalMsg = getMessage(assistantId)
         updateMessage(assistantId, {
-          content: finalContent,
+          content: finalContent.trim() ? finalContent : finalMsg?.content ?? "",
           thinking: finalThinking,
           isStreaming: false,
           agentSteps: finalMsg?.agentSteps,
@@ -172,15 +195,18 @@ export function useChatSend({
         queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
       } catch (error) {
         const message = error instanceof Error ? error.message : "生成失败"
-        updateMessage(assistantId, { isStreaming: false, failed: true, content: message })
+        if (getMessage(assistantId)) {
+          updateMessage(assistantId, { isStreaming: false, failed: true, content: message })
+        }
         toast.error(message)
       } finally {
-        setIsGenerating(false)
-        activeAssistantId.current = null
+        if (activeAssistantId.current === assistantId) {
+          activeAssistantId.current = null
+        }
+        endInflight()
       }
     },
     [
-      isGenerating,
       addMessage,
       updateMessage,
       getMessage,

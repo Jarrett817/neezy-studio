@@ -1,46 +1,19 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent"
-import type { Credential, CredentialStore } from "@earendil-works/pi-ai"
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai"
+import { getBuiltinProviders } from "@earendil-works/pi-ai/providers/all"
+import type { Api } from "@earendil-works/pi-ai"
 
 import { resolveEntryApiKey } from "./chat-model-entry"
 import { resolveActiveChatRoute } from "./model-routing"
 import { resolvePiChatModel } from "./pi-model"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
 
-/** 不落盘 ~/.pi/auth.json，Key 只活在本次进程。 */
-class MemoryCredentialStore implements CredentialStore {
-  private data = new Map<string, Credential>()
-
-  async read(providerId: string): Promise<Credential | undefined> {
-    return this.data.get(providerId)
-  }
-
-  async list(): Promise<{ providerId: string; type: Credential["type"] }[]> {
-    return [...this.data.entries()].map(([providerId, credential]) => ({
-      providerId,
-      type: credential.type,
-    }))
-  }
-
-  async modify(
-    providerId: string,
-    fn: (current: Credential | undefined) => Promise<Credential | undefined>
-  ): Promise<Credential | undefined> {
-    const next = await fn(this.data.get(providerId))
-    if (next) this.data.set(providerId, next)
-    return this.data.get(providerId)
-  }
-
-  async delete(providerId: string): Promise<void> {
-    this.data.delete(providerId)
-  }
-}
-
 let runtimePromise: Promise<ModelRuntime> | null = null
 
 export function getPiModelRuntime(): Promise<ModelRuntime> {
   if (!runtimePromise) {
     runtimePromise = ModelRuntime.create({
-      credentials: new MemoryCredentialStore(),
+      credentials: new InMemoryCredentialStore(),
       modelsPath: null,
       refreshOnCreate: false,
     })
@@ -48,17 +21,42 @@ export function getPiModelRuntime(): Promise<ModelRuntime> {
   return runtimePromise
 }
 
+function isBuiltinProvider(providerId: string): boolean {
+  return (getBuiltinProviders() as readonly string[]).includes(providerId)
+}
+
 /** 将 Neezy runtime_settings 同步到 Pi ModelRuntime（不落盘 ~/.pi） */
 export async function syncPiAuthForRoute(userMessage?: string): Promise<void> {
   const runtime = await getPiModelRuntime()
   const settings = getSyncedRuntimeSettings()
   const route = resolveActiveChatRoute()
-  const model = resolvePiChatModel(userMessage)
   const entry = route.entry
   if (!entry) return
 
+  const model = resolvePiChatModel(userMessage)
   const key = resolveEntryApiKey(entry, settings.llmProvider)
-  if (key) {
-    await runtime.setRuntimeApiKey(model.provider, key)
+  if (!key) return
+
+  // openai-compatible 等非内置 provider：须 registerProvider，否则 hasConfiguredAuth 恒为 false
+  if (!isBuiltinProvider(model.provider)) {
+    runtime.registerProvider(model.provider, {
+      baseUrl: model.baseUrl,
+      api: model.api as Api,
+      apiKey: key,
+      models: [
+        {
+          id: model.id,
+          name: model.name || model.id,
+          reasoning: model.reasoning,
+          input: [...model.input],
+          cost: model.cost,
+          contextWindow: model.contextWindow,
+          maxTokens: model.maxTokens,
+          ...(model.compat ? { compat: model.compat } : {}),
+        },
+      ],
+    })
   }
+
+  await runtime.setRuntimeApiKey(model.provider, key)
 }

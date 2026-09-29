@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { NavLink, Link, useLocation } from "react-router"
 import { MessagesSquare, Settings, SlidersHorizontal } from "lucide-react"
 import { motion } from "framer-motion"
@@ -15,20 +16,30 @@ const mainNavItems = [
 ] as const
 
 const pageTitles: Record<string, string> = {
-  "/chat": "对话",
   "/skills": "技能",
   "/connect": "模型与连接",
   "/settings": "设置",
 }
 
-function resolveHeaderTitle(pathname: string): string {
+function resolveHeaderTitle(pathname: string): string | null {
   const base = pathname.split("?")[0]
+  if (base === "/chat" || base === "/") return null
   return pageTitles[base] ?? "Neezy"
+}
+
+const ShellHeaderActionsContext = React.createContext<HTMLElement | null>(null)
+
+/** 将子节点挂到顶栏（模型配置左侧），用于对话页工具 */
+export function ShellHeaderActions({ children }: { children: React.ReactNode }) {
+  const el = React.useContext(ShellHeaderActionsContext)
+  if (!el) return null
+  return createPortal(children, el)
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const headerTitle = resolveHeaderTitle(pathname)
+  const [headerActionsEl, setHeaderActionsEl] = React.useState<HTMLElement | null>(null)
 
   React.useEffect(() => {
     void (async () => {
@@ -43,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <>
+    <ShellHeaderActionsContext.Provider value={headerActionsEl}>
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside className="z-30 flex w-16 shrink-0 flex-col items-center border-r border-border/60 bg-card shadow-sm">
           <div className="flex h-14 shrink-0 items-center justify-center">
@@ -88,20 +99,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-border/60 bg-card px-6 shadow-sm">
-            <h1 className="text-sm font-semibold tracking-tight">{headerTitle}</h1>
-            <div className="flex items-center gap-2">
+          <header className="z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-card px-6 shadow-sm">
+            {headerTitle ? (
+              <h1 className="shrink-0 text-sm font-semibold tracking-tight">{headerTitle}</h1>
+            ) : null}
+            <div
+              ref={setHeaderActionsEl}
+              className="flex min-w-0 flex-1 items-center gap-1"
+            />
+            <div className="flex shrink-0 items-center gap-2">
               <ModelPill />
               <ButtonLinkSettings />
             </div>
           </header>
 
-          <main className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-6">
+          <main
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-auto px-6",
+              headerTitle ? "py-6" : "py-3"
+            )}
+          >
             {children}
           </main>
         </div>
       </div>
-    </>
+    </ShellHeaderActionsContext.Provider>
   )
 }
 

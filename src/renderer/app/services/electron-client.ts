@@ -104,6 +104,8 @@ export type ChatSyncMessage = {
 
 export type StoragePaths = {
   dataRoot: string
+  workspaceDir: string
+  workspaceCustomized: boolean
   modelsDir: string
   databaseFile: string
   memoriesDir: string
@@ -150,6 +152,7 @@ type ElectronApi = {
     dataRoot: string
   }) => Promise<StoragePathsSaveResult>
   resetStoragePaths: () => Promise<StoragePathsSaveResult>
+  saveWorkspaceDir: (workspaceDir: string | null) => Promise<StoragePaths>
   pickDirectory: (options?: {
     title?: string
     defaultPath?: string
@@ -165,7 +168,6 @@ type ElectronApi = {
   saveAgentPermissionSettings: (input: {
     policy: import("../../../shared/agent-permissions").AgentPermissionPolicy
     extension: import("../../../shared/agent-permissions").PermissionExtensionConfig
-    sandbox: import("../../../shared/agent-permissions").SandboxPolicyConfig
   }) => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
   resetAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
   skillsListInstalled: () => Promise<
@@ -282,6 +284,12 @@ export async function saveStoragePaths(input: {
 
 export async function resetStoragePaths(): Promise<StoragePathsSaveResult> {
   return getElectronApi().resetStoragePaths()
+}
+
+export async function saveWorkspaceDir(
+  workspaceDir: string | null
+): Promise<StoragePaths> {
+  return getElectronApi().saveWorkspaceDir(workspaceDir)
 }
 
 export async function pickDirectory(options?: {

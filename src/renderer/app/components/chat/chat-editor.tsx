@@ -1,12 +1,10 @@
 import { EditorContent, useEditor } from "@tiptap/react"
-import { ImagePlus, LinkIcon } from "lucide-react"
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { Editor } from "@tiptap/core"
 import type { JSONContent } from "@tiptap/react"
 
-import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
 import { tiptapExtensions } from "~/lib/tiptap-extensions"
 import { compressImageToDataUrl, isTiptapEmpty } from "~/services/chat-content"
@@ -204,30 +202,6 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
     []
   )
 
-  const pickImage = useCallback(() => {
-    const input = document.createElement("input")
-    input.type = "file"
-    input.accept = "image/*"
-    input.onchange = () => {
-      const file = input.files?.[0]
-      if (file) insertImage(file)
-    }
-    input.click()
-  }, [insertImage])
-
-  const setLink = useCallback(() => {
-    const ed = editorRef.current
-    if (!ed) return
-    const prev = ed.getAttributes("link").href as string | undefined
-    const url = window.prompt("链接地址（留空移除）", prev ?? "https://")
-    if (url === null) return
-    if (url === "") {
-      ed.chain().focus().extendMarkRange("link").unsetLink().run()
-      return
-    }
-    ed.chain().focus().extendMarkRange("link").setLink({ href: url }).run()
-  }, [])
-
   useEffect(() => {
     if (!editor) return
     if (disabled && editor.isEditable) editor.setEditable(false)
@@ -270,40 +244,6 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(function
         </ul>
       ) : null}
       <EditorContent editor={editor} />
-      <div className="flex items-center gap-1 px-3 pb-1.5">
-        <ActionButton label="插入图片" onClick={pickImage}>
-          <ImagePlus className="size-3.5" />
-        </ActionButton>
-        <ActionButton label="插入链接" onClick={setLink} active={editor.isActive("link")}>
-          <LinkIcon className="size-3.5" />
-        </ActionButton>
-      </div>
     </div>
   )
 })
-
-function ActionButton({
-  label,
-  active,
-  onClick,
-  children,
-}: {
-  label: string
-  active?: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={cn("size-7 rounded-lg text-muted-foreground/50 hover:text-foreground", active && "text-primary")}
-    >
-      {children}
-    </Button>
-  )
-}

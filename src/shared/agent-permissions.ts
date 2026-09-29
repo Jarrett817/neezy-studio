@@ -21,19 +21,12 @@ export interface PermissionExtensionConfig {
   yoloMode: boolean
 }
 
-export interface SandboxPolicyConfig {
-  enabled: boolean
-}
-
 export interface AgentPermissionSettings {
   globalPolicyPath: string
   projectPolicyPath: string
   extensionConfigPath: string
-  sandboxConfigPath: string
-  sandboxSupported: boolean
   policy: AgentPermissionPolicy
   extension: PermissionExtensionConfig
-  sandbox: SandboxPolicyConfig
 }
 
 export const PI_BUILTIN_TOOL_NAMES = [
@@ -191,12 +184,5 @@ export function normalizePermissionExtensionConfig(raw: unknown): PermissionExte
   const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   return {
     yoloMode: record.yoloMode === true,
-  }
-}
-
-export function normalizeSandboxPolicy(raw: unknown): SandboxPolicyConfig {
-  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
-  return {
-    enabled: record.enabled !== false,
   }
 }

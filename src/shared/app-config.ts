@@ -15,6 +15,8 @@ export interface AppConfig {
   version: 1
   /** 数据根目录（memories.db、memories/、models/ 等）；默认 userData，可改为其它盘 */
   dataRoot: string
+  /** Agent 工具 cwd；空则回退 dataRoot */
+  workspaceDir: string
   preferLowPower: boolean
   maxCpuPercent: number
   /** 当前用于对话的 chatModels[].id */
@@ -27,6 +29,7 @@ export const APP_CONFIG_VERSION = 1 as const
 export const DEFAULT_APP_CONFIG: AppConfig = {
   version: 1,
   dataRoot: "",
+  workspaceDir: "",
   preferLowPower: true,
   maxCpuPercent: 95,
   activeChatModelId: "",

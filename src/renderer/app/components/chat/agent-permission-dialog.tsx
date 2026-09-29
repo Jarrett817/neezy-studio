@@ -3,8 +3,6 @@ import { toast } from "sonner"
 
 import { getElectronApi } from "~/services/electron-client"
 
-export type SandboxPermissionAction = "abort" | "session" | "project" | "global"
-
 export type PermissionDialogAction =
   | "allow-once"
   | "allow-always"
@@ -14,7 +12,7 @@ export type PermissionDialogAction =
 export interface AgentPermissionPrompt {
   sessionId: string
   requestId: string
-  kind: "select" | "input" | "sandbox" | "permission" | "confirm"
+  kind: "select" | "input" | "permission" | "confirm"
   title: string
   options?: string[]
   placeholder?: string

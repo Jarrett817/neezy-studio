@@ -3,10 +3,13 @@ import {
   pickDirectory,
   resetStoragePaths as resetStoragePathsElectron,
   saveStoragePaths as saveStoragePathsElectron,
+  saveWorkspaceDir as saveWorkspaceDirElectron,
 } from "~/services/electron-client"
 
 export type StoragePaths = {
   dataRoot: string
+  workspaceDir: string
+  workspaceCustomized: boolean
   modelsDir: string
   databaseFile: string
   memoriesDir: string
@@ -44,6 +47,12 @@ export async function saveStoragePaths(
 
 export async function resetStoragePaths(): Promise<StoragePathsSaveResult> {
   return resetStoragePathsElectron()
+}
+
+export async function saveWorkspaceDir(
+  workspaceDir: string | null
+): Promise<StoragePaths> {
+  return saveWorkspaceDirElectron(workspaceDir)
 }
 
 export async function pickStorageDirectory(options?: {

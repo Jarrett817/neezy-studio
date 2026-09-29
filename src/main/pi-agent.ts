@@ -34,7 +34,7 @@ import {
   clearPermissionPromptsForSession,
   createElectronPermissionUi,
 } from "./pi-permission-ui"
-import { resolveStoragePaths } from "./storage-paths"
+import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
 import { readSoul } from "./soul-store"
 import { SESSION_NAME_MAX_LENGTH } from "../shared/pi-session-dto"
 import type { ContextUsageWire } from "../shared/chat-wire"
@@ -70,7 +70,11 @@ export function invalidatePiResourceLoaderCache(): void {
 
 function getPiDirs() {
   const paths = resolveStoragePaths(app)
-  return { cwd: paths.dataRoot, agentDir: ensurePiAgentEnvironment(app) }
+  return {
+    cwd: resolveWorkspaceDir(app),
+    agentDir: ensurePiAgentEnvironment(app),
+    dataRoot: paths.dataRoot,
+  }
 }
 
 function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
@@ -84,16 +88,17 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   return sm
 }
 
-function resolveAdditionalSkillPaths(cwd: string): string[] {
-  return [...listAllInstalledSkillDirs(cwd), ...getBundledPiSkillPaths()]
+function resolveAdditionalSkillPaths(dataRoot: string): string[] {
+  return [...listAllInstalledSkillDirs(dataRoot), ...getBundledPiSkillPaths()]
 }
 
 async function getResourceLoader(
   cwd: string,
   agentDir: string,
+  dataRoot: string,
   settingsManager: SettingsManager
 ): Promise<ResourceLoader> {
-  const skillKey = listAllInstalledSkillDirs(cwd).sort().join(",")
+  const skillKey = listAllInstalledSkillDirs(dataRoot).sort().join(",")
   const key = `${cwd}\0${agentDir}\0${skillKey}\0product-prompt`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader
@@ -104,7 +109,7 @@ async function getResourceLoader(
     agentDir,
     settingsManager,
     additionalExtensionPaths: getBundledPiExtensionPaths(),
-    additionalSkillPaths: resolveAdditionalSkillPaths(cwd),
+    additionalSkillPaths: resolveAdditionalSkillPaths(dataRoot),
     extensionFactories: [
       {
         name: "neezy-product-prompt",
@@ -203,7 +208,7 @@ async function resolveSessionManager(
 }
 
 async function createPiSession(sessionManager: SessionManager): Promise<AgentSession> {
-  const { cwd, agentDir } = getPiDirs()
+  const { cwd, agentDir, dataRoot } = getPiDirs()
   const model = resolvePiChatModel()
   const modelRuntime = await getPiModelRuntime()
   await syncPiAuthForRoute()
@@ -219,7 +224,7 @@ async function createPiSession(sessionManager: SessionManager): Promise<AgentSes
     // 勿传 tools 白名单：SDK 规定传入后仅启用列出的工具，会屏蔽 pi-web-access 等扩展工具
     customTools: getNeezyCustomTools(),
     sessionManager,
-    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
+    resourceLoader: await getResourceLoader(cwd, agentDir, dataRoot, settingsManager),
   })
 
   session.agent.toolExecution = "parallel"
@@ -409,6 +414,14 @@ export async function destroyAgentSession(diskSessionId: string): Promise<void> 
   entry.unsubscribe()
   ipcSessions.delete(diskSessionId)
   productAppendBySessionId.delete(diskSessionId)
+}
+
+export async function destroyAllAgentSessions(): Promise<void> {
+  const ids = [...ipcSessions.keys()]
+  for (const id of ids) {
+    await destroyAgentSession(id)
+  }
+  invalidatePiResourceLoaderCache()
 }
 
 export function agentSessionExists(diskSessionId: string): boolean {

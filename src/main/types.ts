@@ -42,6 +42,9 @@ export interface ModelDefinition {
 
 export type StoragePaths = {
   dataRoot: string
+  /** Agent cwd；未单独设置时等于 dataRoot */
+  workspaceDir: string
+  workspaceCustomized: boolean
   modelsDir: string
   databaseFile: string
   memoriesDir: string

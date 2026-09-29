@@ -58,10 +58,12 @@ function runtimeToAppConfig(
     preset: e.preset,
     baseUrl: e.baseUrl,
     apiKey: e.apiKey,
+    contextWindow: e.contextWindow,
   }))
   return {
     version: 1,
     dataRoot: current.dataRoot,
+    workspaceDir: current.workspaceDir,
     preferLowPower: settings.preferLowPower,
     maxCpuPercent: settings.maxCpuPercent,
     activeChatModelId: settings.activeChatModelId.trim(),

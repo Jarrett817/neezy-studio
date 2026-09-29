@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 const BUNDLED_PI_PACKAGES = [
   "pi-web-access",
   "pi-permission-system",
+  "pi-mcp-adapter",
 ] as const
 
 /** 主进程 bundle 在 out/main，须从仓库根定位 node_modules */

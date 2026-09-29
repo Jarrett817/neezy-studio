@@ -15,6 +15,7 @@ export function appConfigToRuntime(config: AppConfig): RuntimeSettings {
     preset: e.preset,
     baseUrl: e.baseUrl,
     apiKey: e.apiKey,
+    contextWindow: e.contextWindow,
   }))
 
   return {

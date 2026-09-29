@@ -4,6 +4,7 @@ import path from "node:path"
 
 import { DEFAULT_PERMISSION_POLICY } from "../shared/agent-permissions"
 import { ensurePermissionExtensionEnv } from "./agent-permissions-store"
+import { ensureMcpConfigFiles } from "./mcp-config-store"
 
 export function getPiAgentDir(app: App): string {
   return path.join(app.getPath("userData"), "pi-agent")
@@ -26,5 +27,6 @@ export function ensurePiAgentEnvironment(app: App): string {
   process.env.PI_CODING_AGENT_DIR = agentDir
   ensurePermissionExtensionEnv(agentDir)
   ensureDefaultGlobalPermissions(agentDir)
+  ensureMcpConfigFiles(app)
   return agentDir
 }

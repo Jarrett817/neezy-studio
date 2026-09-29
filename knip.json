@@ -29,6 +29,7 @@
     "@fontsource-variable/sora",
     "pi-chrome",
     "pi-permission-system",
+    "pi-mcp-adapter",
     "pi-textbrowser",
     "pi-web-access"
   ],

@@ -14,6 +14,7 @@ export interface ChatModelEntry {
   preset?: string
   baseUrl?: string
   apiKey?: string
+  contextWindow?: number
 }
 
 export function createChatModelEntry(
@@ -32,7 +33,13 @@ export function createChatModelEntry(
     preset: partial.preset,
     baseUrl: partial.baseUrl?.trim(),
     apiKey: partial.apiKey,
+    contextWindow: normalizeContextWindow(partial.contextWindow),
   }
+}
+
+function normalizeContextWindow(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.floor(value)
 }
 
 export function enforceChatModelRules(entries: ChatModelEntry[]): ChatModelEntry[] {
@@ -42,6 +49,7 @@ export function enforceChatModelRules(entries: ChatModelEntry[]): ChatModelEntry
     label: e.label ?? "",
     model: e.model?.trim() ?? "",
     enabled: e.enabled !== false,
+    contextWindow: normalizeContextWindow(e.contextWindow),
   }))
 }
 

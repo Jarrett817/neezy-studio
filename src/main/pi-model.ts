@@ -40,7 +40,7 @@ import {
 
 } from "../shared/coding-plan-catalog"
 
-import { resolveEntryApiBase } from "./chat-model-entry"
+import { resolveEntryApiBase, type ChatModelEntry } from "./chat-model-entry"
 
 import { resolveActiveChatRoute } from "./model-routing"
 
@@ -195,6 +195,12 @@ function withDashScopeCompat(model: Model<Api>, modelId: string, baseUrl: string
 
 
 
+function withUserContextWindow(model: Model<Api>, entry: ChatModelEntry): Model<Api> {
+  const cw = entry.contextWindow
+  if (typeof cw !== "number" || !Number.isFinite(cw) || cw <= 0) return model
+  return { ...model, contextWindow: Math.floor(cw) }
+}
+
 /** 从统一模型条目解析 pi-ai Model（优先使用 pi-ai 内置目录） */
 
 export function resolvePiChatModel(_userMessage?: string): Model<Api> {
@@ -235,14 +241,17 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
 
     if (catalog) {
 
-      return withDashScopeCompat(
+      return withUserContextWindow(
+        withDashScopeCompat(
 
-        { ...catalog, id: modelId, name: modelId, baseUrl },
+          { ...catalog, id: modelId, name: modelId, baseUrl },
 
-        modelId,
+          modelId,
 
-        baseUrl
+          baseUrl
 
+        ),
+        entry
       )
 
     }
@@ -265,14 +274,17 @@ export function resolvePiChatModel(_userMessage?: string): Model<Api> {
 
 
 
-  return withDashScopeCompat(
+  return withUserContextWindow(
+    withDashScopeCompat(
 
-    buildApiModel(modelId, apiKind, baseUrl, provider, reasoning, dashScopeCompat),
+      buildApiModel(modelId, apiKind, baseUrl, provider, reasoning, dashScopeCompat),
 
-    modelId,
+      modelId,
 
-    baseUrl
+      baseUrl
 
+    ),
+    entry
   )
 
 }

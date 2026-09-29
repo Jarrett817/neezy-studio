@@ -4,6 +4,7 @@ import type * as Fs from "node:fs/promises"
 import type * as FsSync from "node:fs"
 import type * as Os from "node:os"
 import type * as Path from "node:path"
+import type * as StoragePathsModule from "./storage-paths"
 
 export type ModelTier = "light" | "balanced" | "performance"
 export type ModelKind = "chat" | "embedding"
@@ -83,7 +84,7 @@ export interface IpcContext {
   fs: typeof Fs
   fsSync: typeof FsSync
   os: typeof Os
-  storagePaths: typeof import("./storage-paths")
+  storagePaths: typeof StoragePathsModule
   mainWindow: BrowserWindow | null
   getPaths: () => StoragePaths
   appDataDir: () => string

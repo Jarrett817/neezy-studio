@@ -10,6 +10,7 @@ export interface ChatModelEntry {
   preset?: string
   baseUrl?: string
   apiKey?: string
+  contextWindow?: number
 }
 
 export function resolveEntryApiBase(

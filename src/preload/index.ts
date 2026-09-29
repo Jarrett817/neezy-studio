@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("skills:uninstall", { installKey }),
   skillsImportFromPath: (sourcePath: string) =>
     ipcRenderer.invoke("skills:import-from-path", { sourcePath }),
+  getMcpConfig: () => ipcRenderer.invoke("mcp:get-config"),
+  saveMcpConfig: (servers: unknown) => ipcRenderer.invoke("mcp:save-config", servers),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   invoke: <T = unknown>(channel: string, data?: unknown): Promise<T> =>
     ipcRenderer.invoke(channel, data),

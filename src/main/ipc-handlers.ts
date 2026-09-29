@@ -40,6 +40,8 @@ import {
   listInstalledSkills,
   uninstallSkillByKey,
 } from "./skill-install"
+import { loadMcpConfig, saveMcpConfig } from "./mcp-config-store"
+import type { McpServerDraft } from "../shared/mcp-config"
 import { applyAppConfig } from "./app-config-sync"
 import { loadAppConfig } from "./app-config"
 import { testPiConnection } from "./pi-llm"
@@ -284,5 +286,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle("skills:import-from-path", async (_event, { sourcePath }: { sourcePath: string }) => {
     return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
+  })
+
+  ipcMain.handle("mcp:get-config", () => loadMcpConfig(app))
+
+  ipcMain.handle("mcp:save-config", async (_event, servers: McpServerDraft[]) => {
+    const saved = saveMcpConfig(app, servers)
+    await destroyAllAgentSessions()
+    return saved
   })
 }

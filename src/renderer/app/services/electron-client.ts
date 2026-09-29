@@ -1,4 +1,11 @@
 import type { AppConfig } from "../../../shared/app-config"
+import type {
+  AgentPermissionPolicy,
+  AgentPermissionSettings,
+  PermissionExtensionConfig,
+} from "../../../shared/agent-permissions"
+import type { McpConfigSnapshot, McpServerDraft } from "../../../shared/mcp-config"
+import type { SkillPublisherId } from "../../../shared/skill-registry"
 import { buildInfoSchema, type BuildInfo } from "~/schemas/bootstrap"
 
 export type ModelTier = "light" | "balanced" | "performance"
@@ -164,16 +171,16 @@ type ElectronApi = {
   writeTextFile: (path: string, content: string) => Promise<void>
   remove: (path: string) => Promise<void>
   readDir: (path: string) => Promise<DirEntry[]>
-  getAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
+  getAgentPermissionSettings: () => Promise<AgentPermissionSettings>
   saveAgentPermissionSettings: (input: {
-    policy: import("../../../shared/agent-permissions").AgentPermissionPolicy
-    extension: import("../../../shared/agent-permissions").PermissionExtensionConfig
-  }) => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
-  resetAgentPermissionSettings: () => Promise<import("../../../shared/agent-permissions").AgentPermissionSettings>
+    policy: AgentPermissionPolicy
+    extension: PermissionExtensionConfig
+  }) => Promise<AgentPermissionSettings>
+  resetAgentPermissionSettings: () => Promise<AgentPermissionSettings>
   skillsListInstalled: () => Promise<
     Array<{
       id: string
-      publisher: import("../../../shared/skill-registry").SkillPublisherId
+      publisher: SkillPublisherId
       installKey: string
       name: string
       description: string
@@ -184,13 +191,15 @@ type ElectronApi = {
   skillsUninstall: (installKey: string) => Promise<{ ok: true }>
   skillsImportFromPath: (sourcePath: string) => Promise<{
     id: string
-    publisher: import("../../../shared/skill-registry").SkillPublisherId
+    publisher: SkillPublisherId
     installKey: string
     name: string
     description: string
     skillDir: string
     installedAt: number
   }>
+  getMcpConfig: () => Promise<McpConfigSnapshot>
+  saveMcpConfig: (servers: McpServerDraft[]) => Promise<McpConfigSnapshot>
   getPathForFile: (file: File) => string
 }
 

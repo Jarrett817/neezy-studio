@@ -17,6 +17,7 @@ const MAIN_NATIVE_EXTERNALS = [
   "typebox",
   "pi-web-access",
   "pi-permission-system",
+  "pi-mcp-adapter",
 ] as const
 
 export default defineConfig({

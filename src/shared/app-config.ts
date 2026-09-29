@@ -9,6 +9,8 @@ export interface AppConfigChatModel {
   preset?: string
   baseUrl?: string
   apiKey?: string
+  /** 用户自定义上下文上限（token）；空则用目录/默认 */
+  contextWindow?: number
 }
 
 export interface AppConfig {

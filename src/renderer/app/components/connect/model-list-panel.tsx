@@ -312,6 +312,29 @@ export function ModelListPanel() {
                         ))}
                       </datalist>
                     </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">上下文上限（token，可空）</Label>
+                      <Input
+                        type="number"
+                        min={1024}
+                        step={1024}
+                        className="h-9 font-mono text-xs"
+                        value={entry.contextWindow ?? ""}
+                        placeholder="空则用目录默认 / 128000"
+                        onChange={(e) => {
+                          const raw = e.target.value.trim()
+                          if (!raw) {
+                            updateApi(entry.id, { contextWindow: undefined })
+                            return
+                          }
+                          const n = Number(raw)
+                          updateApi(entry.id, {
+                            contextWindow:
+                              Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined,
+                          })
+                        }}
+                      />
+                    </div>
                     <div className="sm:col-span-2">
                       <ActiveModelButton
                         entryId={entry.id}

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
 import { NavLink, Link, useLocation } from "react-router"
-import { MessagesSquare, Settings, SlidersHorizontal } from "lucide-react"
+import { MessagesSquare, Settings, SlidersHorizontal, Cable } from "lucide-react"
 import { motion } from "framer-motion"
 
 import { NomiFace } from "~/components/nomi-face"
@@ -13,10 +13,12 @@ import { getRuntimeSettings, pushRuntimeSettingsToMain } from "~/services/settin
 const mainNavItems = [
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
   { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
+  { href: "/mcp", label: "MCP", Icon: Cable, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {
   "/skills": "技能",
+  "/mcp": "MCP",
   "/connect": "模型与连接",
   "/settings": "设置",
 }

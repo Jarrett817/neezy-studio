@@ -48,6 +48,12 @@ function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
         preset: e.preset,
         baseUrl: e.baseUrl,
         apiKey: e.apiKey,
+        contextWindow:
+          typeof e.contextWindow === "number" &&
+          Number.isFinite(e.contextWindow) &&
+          e.contextWindow > 0
+            ? Math.floor(e.contextWindow)
+            : undefined,
       })),
     activeChatModelId: stored?.activeChatModelId?.trim() ?? "",
   }

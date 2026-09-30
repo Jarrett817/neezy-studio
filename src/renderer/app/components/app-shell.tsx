@@ -68,8 +68,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })()
   }, [])
 
+  const isChatActive = pathname === "/chat" || pathname === "/"
+
   return (
-    <ShellHeaderActionsContext.Provider value={headerActionsEl}>
+    <ShellHeaderActionsContext.Provider
+      value={isChatActive ? headerActionsEl : null}
+    >
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside className="z-30 flex w-16 shrink-0 flex-col items-center border-r border-border/60 bg-card shadow-sm">
           <div className="flex h-14 shrink-0 items-center justify-center">

@@ -112,7 +112,7 @@ export default function SkillsRoute() {
         <div>
           <p className="text-sm font-medium">拖入 skill 文件夹</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            需包含 SKILL.md · 落盘至 skills/local/
+            需包含 SKILL.md · 导入至 ~/.agents/skills（与 Pi 默认一致）
           </p>
         </div>
         <Button
@@ -162,7 +162,7 @@ function InstalledSkillRow({
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium">{skill.name}</p>
           <Badge variant="outline" className="text-[10px]">
-            本地
+            {skill.sourceKind === "agents" ? ".agents" : "pi-agent"}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground line-clamp-1">

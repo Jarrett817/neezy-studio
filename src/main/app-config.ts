@@ -16,14 +16,6 @@ export function getAppConfigPath(app: App): string {
   return path.join(app.getPath("userData"), CONFIG_FILE)
 }
 
-function normalizeDataRoot(app: App, value: string | undefined): string {
-  const fallback = app.getPath("userData")
-  if (!value?.trim()) return fallback
-  const resolved = path.resolve(value.trim())
-  if (!path.isAbsolute(resolved)) return fallback
-  return resolved
-}
-
 function normalizeWorkspaceDir(value: string | undefined): string {
   if (!value?.trim()) return ""
   const resolved = path.resolve(value.trim())
@@ -31,13 +23,16 @@ function normalizeWorkspaceDir(value: string | undefined): string {
   return resolved
 }
 
-function mergeConfig(app: App, stored: Partial<AppConfig> | null): AppConfig {
-  const dataRoot = normalizeDataRoot(app, stored?.dataRoot)
+function mergeConfig(
+  app: App,
+  stored: (Partial<AppConfig> & { dataRoot?: string }) | null
+): AppConfig {
   const workspaceDir = normalizeWorkspaceDir(stored?.workspaceDir)
+  const { dataRoot: _legacyDataRoot, ...storedRest } = stored ?? {}
+  void _legacyDataRoot
   const base = {
     ...DEFAULT_APP_CONFIG,
-    ...(stored ?? {}),
-    dataRoot,
+    ...storedRest,
     workspaceDir,
   }
   return {

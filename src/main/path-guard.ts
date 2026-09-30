@@ -15,7 +15,7 @@ function isPathWithin(target: string, base: string): boolean {
 
 /** 允许操作的根目录：数据目录、模型目录、工作区。 */
 function getAllowedRoots(paths: StoragePaths): string[] {
-  return [paths.dataRoot, paths.modelsDir, paths.workspaceDir].filter(
+  return [paths.dataRoot, paths.workspaceDir].filter(
     (p): p is string => Boolean(p)
   )
 }

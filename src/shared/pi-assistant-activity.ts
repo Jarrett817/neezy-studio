@@ -16,6 +16,7 @@ export function activityFromAssistantContent(
   if (!Array.isArray(content)) return { activity: [], toolCalls: [] }
   const activity: ChatWireActivityItem[] = []
   const toolCalls: ChatWireToolCall[] = []
+  const seenToolIds = new Set<string>()
   let i = 0
   for (const block of content) {
     if (!block || typeof block !== "object" || !("type" in block)) continue
@@ -57,7 +58,8 @@ export function activityFromAssistantContent(
       }
       const toolCallId = typeof record.id === "string" ? record.id.trim() : ""
       const name = typeof record.name === "string" ? record.name.trim() : ""
-      if (!toolCallId || !name) continue
+      if (!toolCallId || !name || seenToolIds.has(toolCallId)) continue
+      seenToolIds.add(toolCallId)
       const args =
         record.arguments && typeof record.arguments === "object"
           ? record.arguments
@@ -68,4 +70,75 @@ export function activityFromAssistantContent(
     }
   }
   return { activity, toolCalls }
+}
+
+/** 流式阶段多次 message_end 时合并 activity，避免后一段覆盖思考/工具步骤 */
+export function mergeAssistantActivity(
+  current: ChatWireActivityItem[],
+  incoming: ChatWireActivityItem[]
+): ChatWireActivityItem[] {
+  if (incoming.length === 0) return current
+  const merged = [...current]
+  for (const item of incoming) {
+    if (item.kind === "tool") {
+      if (
+        !merged.some(
+          (a) => a.kind === "tool" && a.toolCallId === item.toolCallId
+        )
+      ) {
+        merged.push(item)
+      }
+      continue
+    }
+    if (item.kind === "thinking") {
+      const trimmed = item.text.trim()
+      if (!trimmed) continue
+      if (
+        merged.some(
+          (a) => a.kind === "thinking" && a.text.trim() === trimmed
+        )
+      ) {
+        continue
+      }
+      const partialIdx = merged.findIndex(
+        (a) =>
+          a.kind === "thinking" &&
+          trimmed.startsWith(a.text.trim()) &&
+          trimmed.length > a.text.trim().length
+      )
+      if (partialIdx >= 0) {
+        merged[partialIdx] = {
+          kind: "thinking",
+          id: merged[partialIdx].id,
+          text: item.text,
+        }
+        continue
+      }
+      merged.push(item)
+      continue
+    }
+    if (item.kind === "text") {
+      const trimmed = item.text.trim()
+      if (!trimmed) continue
+      if (merged.some((a) => a.kind === "text" && a.text.trim() === trimmed)) {
+        continue
+      }
+      const partialIdx = merged.findIndex(
+        (a) =>
+          a.kind === "text" &&
+          trimmed.startsWith(a.text.trim()) &&
+          trimmed.length > a.text.trim().length
+      )
+      if (partialIdx >= 0) {
+        merged[partialIdx] = {
+          kind: "text",
+          id: merged[partialIdx].id,
+          text: item.text,
+        }
+        continue
+      }
+      merged.push(item)
+    }
+  }
+  return merged
 }

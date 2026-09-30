@@ -61,6 +61,7 @@ const router = createHashRouter([
       { path: "chat", ...lazyPage(() => import("~/routes/chat")) },
       { path: "tasks", ...lazyPage(() => import("~/routes/tasks")) },
       { path: "skills", ...lazyPage(() => import("~/routes/skills")) },
+      { path: "agents-md", ...lazyPage(() => import("~/routes/agents-md")) },
       { path: "mcp", ...lazyPage(() => import("~/routes/mcp")) },
       { path: "connect", ...lazyPage(() => import("~/routes/connect")) },
       { path: "settings", ...lazyPage(() => import("~/routes/settings")) },

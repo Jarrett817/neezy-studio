@@ -12,9 +12,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("app:list-openai-models", payload),
   appDataDir: () => ipcRenderer.invoke("path:app-data-dir"),
   getStoragePaths: () => ipcRenderer.invoke("app:get-storage-paths"),
-  saveStoragePaths: (input: { dataRoot: string }) =>
-    ipcRenderer.invoke("app:save-storage-paths", input),
-  resetStoragePaths: () => ipcRenderer.invoke("app:reset-storage-paths"),
+  getAgentsMd: () => ipcRenderer.invoke("app:get-agents-md"),
+  saveAgentsMd: (content: string) =>
+    ipcRenderer.invoke("app:save-agents-md", content),
   saveWorkspaceDir: (workspaceDir: string | null) =>
     ipcRenderer.invoke("app:save-workspace-dir", workspaceDir),
   pickDirectory: (options?: { title?: string; defaultPath?: string }) =>
@@ -58,8 +58,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     createNew?: boolean
     sceneSkillIds?: string[]
   }) => ipcRenderer.invoke("agent:create", options),
-  agentConfigure: (payload: { sessionId: string; systemPrompt: string }) =>
-    ipcRenderer.invoke("agent:configure", payload),
+  agentExists: (sessionId: string) =>
+    ipcRenderer.invoke("agent:exists", { sessionId }),
   agentPrompt: (payload: {
     sessionId: string
     message: string

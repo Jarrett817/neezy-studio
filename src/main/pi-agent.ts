@@ -17,7 +17,7 @@ import { applyRequestMaxTokensClamp } from "./clamp-request-max-tokens"
 import { applyDashScopeAgentFixes } from "./dashscope-compat"
 import { log } from "./logger"
 import { resolveActiveChatRoute } from "./model-routing"
-import { ensurePiAgentEnvironment } from "./pi-agent-env"
+import { ensurePiAgentEnvironment, getPiAgentDir } from "./pi-agent-env"
 import { formatPromptError, sanitizePromptImages } from "./pi-agent-images"
 import {
   getBundledPiExtensionPaths,
@@ -37,8 +37,7 @@ import {
 import { getPiModelRuntime, syncPiAuthForRoute } from "./pi-sdk-auth"
 import { getNeezyCustomTools } from "./pi-tool-registry"
 import { getSyncedRuntimeSettings } from "./runtime-settings"
-import { listAllInstalledSkillDirs } from "./skill-install"
-import { readSoul } from "./soul-store"
+import { listInstalledSkills } from "./skill-install"
 import { resolveStoragePaths, resolveWorkspaceDir } from "./storage-paths"
 
 export interface CreateDiskAgentOptions {
@@ -54,9 +53,6 @@ interface IpcAgentSession {
 }
 
 const ipcSessions = new Map<string, IpcAgentSession>()
-
-/** 产品层 systemPrompt + soul，经 before_agent_start 写入 appendSystemPrompt（0.87+ systemPrompt 只读） */
-const productAppendBySessionId = new Map<string, string>()
 
 /** 同一陈旧 id 多次 agent:create 时复用已恢复的磁盘会话，避免疯狂新建 */
 const staleDiskSessionRecovery = new Map<string, string>()
@@ -95,18 +91,18 @@ function buildSettingsManager(cwd: string, agentDir: string): SettingsManager {
   return sm
 }
 
-function resolveAdditionalSkillPaths(dataRoot: string): string[] {
-  return [...listAllInstalledSkillDirs(dataRoot), ...getBundledPiSkillPaths()]
+function resolveAdditionalSkillPaths(): string[] {
+  return getBundledPiSkillPaths()
 }
 
 async function getResourceLoader(
   cwd: string,
   agentDir: string,
-  dataRoot: string,
   settingsManager: SettingsManager
 ): Promise<ResourceLoader> {
-  const skillKey = listAllInstalledSkillDirs(dataRoot).sort().join(",")
-  const key = `${cwd}\0${agentDir}\0${skillKey}\0product-prompt`
+  const skillRows = await listInstalledSkills(app)
+  const skillKey = skillRows.map((s) => s.installKey).sort().join(",")
+  const key = `${cwd}\0${agentDir}\0${skillKey}`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader
   }
@@ -116,25 +112,7 @@ async function getResourceLoader(
     agentDir,
     settingsManager,
     additionalExtensionPaths: getBundledPiExtensionPaths(),
-    additionalSkillPaths: resolveAdditionalSkillPaths(dataRoot),
-    extensionFactories: [
-      {
-        name: "neezy-product-prompt",
-        hidden: true,
-        factory: (pi) => {
-          pi.on("before_agent_start", (event, ctx) => {
-            const append = productAppendBySessionId.get(
-              ctx.sessionManager.getSessionId()
-            )
-            if (!append) return
-            const prev = event.systemPromptOptions.appendSystemPrompt.trim()
-            event.systemPromptOptions.appendSystemPrompt = prev
-              ? `${prev}\n\n${append}`
-              : append
-          })
-        },
-      },
-    ],
+    additionalSkillPaths: resolveAdditionalSkillPaths(),
   })
   await loader.reload()
   const ext = loader.getExtensions()
@@ -246,12 +224,7 @@ async function createPiSession(
     excludeTools: ["grep", "find", "ls", "powershell"],
     customTools: getNeezyCustomTools(),
     sessionManager,
-    resourceLoader: await getResourceLoader(
-      cwd,
-      agentDir,
-      dataRoot,
-      settingsManager
-    ),
+    resourceLoader: await getResourceLoader(cwd, agentDir, settingsManager),
   })
 
   session.agent.toolExecution = "parallel"
@@ -267,8 +240,11 @@ export async function createAgentSession(
   const { sm, diskSessionId } = await resolveSessionManager(options)
   const existing = ipcSessions.get(diskSessionId)
   if (existing && !existing.window.isDestroyed()) {
+    const windowChanged = existing.window !== window
     existing.window = window
-    await bindAgentSessionUi(existing.session, window, diskSessionId)
+    if (windowChanged) {
+      await bindAgentSessionUi(existing.session, window, diskSessionId)
+    }
     await syncSessionChatRoute(existing.session)
     return diskSessionId
   }
@@ -292,22 +268,6 @@ export async function createAgentSession(
     window,
   })
   return diskSessionId
-}
-
-/** 仅更新产品层 systemPrompt；对话正文由 SessionManager 持久化，勿再注入 messages。 */
-export async function configureAgentSession(
-  diskSessionId: string,
-  config: { systemPrompt: string }
-): Promise<void> {
-  const entry = ipcSessions.get(diskSessionId)
-  if (!entry) throw new Error("session not found")
-  const soul = await readSoul()
-  const parts = [
-    config.systemPrompt.trim(),
-    soul ? `【长期沉淀 soul.md】\n${soul}` : "",
-  ].filter(Boolean)
-  productAppendBySessionId.set(diskSessionId, parts.join("\n\n"))
-  await syncSessionChatRoute(entry.session)
 }
 
 async function ensureAgentChatReady(_userMessage?: string): Promise<void> {
@@ -420,7 +380,6 @@ export async function destroyAgentSession(
   entry.session.agent.abort()
   entry.unsubscribe()
   ipcSessions.delete(diskSessionId)
-  productAppendBySessionId.delete(diskSessionId)
 }
 
 export async function destroyAllAgentSessions(): Promise<void> {

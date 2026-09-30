@@ -23,6 +23,25 @@ export function textFromAssistantMessage(
   return { content, thinking }
 }
 
+function mergeStreamSegment(prev: PiAgentStreamState, next: PiAgentStreamState) {
+  let { content, thinking } = prev
+  if (next.thinking) {
+    if (!thinking || next.thinking.length >= thinking.length) {
+      thinking = next.thinking
+    } else if (!thinking.includes(next.thinking.trim())) {
+      thinking = `${thinking}\n\n${next.thinking}`.trim()
+    }
+  }
+  if (next.content) {
+    if (!content || next.content.length >= content.length) {
+      content = next.content
+    } else if (!content.includes(next.content.trim())) {
+      content = `${content}\n\n${next.content}`.trim()
+    }
+  }
+  return { content, thinking }
+}
+
 export function reduceAgentEvent(
   event: AgentSessionEvent,
   prev: PiAgentStreamState
@@ -38,15 +57,18 @@ export function reduceAgentEvent(
       }
       if (event.message.role === "assistant") {
         const fromMsg = textFromAssistantMessage(event.message)
-        if (fromMsg.content || fromMsg.thinking) return fromMsg
+        if (fromMsg.content || fromMsg.thinking) {
+          return mergeStreamSegment(prev, fromMsg)
+        }
       }
       return prev
     }
     case "message_end": {
       if (event.message.role === "assistant") {
         const fromMsg = textFromAssistantMessage(event.message)
-        // 部分网关末包无 content；勿用空消息覆盖已累计的 delta
-        if (fromMsg.content || fromMsg.thinking) return fromMsg
+        if (fromMsg.content || fromMsg.thinking) {
+          return mergeStreamSegment(prev, fromMsg)
+        }
       }
       return prev
     }

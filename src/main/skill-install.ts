@@ -1,12 +1,15 @@
 import fs from "node:fs"
 import fsPromises from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
+import type { App } from "electron"
 
 import {
   type SkillPublisherId,
   skillInstallKey,
 } from "../shared/skill-registry"
 import { invalidatePiResourceLoaderCache } from "./pi-agent"
+import { getPiAgentDir } from "./pi-agent-env"
 
 export interface InstalledSkill {
   id: string
@@ -18,12 +21,12 @@ export interface InstalledSkill {
   installedAt: number
 }
 
-export function getSkillsRoot(dataRoot: string): string {
-  return path.join(dataRoot, "skills")
+export function getAgentsSkillsRoot(): string {
+  return path.join(homedir(), ".agents", "skills")
 }
 
-function getPublisherSkillsRoot(dataRoot: string): string {
-  return path.join(getSkillsRoot(dataRoot), "local")
+export function getPiAgentSkillsRoot(app: App): string {
+  return path.join(getPiAgentDir(app), "skills")
 }
 
 function parseSkillFrontmatter(content: string): {
@@ -70,8 +73,83 @@ async function resolveSkillRoot(sourcePath: string): Promise<string> {
   return trimmed
 }
 
+async function readSkillFromDir(
+  publisher: SkillPublisherId,
+  root: string,
+  dirName: string
+): Promise<InstalledSkill | null> {
+  const skillDir = path.join(root, dirName)
+  const skillMd = path.join(skillDir, "SKILL.md")
+  try {
+    const stat = await fsPromises.stat(skillDir)
+    if (!stat.isDirectory()) return null
+    const content = await fsPromises.readFile(skillMd, "utf-8")
+    const meta = parseSkillFrontmatter(content)
+    return {
+      id: dirName,
+      publisher,
+      installKey: skillInstallKey(publisher, dirName),
+      name: meta.name || dirName,
+      description: meta.description || "",
+      skillDir,
+      installedAt: stat.mtimeMs,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function listSkillsInRoot(
+  publisher: SkillPublisherId,
+  root: string
+): Promise<InstalledSkill[]> {
+  let ids: string[] = []
+  try {
+    ids = await fsPromises.readdir(root)
+  } catch {
+    return []
+  }
+  const installed: InstalledSkill[] = []
+  for (const dirName of ids) {
+    const row = await readSkillFromDir(publisher, root, dirName)
+    if (row) installed.push(row)
+  }
+  return installed
+}
+
+export async function listInstalledSkills(
+  app: App
+): Promise<InstalledSkill[]> {
+  const batches = await Promise.all([
+    listSkillsInRoot("agents", getAgentsSkillsRoot()),
+    listSkillsInRoot("pi-agent", getPiAgentSkillsRoot(app)),
+  ])
+  const byKey = new Map<string, InstalledSkill>()
+  for (const row of batches.flat()) {
+    byKey.set(row.installKey, row)
+  }
+  return [...byKey.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "zh-CN")
+  )
+}
+
+function resolveSkillDirForKey(app: App, key: string): string {
+  const sep = key.indexOf(":")
+  const publisher = (
+    sep >= 0 ? key.slice(0, sep) : "agents"
+  ) as SkillPublisherId
+  const id = sep >= 0 ? key.slice(sep + 1) : key
+  const rootByPublisher: Record<SkillPublisherId, string> = {
+    agents: getAgentsSkillsRoot(),
+    "pi-agent": getPiAgentSkillsRoot(app),
+  }
+  const root = rootByPublisher[publisher]
+  if (!root) throw new Error("无效的技能标识")
+  return path.join(root, id)
+}
+
 export async function importSkillFromPath(
-  dataRoot: string,
+  app: App,
   sourcePath: string
 ): Promise<InstalledSkill> {
   const skillRoot = await resolveSkillRoot(sourcePath)
@@ -83,8 +161,9 @@ export async function importSkillFromPath(
   const content = await fsPromises.readFile(skillMd, "utf-8")
   const meta = parseSkillFrontmatter(content)
   const id = sanitizeSkillId(meta.name || path.basename(skillRoot))
-  const destDir = path.join(getPublisherSkillsRoot(dataRoot), id)
+  const destDir = path.join(getAgentsSkillsRoot(), id)
 
+  await fsPromises.mkdir(path.dirname(destDir), { recursive: true })
   await fsPromises.rm(destDir, { recursive: true, force: true })
   await fsPromises.cp(skillRoot, destDir, { recursive: true })
 
@@ -93,8 +172,8 @@ export async function importSkillFromPath(
   const stat = await fsPromises.stat(destDir)
   return {
     id,
-    publisher: "local",
-    installKey: skillInstallKey("local", id),
+    publisher: "agents",
+    installKey: skillInstallKey("agents", id),
     name: meta.name || id,
     description: meta.description || meta.name || id,
     skillDir: destDir,
@@ -102,63 +181,11 @@ export async function importSkillFromPath(
   }
 }
 
-export async function listInstalledSkills(
-  dataRoot: string
-): Promise<InstalledSkill[]> {
-  const root = getPublisherSkillsRoot(dataRoot)
-  let ids: string[] = []
-  try {
-    ids = await fsPromises.readdir(root)
-  } catch {
-    return []
-  }
-
-  const installed: InstalledSkill[] = []
-  for (const id of ids) {
-    const skillDir = path.join(root, id)
-    const skillMd = path.join(skillDir, "SKILL.md")
-    try {
-      const stat = await fsPromises.stat(skillDir)
-      if (!stat.isDirectory()) continue
-      const content = await fsPromises.readFile(skillMd, "utf-8")
-      const meta = parseSkillFrontmatter(content)
-      installed.push({
-        id,
-        publisher: "local",
-        installKey: skillInstallKey("local", id),
-        name: meta.name || id,
-        description: meta.description || "",
-        skillDir,
-        installedAt: stat.mtimeMs,
-      })
-    } catch {
-      // skip incomplete
-    }
-  }
-  return installed.sort((a, b) => a.id.localeCompare(b.id))
-}
-
-export function listAllInstalledSkillDirs(dataRoot: string): string[] {
-  const root = getPublisherSkillsRoot(dataRoot)
-  try {
-    const dirs: string[] = []
-    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const skillDir = path.join(root, entry.name)
-      if (fs.existsSync(path.join(skillDir, "SKILL.md"))) dirs.push(skillDir)
-    }
-    return dirs
-  } catch {
-    return []
-  }
-}
-
 export async function uninstallSkillByKey(
-  dataRoot: string,
+  app: App,
   key: string
 ): Promise<void> {
-  const id = key.includes(":") ? key.slice(key.indexOf(":") + 1) : key
-  const skillDir = path.join(getPublisherSkillsRoot(dataRoot), id)
+  const skillDir = resolveSkillDirForKey(app, key.trim())
   await fsPromises.rm(skillDir, { recursive: true, force: true })
   invalidatePiResourceLoaderCache()
 }

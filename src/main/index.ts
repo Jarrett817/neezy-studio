@@ -39,10 +39,6 @@ function appDataDir(): string {
   return getPaths().dataRoot
 }
 
-function modelsDir(): string {
-  return getPaths().modelsDir
-}
-
 const ipcCtx = {
   app,
   ipcMain,
@@ -57,7 +53,6 @@ const ipcCtx = {
   },
   getPaths,
   appDataDir,
-  modelsDir,
 }
 
 registerCoreIpcHandlers()

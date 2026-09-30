@@ -9,7 +9,7 @@ const BUNDLED_PI_PACKAGES = [
 ] as const
 
 /** 主进程 bundle 在 out/main，须从仓库根定位 node_modules */
-function resolveAppPackageRoot(): string {
+export function resolveAppPackageRoot(): string {
   let dir =
     typeof import.meta.dirname === "string"
       ? import.meta.dirname

@@ -58,6 +58,7 @@ export function buildAssistantTimeline(input: {
   const activity = input.activity ?? []
   const streaming = Boolean(input.isStreaming)
   const last = activity.at(-1)
+  const seenToolIds = new Set<string>()
 
   for (const entry of activity) {
     const isLast = entry === last
@@ -85,6 +86,8 @@ export function buildAssistantTimeline(input: {
       items.push(workflowToStepItem(entry))
       continue
     }
+    if (seenToolIds.has(entry.toolCallId)) continue
+    seenToolIds.add(entry.toolCallId)
     const tool = toolById.get(entry.toolCallId)
     if (tool) items.push(toolToStepItem(tool))
   }

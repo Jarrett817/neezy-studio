@@ -18,14 +18,8 @@ export async function createAgentSession(
   return getElectronApi().agentCreate(options)
 }
 
-export async function configureAgentSession(
-  sessionId: string,
-  config: { systemPrompt: string }
-): Promise<{ ok: boolean }> {
-  return getElectronApi().agentConfigure({
-    sessionId,
-    ...config,
-  })
+export async function agentSessionExists(sessionId: string): Promise<boolean> {
+  return getElectronApi().agentExists(sessionId)
 }
 
 export async function promptAgent(

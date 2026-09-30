@@ -22,14 +22,12 @@ type PendingSend = {
 }
 
 export function useChatSend({
-  agentSystemPrompt,
   activeSessionId,
   onSessionCreated,
   chatEntry,
   sessionIdRef,
   sessionsReady,
 }: {
-  agentSystemPrompt: string
   activeSessionId: string | null
   onSessionCreated?: (sid: string) => void
   chatEntry: ReturnType<typeof resolveChatModelEntry>
@@ -54,7 +52,6 @@ export function useChatSend({
     abort: abortPiAgent,
     resetAgent,
   } = usePiAgentChat({
-    systemPrompt: agentSystemPrompt,
     diskSessionId: activeSessionId,
     enabled: sessionsReady && Boolean(activeSessionId),
   })

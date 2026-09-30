@@ -15,128 +15,17 @@ import type { ScheduledTask } from "../../../shared/scheduled-tasks"
 import type { SessionInfoDto } from "../../../shared/pi-session-dto"
 import type { SkillPublisherId } from "../../../shared/skill-registry"
 
-export type ModelTier = "light" | "balanced" | "performance"
-export type ModelKind = "chat" | "embedding"
-export type CatalogSection = "recommended" | "local"
-
-export type RuntimeMetrics = {
-  cpuCount: number
-  cpuUsagePercent: number
-  totalMemoryGb: number
-  availableMemoryGb: number
-  pressure: "low" | "medium" | "high"
-  gpuInspectLines?: string[]
-}
-
 type DirEntry = {
   name: string
   isDirectory: boolean
   isFile: boolean
 }
 
-export type ModelCatalogItem = {
-  id: string
-  kind: ModelKind
-  catalogSection?: CatalogSection
-  tier: ModelTier
-  tierLabel: string
-  title: string
-  subtitle: string
-  description?: string
-  modelUri?: string
-  abilities?: string[]
-  fileName: string
-  sizeLabel: string
-  sizeBytes: number
-  minMemoryGb: number
-  compatibilityScore?: number
-  resolvedContextSize?: number
-  embeddingDim?: number
-  fit: string[]
-  isLocalOnly?: boolean
-  installed: boolean
-  path: string | null
-  status: "available" | "ready" | "downloading" | "error"
-  progress: number | null
-  downloadedBytes: number
-  totalBytes: number
-  cancellable?: boolean
-}
-
-export type ChatLoadPayload = {
-  modelPath: string
-  preferLowPower?: boolean
-  systemPrompt?: string
-  temperature?: number
-  topK?: number
-}
-
-export type ModelLayerSplit = "cpu" | "gpu" | "mixed" | "auto"
-
-export type ChatLoadResult = {
-  modelPath: string
-  contextSize: number
-  preferLowPower: boolean
-  fallbackCpu?: boolean
-  gpuLayersOnGpu?: number
-  totalLayers?: number
-  layerSplit?: ModelLayerSplit
-  requestedLayerSplit?: ModelLayerSplit
-}
-
-export type ChatPromptOptions = {
-  temperature?: number
-  topK?: number
-  maxTokens?: number
-}
-
-export type ChatStreamPayload = {
-  requestId: string
-  input: string
-  primeMessages?: ChatSyncMessage[]
-  temperature?: number
-  topK?: number
-  maxTokens?: number
-  useFunctions?: boolean
-}
-
-export type ChatStreamSegment = "thought" | "answer"
-
-export type ChatStreamEvent = {
-  requestId: string
-  type: "start" | "chunk" | "done" | "error"
-  /** 增量文本（主进程按 token 推送） */
-  delta?: string
-  segment?: ChatStreamSegment
-  error?: string
-}
-
-export type ChatSyncMessage = {
-  role: "system" | "user" | "assistant"
-  content: string
-}
-
 export type StoragePaths = {
   dataRoot: string
   workspaceDir: string
   workspaceCustomized: boolean
-  modelsDir: string
-  databaseFile: string
-  memoriesDir: string
-  personasDir: string
-  skillsDir: string
   configFile: string
-  defaultDataRoot: string
-  defaultModelsDir: string
-  isCustomized: boolean
-}
-
-export type StoragePathsSaveResult = StoragePaths & {
-  migration?: {
-    from: string
-    to: string
-    movedCount: number
-  }
 }
 
 type ElectronApi = {
@@ -155,10 +44,8 @@ type ElectronApi = {
   }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
   appDataDir: () => Promise<string>
   getStoragePaths: () => Promise<StoragePaths>
-  saveStoragePaths: (input: {
-    dataRoot: string
-  }) => Promise<StoragePathsSaveResult>
-  resetStoragePaths: () => Promise<StoragePathsSaveResult>
+  getAgentsMd: () => Promise<{ path: string; content: string }>
+  saveAgentsMd: (content: string) => Promise<{ ok: boolean }>
   saveWorkspaceDir: (workspaceDir: string | null) => Promise<StoragePaths>
   pickDirectory: (options?: {
     title?: string
@@ -212,10 +99,7 @@ type ElectronApi = {
     createNew?: boolean
     sceneSkillIds?: string[]
   }) => Promise<string>
-  agentConfigure: (payload: {
-    sessionId: string
-    systemPrompt: string
-  }) => Promise<{ ok: boolean }>
+  agentExists: (sessionId: string) => Promise<boolean>
   agentPrompt: (payload: {
     sessionId: string
     message: string
@@ -318,14 +202,15 @@ export async function getStoragePaths(): Promise<StoragePaths> {
   return getElectronApi().getStoragePaths()
 }
 
-export async function saveStoragePaths(input: {
-  dataRoot: string
-}): Promise<StoragePathsSaveResult> {
-  return getElectronApi().saveStoragePaths(input)
+export async function getAgentsMd(): Promise<{
+  path: string
+  content: string
+}> {
+  return getElectronApi().getAgentsMd()
 }
 
-export async function resetStoragePaths(): Promise<StoragePathsSaveResult> {
-  return getElectronApi().resetStoragePaths()
+export async function saveAgentsMd(content: string): Promise<{ ok: boolean }> {
+  return getElectronApi().saveAgentsMd(content)
 }
 
 export async function saveWorkspaceDir(

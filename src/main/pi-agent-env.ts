@@ -10,6 +10,15 @@ export function getPiAgentDir(app: App): string {
   return path.join(app.getPath("userData"), "pi-agent")
 }
 
+function removeLegacyNeezySystemMd(agentDir: string): void {
+  const file = path.join(agentDir, "SYSTEM.md")
+  if (!fs.existsSync(file)) return
+  const text = fs.readFileSync(file, "utf-8")
+  if (text.includes("Neezy Studio's personal assistant")) {
+    fs.unlinkSync(file)
+  }
+}
+
 function ensureDefaultGlobalPermissions(agentDir: string): void {
   const policyPath = path.join(agentDir, "pi-permissions.jsonc")
   if (fs.existsSync(policyPath)) return
@@ -25,6 +34,7 @@ function ensureDefaultGlobalPermissions(agentDir: string): void {
 export function ensurePiAgentEnvironment(app: App): string {
   const agentDir = getPiAgentDir(app)
   process.env.PI_CODING_AGENT_DIR = agentDir
+  removeLegacyNeezySystemMd(agentDir)
   ensurePermissionExtensionEnv(agentDir)
   ensureDefaultGlobalPermissions(agentDir)
   ensureMcpConfigFiles(app)

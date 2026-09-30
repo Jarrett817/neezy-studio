@@ -59,14 +59,11 @@ import {
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 import {
   getStoragePaths,
-  pickStorageDirectory,
+  pickDirectory,
   saveWorkspaceDir,
-} from "~/services/storage-paths"
+} from "~/services/electron-client"
 import { useAppStore } from "~/stores/app-store"
-import {
-  AGENT_PRODUCT_SYSTEM_PROMPT,
-  type ContextUsageWire,
-} from "../../../shared/chat-wire"
+import type { ContextUsageWire } from "../../../shared/chat-wire"
 
 const ChatOptionsSheet = lazy(
   () => import("~/components/chat/chat-options-sheet")
@@ -131,7 +128,7 @@ function WorkspacePicker({ onChanged }: { onChanged: () => void }) {
               )}
               disabled={mutation.isPending}
               onClick={async () => {
-                const selected = await pickStorageDirectory({
+                const selected = await pickDirectory({
                   title: "选择工作目录（代码项目文件夹）",
                   defaultPath: customized ? workspaceDir : undefined,
                 })
@@ -263,7 +260,6 @@ export default function ChatRoute() {
     cancelQueued,
     editQueued,
   } = useChatSend({
-    agentSystemPrompt: AGENT_PRODUCT_SYSTEM_PROMPT,
     activeSessionId,
     onSessionCreated: (sid) => flushSync(() => setActiveSessionId(sid)),
     chatEntry,
@@ -283,7 +279,7 @@ export default function ChatRoute() {
         })
       })
       .catch(() => {})
-  }, [activeSessionId, sessionsReady, resetAgent, queryClient])
+  }, [activeSessionId, sessionsReady, queryClient, resetAgent])
 
   useEffect(() => {
     const selectSessionId = (

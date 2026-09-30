@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import {
   type AssistantActivityItem,
   type ChatToolCall,
@@ -15,7 +15,7 @@ import { createRafBatcher } from "~/lib/raf-stream-patch"
 import { extractAgentFailure } from "~/services/agent-failure"
 import {
   abortAgentSession,
-  configureAgentSession,
+  agentSessionExists,
   createAgentSession,
   destroyAgentSession,
   promptAgent,
@@ -25,11 +25,13 @@ import { loadPiChatMessages } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
 import type { useAppStore } from "~/stores/app-store"
 import { formatWireUsage } from "../../../shared/chat-wire"
-import { activityFromAssistantContent } from "../../../shared/pi-assistant-activity"
+import {
+  activityFromAssistantContent,
+  mergeAssistantActivity,
+} from "../../../shared/pi-assistant-activity"
 import type { AssistantMessage, ImageContent } from "../../../shared/pi-sdk"
 
 type UsePiAgentChatOptions = {
-  systemPrompt: string
   diskSessionId: string | null
   enabled: boolean
   onDiskMessagesReload?: (
@@ -40,7 +42,6 @@ type UsePiAgentChatOptions = {
 }
 
 export function usePiAgentChat({
-  systemPrompt,
   diskSessionId,
   enabled,
   onDiskMessagesReload,
@@ -71,12 +72,10 @@ export function usePiAgentChat({
   const agentErrorRef = useRef<string | null>(null)
   const abortedRef = useRef(false)
   const diskSessionIdRef = useRef(diskSessionId)
-  const systemPromptRef = useRef(systemPrompt)
   const onDiskMessagesReloadRef = useRef(onDiskMessagesReload)
   const onDiskSessionIdReboundRef = useRef(onDiskSessionIdRebound)
   const loadedDiskIdRef = useRef("")
 
-  systemPromptRef.current = systemPrompt
   onDiskMessagesReloadRef.current = onDiskMessagesReload
   onDiskSessionIdReboundRef.current = onDiskSessionIdRebound
 
@@ -93,35 +92,30 @@ export function usePiAgentChat({
     return run
   }
 
-  const applySystemPrompt = async (sid: string) => {
-    await configureAgentSession(sid, { systemPrompt: systemPromptRef.current })
-  }
+  const openAgentForDisk = useCallback(async (diskId: string) => {
+    const running = agentSessionId.current
 
-  const openAgentForDisk = async (diskId: string) => {
-      const running = agentSessionId.current
+    if (running && running !== diskId) {
+      await destroyAgentSession(running)
+      agentSessionId.current = null
+      loadedDiskIdRef.current = ""
+    }
 
-      if (running && running !== diskId) {
-        await destroyAgentSession(running)
-        agentSessionId.current = null
-        loadedDiskIdRef.current = ""
-      }
+    if (agentSessionId.current === diskId) {
+      if (await agentSessionExists(diskId)) return diskId
+      agentSessionId.current = null
+    }
 
-      if (agentSessionId.current === diskId) {
-        await applySystemPrompt(diskId)
-        return diskId
-      }
-
-      const sid = await createAgentSession({
-        diskSessionId: diskId,
-      })
-      agentSessionId.current = sid
-      loadedDiskIdRef.current = diskId
-      if (sid !== diskId && diskSessionIdRef.current === diskId) {
-        onDiskSessionIdReboundRef.current?.(sid)
-      }
-      await applySystemPrompt(sid)
-      return sid
-  }
+    const sid = await createAgentSession({
+      diskSessionId: diskId,
+    })
+    agentSessionId.current = sid
+    loadedDiskIdRef.current = diskId
+    if (sid !== diskId && diskSessionIdRef.current === diskId) {
+      onDiskSessionIdReboundRef.current?.(sid)
+    }
+    return sid
+  }, [])
 
   const upsertToolCall = (item: ChatToolCall) => {
     const list = toolCallsRef.current
@@ -156,29 +150,35 @@ export function usePiAgentChat({
   }
 
   const syncActivityFromPiAssistant = (message: AssistantMessage) => {
-      const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
-      const fromPi = activityFromAssistantContent(message.content, ts)
-      const workflows = activityRef.current.filter((a) => a.kind === "workflow")
-      if (fromPi.activity.length > 0) {
-        activityRef.current = fromPi.activity
-        for (const w of workflows) {
-          if (
-            !activityRef.current.some(
-              (a) => a.kind === "workflow" && a.id === w.id
-            )
-          ) {
-            activityRef.current = [...activityRef.current, w]
-          }
+    const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
+    const fromPi = activityFromAssistantContent(message.content, ts)
+    const workflows = activityRef.current.filter((a) => a.kind === "workflow")
+    if (fromPi.activity.length > 0) {
+      activityRef.current = mergeAssistantActivity(
+        activityRef.current,
+        fromPi.activity
+      )
+      for (const w of workflows) {
+        if (
+          !activityRef.current.some(
+            (a) => a.kind === "workflow" && a.id === w.id
+          )
+        ) {
+          activityRef.current = [...activityRef.current, w]
         }
       }
-      if (fromPi.toolCalls.length > 0) {
-        const live = new Map(toolCallsRef.current.map((t) => [t.toolCallId, t]))
-        toolCallsRef.current = fromPi.toolCalls.map((t) => ({
-          ...t,
-          ...live.get(t.toolCallId),
-        }))
+    }
+    if (fromPi.toolCalls.length > 0) {
+      for (const t of fromPi.toolCalls) {
+        upsertToolCall(t)
       }
+    }
   }
+
+  const emitUiPatchRef = useRef(emitUiPatch)
+  const syncActivityFromPiAssistantRef = useRef(syncActivityFromPiAssistant)
+  emitUiPatchRef.current = emitUiPatch
+  syncActivityFromPiAssistantRef.current = syncActivityFromPiAssistant
 
   useEffect(() => {
     if (!enabled || !diskSessionId) return
@@ -250,7 +250,7 @@ export function usePiAgentChat({
           "start",
           ev.reason
         )
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (ev.type === "compaction_end") {
@@ -259,7 +259,7 @@ export function usePiAgentChat({
           "end",
           ev.reason
         )
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (ev.type === "auto_retry_start") {
@@ -268,7 +268,7 @@ export function usePiAgentChat({
           maxAttempts: ev.maxAttempts,
           errorMessage: ev.errorMessage,
         })
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (ev.type === "auto_retry_end") {
@@ -277,7 +277,7 @@ export function usePiAgentChat({
           success: ev.success,
           errorMessage: ev.finalError,
         })
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (ev.type === "tool_execution_start") {
@@ -288,10 +288,16 @@ export function usePiAgentChat({
         })
         openThinkingIdRef.current = null
         openTextIdRef.current = null
-        activityRef.current = [
-          ...activityRef.current,
-          { kind: "tool", toolCallId: ev.toolCallId },
-        ]
+        if (
+          !activityRef.current.some(
+            (a) => a.kind === "tool" && a.toolCallId === ev.toolCallId
+          )
+        ) {
+          activityRef.current = [
+            ...activityRef.current,
+            { kind: "tool", toolCallId: ev.toolCallId },
+          ]
+        }
         upsertToolCall({
           toolCallId: ev.toolCallId,
           name: ev.toolName,
@@ -299,7 +305,7 @@ export function usePiAgentChat({
           status: "running",
           result: "",
         })
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (ev.type === "tool_execution_update") {
@@ -314,7 +320,7 @@ export function usePiAgentChat({
               partialResult: preview,
               status: "running",
             })
-            emitUiPatch()
+            emitUiPatchRef.current()
           }
         }
       }
@@ -360,8 +366,10 @@ export function usePiAgentChat({
             if (summary) onUsageRef.current?.(summary)
           }
           if (activeAssistantId.current) {
-            syncActivityFromPiAssistant(ev.message as AssistantMessage)
-            emitUiPatch()
+            syncActivityFromPiAssistantRef.current(
+              ev.message as AssistantMessage
+            )
+            emitUiPatchRef.current()
           }
         }
       }
@@ -381,18 +389,22 @@ export function usePiAgentChat({
           status: ev.isError ? "error" : "done",
           result: resultText,
         })
-        emitUiPatch()
+        emitUiPatchRef.current()
       }
 
       if (!activeAssistantId.current || !onStreamRef.current) return
 
       streamState.current = reduceAgentEvent(ev, streamState.current)
-      emitUiPatch()
+      emitUiPatchRef.current()
     })
 
     void withSessionLock(async () => {
       try {
-        if (agentSessionId.current !== diskSessionId) {
+        const live =
+          agentSessionId.current === diskSessionId &&
+          (await agentSessionExists(diskSessionId))
+        if (!live) {
+          agentSessionId.current = null
           await openAgentForDisk(diskSessionId)
         }
         if (cancelled) {
@@ -410,24 +422,7 @@ export function usePiAgentChat({
       unsubscribeEvents()
       streamBatchRef.current.cancel()
     }
-  }, [
-    enabled,
-    diskSessionId,
-    openAgentForDisk,
-    withSessionLock,
-    emitUiPatch,
-    upsertToolCall,
-    syncActivityFromPiAssistant,
-  ])
-
-  useEffect(() => {
-    if (!enabled) return
-    void withSessionLock(async () => {
-      const sid = agentSessionId.current
-      if (!sid) return
-      await applySystemPrompt(sid)
-    }).catch((err) => console.warn("[pi-agent] system prompt sync:", err))
-  }, [enabled, applySystemPrompt, withSessionLock])
+  }, [enabled, diskSessionId, openAgentForDisk])
 
   useEffect(() => {
     return () => {
@@ -453,9 +448,7 @@ export function usePiAgentChat({
     return withSessionLock(async () => {
         const diskId = diskSessionIdRef.current
         if (!diskId) throw new Error("请先选择或创建对话")
-        if (agentSessionId.current !== diskId) {
-          await openAgentForDisk(diskId)
-        }
+        await openAgentForDisk(diskId)
         const agentId = agentSessionId.current
         if (!agentId) throw new Error("Agent 未就绪，请稍后重试")
 
@@ -474,7 +467,6 @@ export function usePiAgentChat({
 
         try {
           await pushRuntimeSettingsToMain()
-          await applySystemPrompt(agentId)
 
           const idle = new Promise<void>((resolve, reject) => {
             agentEndResolve.current = () => {
@@ -530,7 +522,7 @@ export function usePiAgentChat({
     openTextIdRef.current = null
   }
 
-  const resetAgent = async (_history = [], overrideDiskId?: string) => {
+  const resetAgent = useCallback(async (_history = [], overrideDiskId?: string) => {
     const diskId = overrideDiskId ?? diskSessionIdRef.current
     await withSessionLock(async () => {
       if (!diskId) {
@@ -546,7 +538,7 @@ export function usePiAgentChat({
       }
       await openAgentForDisk(diskId)
     })
-  }
+  }, [openAgentForDisk])
 
   return { runPrompt, abort, resetAgent }
 }

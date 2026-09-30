@@ -2,6 +2,7 @@ import { motion } from "framer-motion"
 import {
   CalendarClock,
   Cable,
+  FileText,
   MessagesSquare,
   Settings,
   SlidersHorizontal,
@@ -24,12 +25,14 @@ const mainNavItems = [
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
   { href: "/tasks", label: "定时", Icon: CalendarClock, end: false },
   { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
+  { href: "/agents-md", label: "说明", Icon: FileText, end: false },
   { href: "/mcp", label: "MCP", Icon: Cable, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {
   "/tasks": "定时任务",
   "/skills": "技能",
+  "/agents-md": "AGENTS.md",
   "/mcp": "MCP",
   "/connect": "模型与连接",
   "/settings": "设置",

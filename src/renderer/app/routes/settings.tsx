@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FolderOpen, HardDrive, Settings2 } from "lucide-react"
+import { HardDrive, Settings2 } from "lucide-react"
 import { lazy, Suspense, useEffect, useState } from "react"
 import { Link } from "react-router"
 import { toast } from "sonner"
@@ -19,14 +19,7 @@ import {
   pushRuntimeSettingsToMain,
   saveRuntimeSettings,
 } from "~/services/settings"
-import {
-  getStoragePaths,
-  pickStorageDirectory,
-  resetStoragePaths,
-  type StoragePaths,
-  type StoragePathsInput,
-  saveStoragePaths,
-} from "~/services/storage-paths"
+import { getStoragePaths } from "~/services/electron-client"
 import { AGENT_THINKING_LEVEL_OPTIONS } from "../../../shared/app-config"
 
 const AgentPermissionsSection = lazy(() =>
@@ -52,67 +45,12 @@ export default function SettingsRoute() {
 }
 
 function StoragePathsSection() {
-  const queryClient = useQueryClient()
   const { data: paths, isLoading } = useQuery({
     queryKey: ["storage-paths"],
     queryFn: getStoragePaths,
   })
-  const [draft, setDraft] = useState<StoragePathsInput | null>(null)
 
-  useEffect(() => {
-    if (paths) {
-      setDraft({ dataRoot: paths.dataRoot })
-    }
-  }, [paths])
-
-  const saveMutation = useMutation({
-    mutationFn: saveStoragePaths,
-    onSuccess: (next) => {
-      queryClient.setQueryData(["storage-paths"], next)
-      setDraft({ dataRoot: next.dataRoot })
-      if (next.migration && next.migration.movedCount > 0) {
-        toast.success("数据目录已保存，数据已迁移", {
-          description: `已移动 ${next.migration.movedCount} 项至新目录，请重启应用后继续使用。`,
-        })
-      } else {
-        toast.success("数据目录已保存", {
-          description: "请重启应用以确保生效。",
-        })
-      }
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "保存失败")
-    },
-  })
-
-  const resetMutation = useMutation({
-    mutationFn: resetStoragePaths,
-    onSuccess: (next) => {
-      queryClient.setQueryData(["storage-paths"], next)
-      setDraft({ dataRoot: next.dataRoot })
-      if (next.migration && next.migration.movedCount > 0) {
-        toast.success("已恢复默认存储位置，数据已迁回", {
-          description: `已移动 ${next.migration.movedCount} 项，请重启应用。`,
-        })
-      } else {
-        toast.success("已恢复系统默认存储位置")
-      }
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "恢复失败")
-    },
-  })
-
-  const pickFolder = async (field: keyof StoragePathsInput) => {
-    if (!draft) return
-    const selected = await pickStorageDirectory({
-      title: "选择存储目录",
-      defaultPath: draft[field],
-    })
-    if (selected) setDraft({ ...draft, [field]: selected })
-  }
-
-  if (isLoading || !paths || !draft) {
+  if (isLoading || !paths) {
     return (
       <section>
         <div className="mb-4 flex items-center gap-2">
@@ -124,6 +62,8 @@ function StoragePathsSection() {
     )
   }
 
+  const root = paths.dataRoot.replace(/\\/g, "/")
+
   return (
     <section>
       <div className="mb-4 flex items-center gap-2">
@@ -131,113 +71,26 @@ function StoragePathsSection() {
         <h2 className="text-2xl font-semibold tracking-tight">存储位置</h2>
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-        <PathField
-          id="dataRoot"
-          label="数据目录"
-          hint="存放会话、soul.md、skills/、数据库等应用数据。修改时会自动迁移（目标须为空目录）。Agent 工具工作区请在对话页选择文件夹。"
-          value={draft.dataRoot}
-          onChange={(value) => setDraft({ ...draft, dataRoot: value })}
-          onBrowse={() => pickFolder("dataRoot")}
-        />
-
-        <DerivedPaths paths={paths} draft={draft} />
-
-        <p className="text-xs text-muted-foreground">
-          路径配置文件：
-          <span className="font-mono break-all">{paths.configFile}</span>
-          {paths.isCustomized ? "（已自定义）" : "（使用默认）"}
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4 text-sm shadow-sm">
+        <p className="text-muted-foreground">
+          会话、技能、定时任务、soul 等应用数据固定在 Electron
+          用户数据目录。Agent 工具工作区可在对话页单独选择文件夹。
         </p>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            className="rounded-xl"
-            disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate(draft)}
-          >
-            {saveMutation.isPending ? "保存中..." : "保存存储路径"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="rounded-xl"
-            disabled={resetMutation.isPending}
-            onClick={() => resetMutation.mutate()}
-          >
-            {resetMutation.isPending ? "恢复中..." : "恢复默认位置"}
-          </Button>
+        <div className="rounded-xl border border-border/60 bg-background/40 p-3 text-xs">
+          <p className="mb-2 font-medium text-foreground">应用数据目录</p>
+          <p className="font-mono break-all text-muted-foreground">{root}</p>
+          <ul className="mt-3 space-y-1 font-mono break-all text-muted-foreground">
+            <li>{root}/pi-sessions/</li>
+            <li>{root}/soul.md</li>
+            <li>{root}/pi-agent/（含 AGENTS.md、skills/、MCP）</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            Pi 配置与 MCP：
+            <span className="font-mono">{root}/pi-agent/</span>
+          </p>
         </div>
       </div>
     </section>
-  )
-}
-
-function PathField({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-  onBrowse,
-}: {
-  id: string
-  label: string
-  hint: string
-  value: string
-  onChange: (value: string) => void
-  onBrowse: () => void
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-      <div className="flex gap-2">
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="bg-transparent font-mono text-xs"
-          spellCheck={false}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="shrink-0 rounded-xl"
-          onClick={onBrowse}
-          title="选择文件夹"
-        >
-          <FolderOpen className="size-4" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function DerivedPaths({
-  paths,
-  draft,
-}: {
-  paths: StoragePaths
-  draft: StoragePathsInput
-}) {
-  const previewSoul = `${draft.dataRoot.replace(/\\/g, "/")}/soul.md`
-  const previewSkills = `${draft.dataRoot.replace(/\\/g, "/")}/skills/`
-  const defaultNote =
-    draft.dataRoot === paths.defaultDataRoot
-      ? "当前为系统默认路径"
-      : "保存后生效；换目录时会自动迁移已有数据（目标须为空目录）"
-
-  return (
-    <div className="rounded-xl border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
-      <p className="mb-2 font-medium text-foreground">保存后将使用</p>
-      <ul className="space-y-1 font-mono break-all">
-        <li>长期沉淀：{previewSoul}</li>
-        <li>技能目录：{previewSkills}</li>
-      </ul>
-      <p className="mt-2">{defaultNote}</p>
-    </div>
   )
 }
 

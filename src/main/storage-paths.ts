@@ -4,17 +4,12 @@ import path from "node:path"
 import type { App } from "electron"
 
 import { loadAppConfig, saveAppConfig } from "./app-config"
-import { migrateDataRoot } from "./data-root-migrate"
-import type { StoragePaths, StoragePathsSaveResult } from "./types"
+import type { StoragePaths } from "./types"
 
 let cachedPaths: StoragePaths | null = null
 
-function getSystemDefaultPaths(app: App) {
-  const dataRoot = app.getPath("userData")
-  return {
-    dataRoot,
-    modelsDir: path.join(dataRoot, "models"),
-  }
+function userDataRoot(app: App): string {
+  return app.getPath("userData")
 }
 
 function normalizeAbsolutePath(value: string, label: string): string {
@@ -42,13 +37,8 @@ function assertExistingDirectory(dir: string, label: string): string {
   return resolved
 }
 
-function buildResolved(
-  app: App,
-  dataRoot: string,
-  workspaceDirRaw: string
-): StoragePaths {
-  const systemDefaults = getSystemDefaultPaths(app)
-  const modelsDir = path.join(dataRoot, "models")
+function buildResolved(app: App, workspaceDirRaw: string): StoragePaths {
+  const dataRoot = userDataRoot(app)
   const workspaceCustomized = Boolean(workspaceDirRaw.trim())
   const workspaceDir = workspaceCustomized
     ? normalizeAbsolutePath(workspaceDirRaw, "工作区")
@@ -58,15 +48,7 @@ function buildResolved(
     dataRoot,
     workspaceDir,
     workspaceCustomized,
-    modelsDir,
-    databaseFile: path.join(dataRoot, "memories.db"),
-    memoriesDir: path.join(dataRoot, "memories"),
-    personasDir: path.join(dataRoot, "personas"),
-    skillsDir: path.join(dataRoot, "skills"),
-    configFile: path.join(app.getPath("userData"), "app-config.json"),
-    defaultDataRoot: systemDefaults.dataRoot,
-    defaultModelsDir: systemDefaults.modelsDir,
-    isCustomized: dataRoot !== systemDefaults.dataRoot,
+    configFile: path.join(dataRoot, "app-config.json"),
   }
 }
 
@@ -76,15 +58,10 @@ export function resolveStoragePaths(
 ): StoragePaths {
   if (!fresh && cachedPaths) return cachedPaths
   const config = loadAppConfig(app)
-  const systemDefaults = getSystemDefaultPaths(app)
-  const dataRoot = config.dataRoot?.trim()
-    ? normalizeAbsolutePath(config.dataRoot, "存储目录")
-    : systemDefaults.dataRoot
-  cachedPaths = buildResolved(app, dataRoot, config.workspaceDir ?? "")
+  cachedPaths = buildResolved(app, config.workspaceDir ?? "")
   return cachedPaths
 }
 
-/** Agent 工具 cwd：自定义工作区或回退 dataRoot */
 export function resolveWorkspaceDir(app: App): string {
   return resolveStoragePaths(app).workspaceDir
 }
@@ -95,56 +72,9 @@ export function invalidateStoragePathsCache(): void {
 
 export async function ensureStorageDirs(paths: StoragePaths): Promise<void> {
   await fs.mkdir(paths.dataRoot, { recursive: true })
-  await fs.mkdir(paths.modelsDir, { recursive: true })
-  await fs.mkdir(paths.memoriesDir, { recursive: true })
-  await fs.mkdir(paths.personasDir, { recursive: true })
-  await fs.mkdir(paths.skillsDir, { recursive: true })
+  await fs.mkdir(path.join(paths.dataRoot, "pi-sessions"), { recursive: true })
 }
 
-async function applyDataRootChange(
-  app: App,
-  nextDataRoot: string
-): Promise<StoragePathsSaveResult> {
-  const before = resolveStoragePaths(app, { fresh: true })
-  const fromResolved = path.resolve(before.dataRoot)
-  const toResolved = path.resolve(nextDataRoot)
-
-  let migration: StoragePathsSaveResult["migration"]
-  if (fromResolved !== toResolved) {
-    const result = await migrateDataRoot(fromResolved, toResolved)
-    if (result.moved.length > 0) {
-      migration = {
-        from: result.from,
-        to: result.to,
-        movedCount: result.moved.length,
-      }
-    }
-  }
-
-  const config = loadAppConfig(app)
-  await saveAppConfig(app, { ...config, dataRoot: nextDataRoot })
-  invalidateStoragePathsCache()
-  const resolved = resolveStoragePaths(app, { fresh: true })
-  await ensureStorageDirs(resolved)
-  return migration ? { ...resolved, migration } : resolved
-}
-
-export async function saveStoragePaths(
-  app: App,
-  input: { dataRoot: string }
-): Promise<StoragePathsSaveResult> {
-  const dataRoot = normalizeAbsolutePath(input.dataRoot, "存储目录")
-  return applyDataRootChange(app, dataRoot)
-}
-
-export async function resetStoragePaths(
-  app: App
-): Promise<StoragePathsSaveResult> {
-  const systemDefaults = getSystemDefaultPaths(app)
-  return applyDataRootChange(app, systemDefaults.dataRoot)
-}
-
-/** 设置 Agent 工作区；传 null/空 则回退 dataRoot */
 export async function saveWorkspaceDir(
   app: App,
   workspaceDir: string | null

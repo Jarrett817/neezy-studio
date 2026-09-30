@@ -71,7 +71,6 @@ function runtimeToAppConfig(
   }))
   return {
     version: 1,
-    dataRoot: current.dataRoot,
     workspaceDir: current.workspaceDir,
     preferLowPower: settings.preferLowPower,
     maxCpuPercent: settings.maxCpuPercent,

@@ -52,7 +52,7 @@ export function ChatMessageBubble({
       >
         <TiptapContent
           doc={message.contentJson}
-          className="min-w-0 break-words [overflow-wrap:anywhere] [&_*]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-all"
+          className="min-w-0 break-words [overflow-wrap:anywhere] [&_*]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-all [&_a]:text-inherit [&_a]:font-semibold [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-current/50 hover:[&_a]:decoration-current"
         />
       </Suspense>
     ) : longText ? (

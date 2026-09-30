@@ -1,4 +1,4 @@
-/** 应用配置（仅 userData/app-config.json；聊天与画像在 dataRoot/memories.db） */
+/** 应用配置（userData/app-config.json） */
 
 export const AGENT_THINKING_LEVEL_AUTO = "auto" as const
 
@@ -60,9 +60,7 @@ export interface AppConfigChatModel {
 
 export interface AppConfig {
   version: 1
-  /** 数据根目录（memories.db、memories/、models/ 等）；默认 userData，可改为其它盘 */
-  dataRoot: string
-  /** Agent 工具 cwd；空则回退 dataRoot */
+  /** Agent 工具 cwd；空则回退 userData */
   workspaceDir: string
   preferLowPower: boolean
   maxCpuPercent: number
@@ -77,7 +75,6 @@ export const APP_CONFIG_VERSION = 1 as const
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   version: 1,
-  dataRoot: "",
   workspaceDir: "",
   preferLowPower: true,
   maxCpuPercent: 95,

@@ -19,11 +19,14 @@ import {
   upsertScheduledTask,
 } from "./scheduled-tasks-store"
 import { broadcastTasksChanged } from "./tasks-broadcast"
+import {
+  readAgentDirAgentsMd,
+  writeAgentDirAgentsMd,
+} from "./agents-md"
 import { assertPathAllowed } from "./path-guard"
 import {
   abortAgentSession,
   agentSessionExists,
-  configureAgentSession,
   createAgentSession,
   destroyAgentSession,
   destroyAllAgentSessions,
@@ -70,15 +73,15 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   }))
 
   ipcMain.handle("app:get-storage-paths", () => ctx.getPaths())
-  ipcMain.handle("app:save-storage-paths", async (_event, input) => {
-    const paths = await storagePaths.saveStoragePaths(app, input)
-    applyAppConfig(app, loadAppConfig(app))
-    return paths
-  })
-  ipcMain.handle("app:reset-storage-paths", async () => {
-    const paths = await storagePaths.resetStoragePaths(app)
-    applyAppConfig(app, loadAppConfig(app))
-    return paths
+  ipcMain.handle("app:get-agents-md", () => readAgentDirAgentsMd(app))
+  ipcMain.handle("app:save-agents-md", async (_event, content: unknown) => {
+    if (typeof content !== "string") {
+      throw new Error("无效内容")
+    }
+    await writeAgentDirAgentsMd(app, content)
+    invalidatePiResourceLoaderCache()
+    await destroyAllAgentSessions()
+    return { ok: true }
   })
   ipcMain.handle(
     "app:save-workspace-dir",
@@ -214,6 +217,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   )
 
+  ipcMain.handle(
+    "agent:exists",
+    (_event, { sessionId }: { sessionId: string }) =>
+      agentSessionExists(sessionId)
+  )
+
   // agent:prompt - 发送消息给 Agent
   ipcMain.handle(
     "agent:prompt",
@@ -244,16 +253,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     "agent:destroy",
     async (_event, { sessionId }: { sessionId: string }) => {
       await destroyAgentSession(sessionId)
-      return { ok: true }
-    }
-  )
-
-  ipcMain.handle(
-    "agent:configure",
-    async (_event, payload: { sessionId: string; systemPrompt: string }) => {
-      await configureAgentSession(payload.sessionId, {
-        systemPrompt: payload.systemPrompt,
-      })
       return { ok: true }
     }
   )
@@ -322,13 +321,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle("skills:list-installed", async () => {
-    return listInstalledSkills(ctx.getPaths().dataRoot)
+    return listInstalledSkills(app)
   })
 
   ipcMain.handle(
     "skills:uninstall",
     async (_event, { installKey }: { installKey: string }) => {
-      await uninstallSkillByKey(ctx.getPaths().dataRoot, installKey.trim())
+      await uninstallSkillByKey(app, installKey.trim())
       return { ok: true as const }
     }
   )
@@ -336,7 +335,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle(
     "skills:import-from-path",
     async (_event, { sourcePath }: { sourcePath: string }) => {
-      return importSkillFromPath(ctx.getPaths().dataRoot, sourcePath)
+      return importSkillFromPath(app, sourcePath)
     }
   )
 

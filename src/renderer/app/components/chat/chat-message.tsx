@@ -1,11 +1,16 @@
 import { motion } from "framer-motion"
-import { Clock } from "lucide-react"
+import { lazy, Suspense } from "react"
 
 import { AgentActivityTimeline } from "~/components/chat/agent-activity-timeline"
 import { NomiFace } from "~/components/nomi-face"
-import { TiptapContent } from "~/components/tiptap/TiptapContent"
 import { cn } from "~/lib/utils"
 import type { ChatMessage } from "~/stores/app-store"
+
+const TiptapContent = lazy(() =>
+  import("~/components/tiptap/TiptapContent").then((m) => ({
+    default: m.TiptapContent,
+  }))
+)
 
 const enter = {
   initial: { opacity: 0, y: 8 },
@@ -37,15 +42,19 @@ export function ChatMessageBubble({
 
   if (isUser) {
     const longText = !message.contentJson && message.content.length > 1200
-    const isQueued = message.queued === true
     const body = message.contentJson ? (
-      <TiptapContent
-        doc={message.contentJson}
-        className={cn(
-          "min-w-0 break-words [overflow-wrap:anywhere] [&_*]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-all",
-          isQueued && "[&_*]:text-foreground/90"
-        )}
-      />
+      <Suspense
+        fallback={
+          <div className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            {message.content}
+          </div>
+        }
+      >
+        <TiptapContent
+          doc={message.contentJson}
+          className="min-w-0 break-words [overflow-wrap:anywhere] [&_*]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-all"
+        />
+      </Suspense>
     ) : longText ? (
       <details>
         <summary className="cursor-pointer text-sm font-medium">
@@ -63,23 +72,12 @@ export function ChatMessageBubble({
 
     return (
       <motion.div {...enter} className="flex justify-end py-2 first:pt-1">
-        <div className="flex max-w-[78%] min-w-0 flex-col items-end gap-1.5">
-          {isQueued ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-primary/80 dark:border-primary/30 dark:bg-primary/10 dark:text-primary/90">
-              <Clock className="size-3 shrink-0 opacity-80" aria-hidden />
-              排队中
-            </span>
-          ) : null}
-          <div
-            className={cn(
-              "min-w-0 overflow-hidden rounded-[20px] px-4 py-2.5 text-[15px] leading-relaxed break-words [overflow-wrap:anywhere] shadow-sm transition-[opacity,box-shadow,border-color] duration-300",
-              isQueued
-                ? "rounded-br-[16px] border border-dashed border-primary/35 bg-muted/30 text-foreground/90 ring-1 ring-primary/10 dark:border-primary/40 dark:bg-muted/20"
-                : "rounded-br-[4px] bg-linear-to-br from-primary to-[oklch(0.49_0.13_158)] text-primary-foreground dark:from-[oklch(0.70_0.14_155)] dark:to-[oklch(0.62_0.13_158)] dark:text-[oklch(0.16_0.02_155)]"
-            )}
-          >
-            {body}
-          </div>
+        <div
+          className={cn(
+            "max-w-[78%] min-w-0 overflow-hidden rounded-[20px] rounded-br-[4px] bg-linear-to-br from-primary to-[oklch(0.49_0.13_158)] px-4 py-2.5 text-[15px] leading-relaxed break-words [overflow-wrap:anywhere] text-primary-foreground shadow-sm dark:from-[oklch(0.70_0.14_155)] dark:to-[oklch(0.62_0.13_158)] dark:text-[oklch(0.16_0.02_155)]"
+          )}
+        >
+          {body}
         </div>
       </motion.div>
     )

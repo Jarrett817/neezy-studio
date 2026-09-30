@@ -11,7 +11,6 @@ import {
   Loader2,
   Search,
 } from "lucide-react"
-
 import { MarkdownContent } from "~/components/markdown-content"
 import {
   type AgentStep,

@@ -48,7 +48,7 @@ export default defineConfig({
     },
     plugins: [
       react(),
-      babel({ presets: [reactCompilerPreset({ target: "19" })] }),
+      babel({ presets: [reactCompilerPreset()] }),
       tailwindcss(),
       svgr({ include: "**/*.svg?react" }),
     ],

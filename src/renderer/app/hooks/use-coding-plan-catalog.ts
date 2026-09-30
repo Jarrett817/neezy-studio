@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 
 import {
@@ -25,12 +25,9 @@ export function useCodingPlanCatalog() {
   const [extra, setExtra] = useState<CodingPlanVendor[]>(readStoredExtra)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const vendors = useMemo(
-    () => mergeCatalogVendors(CODING_PLAN_VENDOR_CATALOG, extra),
-    [extra]
-  )
+  const vendors = mergeCatalogVendors(CODING_PLAN_VENDOR_CATALOG, extra)
 
-  const refreshFromUpstream = useCallback(async () => {
+  const refreshFromUpstream = async () => {
     setIsRefreshing(true)
     try {
       const incoming = await refreshCodingPlanCatalogFromUpstream()
@@ -44,7 +41,7 @@ export function useCodingPlanCatalog() {
     } finally {
       setIsRefreshing(false)
     }
-  }, [])
+  }
 
   return { vendors, refreshFromUpstream, isRefreshing }
 }

@@ -32,7 +32,12 @@ export type ChatMessage = {
 type AppStoreState = {
   conversationHistory: ChatMessage[]
   addMessage: (msg: Omit<ChatMessage, "timestamp">) => void
+  insertMessageAfter: (
+    afterId: string,
+    msg: Omit<ChatMessage, "timestamp">
+  ) => void
   updateMessage: (id: string, updates: Partial<ChatMessage>) => void
+  removeMessage: (id: string) => void
   setConversationHistory: (messages: ChatMessage[]) => void
   clearConversation: () => void
 }
@@ -46,11 +51,30 @@ export const useAppStore = create<AppStoreState>()((set) => ({
         { ...msg, timestamp: Date.now() },
       ],
     })),
+  insertMessageAfter: (afterId, msg) =>
+    set((state) => {
+      const at = state.conversationHistory.findIndex((m) => m.id === afterId)
+      if (at < 0) {
+        return {
+          conversationHistory: [
+            ...state.conversationHistory,
+            { ...msg, timestamp: Date.now() },
+          ],
+        }
+      }
+      const next = [...state.conversationHistory]
+      next.splice(at + 1, 0, { ...msg, timestamp: Date.now() })
+      return { conversationHistory: next }
+    }),
   updateMessage: (id, updates) =>
     set((state) => ({
       conversationHistory: state.conversationHistory.map((m) =>
         m.id === id ? { ...m, ...updates } : m
       ),
+    })),
+  removeMessage: (id) =>
+    set((state) => ({
+      conversationHistory: state.conversationHistory.filter((m) => m.id !== id),
     })),
   setConversationHistory: (messages) => set({ conversationHistory: messages }),
   clearConversation: () => set({ conversationHistory: [] }),

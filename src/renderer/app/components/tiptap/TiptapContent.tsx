@@ -1,7 +1,5 @@
 ﻿import { generateHTML } from "@tiptap/html"
 import type { JSONContent } from "@tiptap/react"
-import { useMemo } from "react"
-
 import { tiptapExtensions } from "~/lib/tiptap-extensions"
 import { cn } from "~/lib/utils"
 
@@ -14,14 +12,14 @@ export function TiptapContent({
   doc: JSONContent | null | undefined
   className?: string
 }) {
-  const html = useMemo(() => {
-    if (!doc) return ""
+  let html = ""
+  if (doc) {
     try {
-      return generateHTML(doc, RENDER_EXTENSIONS)
+      html = generateHTML(doc, RENDER_EXTENSIONS)
     } catch {
-      return ""
+      html = ""
     }
-  }, [doc])
+  }
 
   if (!html) return null
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 import {
   type AssistantActivityItem,
   type ChatToolCall,
@@ -11,6 +11,7 @@ import {
   reduceAgentEvent,
   textFromAssistantMessage,
 } from "~/lib/pi-agent-events"
+import { createRafBatcher } from "~/lib/raf-stream-patch"
 import { extractAgentFailure } from "~/services/agent-failure"
 import {
   abortAgentSession,
@@ -83,24 +84,20 @@ export function usePiAgentChat({
     diskSessionIdRef.current = diskSessionId
   }, [diskSessionId])
 
-  const withSessionLock = useCallback(
-    async <T>(fn: () => Promise<T>): Promise<T> => {
-      const run = sessionOp.current.then(fn)
-      sessionOp.current = run.then(
-        () => undefined,
-        () => undefined
-      )
-      return run
-    },
-    []
-  )
+  const withSessionLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = sessionOp.current.then(fn)
+    sessionOp.current = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
 
-  const applySystemPrompt = useCallback(async (sid: string) => {
+  const applySystemPrompt = async (sid: string) => {
     await configureAgentSession(sid, { systemPrompt: systemPromptRef.current })
-  }, [])
+  }
 
-  const openAgentForDisk = useCallback(
-    async (diskId: string) => {
+  const openAgentForDisk = async (diskId: string) => {
       const running = agentSessionId.current
 
       if (running && running !== diskId) {
@@ -124,33 +121,41 @@ export function usePiAgentChat({
       }
       await applySystemPrompt(sid)
       return sid
-    },
-    [applySystemPrompt]
-  )
+  }
 
-  const upsertToolCall = useCallback((item: ChatToolCall) => {
+  const upsertToolCall = (item: ChatToolCall) => {
     const list = toolCallsRef.current
     const idx = list.findIndex((t) => t.toolCallId === item.toolCallId)
     if (idx >= 0) list[idx] = { ...list[idx], ...item }
     else list.push(item)
-  }, [])
+  }
 
-  const emitUiPatch = useCallback(() => {
+  const streamBatchRef = useRef(
+    createRafBatcher<{
+      thinking: string
+      content: string
+      activity: AssistantActivityItem[]
+      toolCalls: ChatToolCall[]
+    }>((patch) => {
+      onStreamRef.current?.(patch)
+    })
+  )
+
+  const emitUiPatch = () => {
     if (!activeAssistantId.current || !onStreamRef.current) return
     const display = mergeStreamThinking(
       streamState.current.thinking,
       streamState.current.content
     )
-    onStreamRef.current({
+    streamBatchRef.current.push({
       thinking: display.thinking,
       content: display.visible,
       activity: [...activityRef.current],
       toolCalls: [...toolCallsRef.current],
     })
-  }, [])
+  }
 
-  const syncActivityFromPiAssistant = useCallback(
-    (message: AssistantMessage) => {
+  const syncActivityFromPiAssistant = (message: AssistantMessage) => {
       const ts = "timestamp" in message ? Number(message.timestamp) : Date.now()
       const fromPi = activityFromAssistantContent(message.content, ts)
       const workflows = activityRef.current.filter((a) => a.kind === "workflow")
@@ -173,9 +178,7 @@ export function usePiAgentChat({
           ...live.get(t.toolCallId),
         }))
       }
-    },
-    []
-  )
+  }
 
   useEffect(() => {
     if (!enabled || !diskSessionId) return
@@ -405,6 +408,7 @@ export function usePiAgentChat({
     return () => {
       cancelled = true
       unsubscribeEvents()
+      streamBatchRef.current.cancel()
     }
   }, [
     enabled,
@@ -433,21 +437,20 @@ export function usePiAgentChat({
     }
   }, [])
 
-  const runPrompt = useCallback(
-    async (params: {
-      userMessage: string
-      images?: ImageContent[]
-      assistantId: string
-      onReady?: () => void
-      onStream: (patch: {
-        thinking: string
-        content: string
-        activity: AssistantActivityItem[]
-        toolCalls: ChatToolCall[]
-      }) => void
-      onUsage?: (summary: string) => void
-    }): Promise<{ content: string; thinking: string }> => {
-      return withSessionLock(async () => {
+  const runPrompt = async (params: {
+    userMessage: string
+    images?: ImageContent[]
+    assistantId: string
+    onReady?: () => void
+    onStream: (patch: {
+      thinking: string
+      content: string
+      activity: AssistantActivityItem[]
+      toolCalls: ChatToolCall[]
+    }) => void
+    onUsage?: (summary: string) => void
+  }): Promise<{ content: string; thinking: string }> => {
+    return withSessionLock(async () => {
         const diskId = diskSessionIdRef.current
         if (!diskId) throw new Error("请先选择或创建对话")
         if (agentSessionId.current !== diskId) {
@@ -502,17 +505,16 @@ export function usePiAgentChat({
           )
           return { content: display.visible, thinking: display.thinking }
         } finally {
+          streamBatchRef.current.flush()
           activeAssistantId.current = null
           onStreamRef.current = null
           onUsageRef.current = null
           agentEndResolve.current = null
         }
       })
-    },
-    [applySystemPrompt, withSessionLock, openAgentForDisk]
-  )
+  }
 
-  const abort = useCallback(() => {
+  const abort = () => {
     const sid = agentSessionId.current
     if (sid) abortAgentSession(sid)
     abortedRef.current = true
@@ -526,28 +528,25 @@ export function usePiAgentChat({
     toolCallsRef.current = []
     openThinkingIdRef.current = null
     openTextIdRef.current = null
-  }, [])
+  }
 
-  const resetAgent = useCallback(
-    async (_history = [], overrideDiskId?: string) => {
-      const diskId = overrideDiskId ?? diskSessionIdRef.current
-      await withSessionLock(async () => {
-        if (!diskId) {
-          const prev = agentSessionId.current
-          if (prev) await destroyAgentSession(prev)
-          agentSessionId.current = null
-          return
-        }
+  const resetAgent = async (_history = [], overrideDiskId?: string) => {
+    const diskId = overrideDiskId ?? diskSessionIdRef.current
+    await withSessionLock(async () => {
+      if (!diskId) {
         const prev = agentSessionId.current
-        if (prev && prev !== diskId) {
-          await destroyAgentSession(prev)
-          agentSessionId.current = null
-        }
-        await openAgentForDisk(diskId)
-      })
-    },
-    [openAgentForDisk, withSessionLock]
-  )
+        if (prev) await destroyAgentSession(prev)
+        agentSessionId.current = null
+        return
+      }
+      const prev = agentSessionId.current
+      if (prev && prev !== diskId) {
+        await destroyAgentSession(prev)
+        agentSessionId.current = null
+      }
+      await openAgentForDisk(diskId)
+    })
+  }
 
   return { runPrompt, abort, resetAgent }
 }

@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 import {
   getActiveSessionId,
@@ -57,31 +57,25 @@ export function useChatSession() {
     }
   }, [setConversationHistory, queryClient.invalidateQueries, clearConversation])
 
-  const handleSelectSession = useCallback(
-    async (sessionId: string) => {
-      if (sessionId === sessionIdRef.current) return
-      sessionIdRef.current = sessionId
-      setActiveSessionId(sessionId)
-      await persistActiveSessionId(sessionId)
-      const loaded = await loadPiChatMessages(sessionId)
-      setConversationHistory(loaded)
-      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      return { reset: true }
-    },
-    [setConversationHistory, queryClient]
-  )
+  const handleSelectSession = async (sessionId: string) => {
+    if (sessionId === sessionIdRef.current) return
+    sessionIdRef.current = sessionId
+    setActiveSessionId(sessionId)
+    await persistActiveSessionId(sessionId)
+    const loaded = await loadPiChatMessages(sessionId)
+    setConversationHistory(loaded)
+    queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    return { reset: true }
+  }
 
-  const handleNewSession = useCallback(
-    async (sessionId: string) => {
-      sessionIdRef.current = sessionId
-      flushSync(() => setActiveSessionId(sessionId))
-      await persistActiveSessionId(sessionId)
-      clearConversation()
-      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
-      return { reset: true }
-    },
-    [clearConversation, queryClient]
-  )
+  const handleNewSession = async (sessionId: string) => {
+    sessionIdRef.current = sessionId
+    flushSync(() => setActiveSessionId(sessionId))
+    await persistActiveSessionId(sessionId)
+    clearConversation()
+    queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+    return { reset: true }
+  }
 
   return {
     activeSessionId,

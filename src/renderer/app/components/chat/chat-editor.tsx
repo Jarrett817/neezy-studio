@@ -3,7 +3,6 @@ import type { JSONContent } from "@tiptap/react"
 import { EditorContent, useEditor } from "@tiptap/react"
 import {
   forwardRef,
-  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -79,35 +78,32 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(
       onEmptyChangeRef.current = onEmptyChange
     }, [onEmptyChange])
 
-    const setSlashState = useCallback((next: SlashState) => {
+    const setSlashState = (next: SlashState) => {
       slashRef.current = next
       setSlash(next)
-    }, [])
+    }
 
-    const applySkill = useCallback(
-      (skill: SkillSlashItem) => {
-        const ed = editorRef.current
-        if (!ed) return
-        ed.chain()
-          .focus()
-          .setContent({
-            type: "doc",
-            content: [
-              {
-                type: "paragraph",
-                content: [{ type: "text", text: `/skill:${skill.name} ` }],
-              },
-            ],
-          })
-          .run()
-        wasEmptyRef.current = false
-        onEmptyChangeRef.current?.(false)
-        setSlashState(null)
-      },
-      [setSlashState]
-    )
+    const applySkill = (skill: SkillSlashItem) => {
+      const ed = editorRef.current
+      if (!ed) return
+      ed.chain()
+        .focus()
+        .setContent({
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: `/skill:${skill.name} ` }],
+            },
+          ],
+        })
+        .run()
+      wasEmptyRef.current = false
+      onEmptyChangeRef.current?.(false)
+      setSlashState(null)
+    }
 
-    const insertImage = useCallback(async (file: File) => {
+    const insertImage = async (file: File) => {
       const ed = editorRef.current
       if (!ed) return
       if (file.size > 20 * 1024 * 1024) {
@@ -120,7 +116,7 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "读取图片失败")
       }
-    }, [])
+    }
 
     const editor = useEditor({
       extensions: tiptapExtensions(placeholder),

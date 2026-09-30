@@ -27,8 +27,8 @@ import {
   ChatEditor,
   type ChatEditorHandle,
 } from "~/components/chat/chat-editor"
-import { ChatMessageBubble } from "~/components/chat/chat-message"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
+import { QueuedUserMessage } from "~/components/chat/queued-user-message"
 import { NomiFace } from "~/components/nomi-face"
 import { Button } from "~/components/ui/button"
 import {
@@ -40,6 +40,7 @@ import {
 import { entryDisplayName } from "~/config/chat-models"
 import { useChatSend } from "~/hooks/use-chat-send"
 import { useChatSession } from "~/hooks/use-chat-session"
+import { partitionChatMessages } from "~/lib/chat-message-order"
 import { cn } from "~/lib/utils"
 import {
   extractImageContentsFromTiptap,
@@ -64,6 +65,12 @@ import {
 
 const ChatOptionsSheet = lazy(
   () => import("~/components/chat/chat-options-sheet")
+)
+
+const ChatMessageBubble = lazy(() =>
+  import("~/components/chat/chat-message").then((m) => ({
+    default: m.ChatMessageBubble,
+  }))
 )
 
 const SYSTEM_PROMPT =
@@ -274,6 +281,8 @@ export default function ChatRoute() {
     abort: abortSend,
     isGenerating,
     resetAgent,
+    cancelQueued,
+    editQueued,
   } = useChatSend({
     agentSystemPrompt: SYSTEM_PROMPT,
     activeSessionId,
@@ -370,7 +379,9 @@ export default function ChatRoute() {
   }
 
   const chatModelName = chatEntry ? entryDisplayName(chatEntry) : "未配置"
-  const lastAssistant = messages.findLast((m) => m.role === "assistant")
+  const { main: mainMessages, queued: queuedMessages } =
+    partitionChatMessages(messages)
+  const lastAssistant = mainMessages.findLast((m) => m.role === "assistant")
 
   if (!sessionsReady) {
     return (
@@ -448,14 +459,28 @@ export default function ChatRoute() {
             </div>
           ) : (
             <div className="mx-auto w-full max-w-5xl px-4 pb-8">
-              {messages.map((m, i) => (
-                <ChatMessageBubble
-                  key={m.id}
-                  message={m}
-                  modelName={chatModelName}
-                  index={i}
-                />
-              ))}
+              <Suspense fallback={null}>
+                {mainMessages.map((m, i) => (
+                  <ChatMessageBubble
+                    key={m.id}
+                    message={m}
+                    modelName={chatModelName}
+                    index={i}
+                  />
+                ))}
+              </Suspense>
+              {queuedMessages.length > 0 ? (
+                <div className="mt-4 space-y-1 border-t border-border/50 pt-4">
+                  {queuedMessages.map((m) => (
+                    <QueuedUserMessage
+                      key={m.id}
+                      message={m}
+                      onCancel={cancelQueued}
+                      onSaveEdit={editQueued}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
         </div>

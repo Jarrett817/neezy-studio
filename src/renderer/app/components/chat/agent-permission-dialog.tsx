@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { getElectronApi } from "~/services/electron-client"
@@ -38,15 +38,15 @@ async function respondPermission(
 export function useAgentPermissionDialog(activeSessionId: string | null) {
   const [prompt, setPrompt] = useState<AgentPermissionPrompt | null>(null)
 
-  const dismiss = useCallback(
-    async (payload: { action?: PermissionDialogAction; value?: string }) => {
-      if (!prompt) return
-      const current = prompt
-      setPrompt(null)
-      await respondPermission(current.sessionId, current.requestId, payload)
-    },
-    [prompt]
-  )
+  const dismiss = async (payload: {
+    action?: PermissionDialogAction
+    value?: string
+  }) => {
+    if (!prompt) return
+    const current = prompt
+    setPrompt(null)
+    await respondPermission(current.sessionId, current.requestId, payload)
+  }
 
   useEffect(() => {
     return getElectronApi().onAgentPermissionPrompt((payload) => {

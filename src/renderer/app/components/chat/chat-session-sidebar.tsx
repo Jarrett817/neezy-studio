@@ -6,7 +6,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react"
-import { useMemo, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
@@ -52,15 +52,14 @@ export function ChatSessionSidebar({
     queryFn: listPiChatSessions,
   })
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return sessions
-    const q = query.toLowerCase()
-    return sessions.filter((s) => {
-      const title = sessionListTitle(s).toLowerCase()
-      const preview = (sessionListPreview(s) ?? "").toLowerCase()
-      return title.includes(q) || preview.includes(q)
-    })
-  }, [sessions, query])
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? sessions.filter((s) => {
+        const title = sessionListTitle(s).toLowerCase()
+        const preview = (sessionListPreview(s) ?? "").toLowerCase()
+        return title.includes(q) || preview.includes(q)
+      })
+    : sessions
 
   const newSessionMutation = useMutation({
     mutationFn: () => startNewPiChatSession(),

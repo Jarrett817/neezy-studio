@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getMcpConfig: () => ipcRenderer.invoke("mcp:get-config"),
   saveMcpConfig: (servers: unknown) =>
     ipcRenderer.invoke("mcp:save-config", servers),
+
+  // ---- 定时任务 ----
+  tasksList: () => ipcRenderer.invoke("tasks:list"),
+  tasksUpsert: (task: unknown) => ipcRenderer.invoke("tasks:upsert", task),
+  tasksRemove: (id: string) => ipcRenderer.invoke("tasks:remove", id),
+  tasksRunNow: (id: string) => ipcRenderer.invoke("tasks:run-now", id),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // ---- Agent ----
@@ -104,5 +110,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const listener = (_e: unknown, payload: unknown) => handler(payload)
     ipcRenderer.on("agent:permission-notify", listener)
     return () => ipcRenderer.removeListener("agent:permission-notify", listener)
+  },
+  onTasksChanged: (handler: () => void) => {
+    const listener = () => handler()
+    ipcRenderer.on("tasks:changed", listener)
+    return () => ipcRenderer.removeListener("tasks:changed", listener)
   },
 })

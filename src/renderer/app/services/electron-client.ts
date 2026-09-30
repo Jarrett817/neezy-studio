@@ -11,6 +11,7 @@ import type {
   McpConfigSnapshot,
   McpServerDraft,
 } from "../../../shared/mcp-config"
+import type { ScheduledTask } from "../../../shared/scheduled-tasks"
 import type { SessionInfoDto } from "../../../shared/pi-session-dto"
 import type { SkillPublisherId } from "../../../shared/skill-registry"
 
@@ -199,6 +200,10 @@ type ElectronApi = {
   }>
   getMcpConfig: () => Promise<McpConfigSnapshot>
   saveMcpConfig: (servers: McpServerDraft[]) => Promise<McpConfigSnapshot>
+  tasksList: () => Promise<ScheduledTask[]>
+  tasksUpsert: (task: ScheduledTask) => Promise<ScheduledTask[]>
+  tasksRemove: (id: string) => Promise<ScheduledTask[]>
+  tasksRunNow: (id: string) => Promise<void>
   getPathForFile: (file: File) => string
 
   // Agent
@@ -246,6 +251,7 @@ type ElectronApi = {
   onAgentEvent: (handler: (payload: unknown) => void) => () => void
   onAgentPermissionPrompt: (handler: (payload: unknown) => void) => () => void
   onAgentPermissionNotify: (handler: (payload: unknown) => void) => () => void
+  onTasksChanged: (handler: () => void) => () => void
 }
 
 declare global {

@@ -80,10 +80,6 @@ export default function SkillsRoute() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold">技能</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            拖入含 SKILL.md 的文件夹（或 SKILL.md 本身）即可本地导入，供 Agent
-            调用。
-          </p>
         </div>
         <Button
           variant="ghost"

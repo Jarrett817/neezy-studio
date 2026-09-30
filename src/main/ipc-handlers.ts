@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron"
 import type { McpServerDraft } from "../shared/mcp-config"
+import type { ScheduledTask } from "../shared/scheduled-tasks"
 import {
   applyPermissionGrantToGlobalPolicy,
   loadAgentPermissionSettings,
@@ -11,6 +12,13 @@ import { loadAppConfig } from "./app-config"
 import { applyAppConfig } from "./app-config-sync"
 import { log } from "./logger"
 import { loadMcpConfig, saveMcpConfig } from "./mcp-config-store"
+import { runTaskNow } from "./scheduler"
+import {
+  loadScheduledTasks,
+  removeScheduledTask,
+  upsertScheduledTask,
+} from "./scheduled-tasks-store"
+import { broadcastTasksChanged } from "./tasks-broadcast"
 import { assertPathAllowed } from "./path-guard"
 import {
   abortAgentSession,
@@ -342,4 +350,24 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return saved
     }
   )
+
+  // ---- 定时任务 ----
+  ipcMain.handle("tasks:list", () => loadScheduledTasks())
+
+  ipcMain.handle("tasks:upsert", async (_event, task: ScheduledTask) => {
+    const tasks = await upsertScheduledTask(task)
+    broadcastTasksChanged()
+    return tasks
+  })
+
+  ipcMain.handle("tasks:remove", async (_event, id: string) => {
+    const tasks = await removeScheduledTask(id.trim())
+    broadcastTasksChanged()
+    return tasks
+  })
+
+  ipcMain.handle("tasks:run-now", async (_event, id: string) => {
+    await runTaskNow(id.trim())
+    return { ok: true }
+  })
 }

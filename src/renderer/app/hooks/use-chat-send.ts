@@ -191,6 +191,11 @@ export function useChatSend({
             })
             queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
           }
+          if (activeSessionId) {
+            void queryClient.invalidateQueries({
+              queryKey: ["agent-context-usage", activeSessionId],
+            })
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : "生成失败"
           if (getMessage(assistantId)) {

@@ -103,16 +103,7 @@ export default function McpRoute() {
 
   return (
     <div className="w-full space-y-6 pt-4">
-      <div>
-        <h1 className="text-lg font-semibold">MCP</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          通过 pi-mcp-adapter 连接 MCP 服务器（懒加载，代理工具约 200
-          token）。配置文件：
-          <span className="ml-1 font-mono text-xs break-all">
-            {data?.configPath}
-          </span>
-        </p>
-      </div>
+      <h1 className="text-lg font-semibold">MCP</h1>
 
       <div className="flex justify-end">
         <Button

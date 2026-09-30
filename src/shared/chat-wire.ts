@@ -51,7 +51,11 @@ export function formatTokenCount(n: number): string {
 export function formatContextUsageTooltip(usage: ContextUsageWire): string {
   const limit = formatTokenCount(usage.contextWindow)
   if (usage.tokens == null) return `已用 — · 上限 ${limit}`
-  return `已用 ${formatTokenCount(usage.tokens)} · 上限 ${limit}`
+  const used = formatTokenCount(usage.tokens)
+  if (usage.percent != null) {
+    return `${Math.round(usage.percent)}% · ${used} / ${limit}`
+  }
+  return `已用 ${used} · 上限 ${limit}`
 }
 
 export function formatWireUsage(

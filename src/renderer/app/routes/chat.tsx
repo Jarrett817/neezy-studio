@@ -20,6 +20,7 @@ import {
   useState,
 } from "react"
 import { flushSync } from "react-dom"
+import { useLocation } from "react-router"
 import { toast } from "sonner"
 import { ShellHeaderActions } from "~/components/app-shell"
 import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
@@ -28,6 +29,7 @@ import {
   type ChatEditorHandle,
 } from "~/components/chat/chat-editor"
 import { ChatSessionSidebar } from "~/components/chat/chat-session-sidebar"
+import { ContextUsageRing } from "~/components/chat/context-usage-ring"
 import { QueuedUserMessage } from "~/components/chat/queued-user-message"
 import { NomiFace } from "~/components/nomi-face"
 import { Button } from "~/components/ui/button"
@@ -58,10 +60,7 @@ import {
   saveWorkspaceDir,
 } from "~/services/storage-paths"
 import { useAppStore } from "~/stores/app-store"
-import {
-  type ContextUsageWire,
-  formatContextUsageTooltip,
-} from "../../../shared/chat-wire"
+import type { ContextUsageWire } from "../../../shared/chat-wire"
 
 const ChatOptionsSheet = lazy(
   () => import("~/components/chat/chat-options-sheet")
@@ -77,68 +76,11 @@ const SYSTEM_PROMPT =
   `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd。已导入的 skill 会自动加载可直接使用。需要时直接调用工具，勿声称工具不存在。`.trim()
 
 const SCROLL_NEAR_BOTTOM_PX = 80
-const CONTEXT_RING_R = 6
-const CONTEXT_RING_C = 2 * Math.PI * CONTEXT_RING_R
 
 function workspaceLabel(dir: string | undefined): string {
   if (!dir?.trim()) return "未设置"
   const parts = dir.replace(/\\/g, "/").split("/").filter(Boolean)
   return parts.at(-1) || dir
-}
-
-function ContextUsageRing({ usage }: { usage: ContextUsageWire }) {
-  const percent =
-    usage.percent == null ? 0 : Math.min(100, Math.max(0, usage.percent))
-  const known = usage.tokens != null && usage.percent != null
-  const offset = CONTEXT_RING_C * (1 - percent / 100)
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 rounded-lg text-muted-foreground/70 hover:bg-accent/30 hover:text-foreground"
-            aria-label={formatContextUsageTooltip(usage)}
-          >
-            <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
-              <circle
-                cx="8"
-                cy="8"
-                r={CONTEXT_RING_R}
-                fill="none"
-                className="stroke-muted-foreground/25"
-                strokeWidth="2"
-              />
-              <circle
-                cx="8"
-                cy="8"
-                r={CONTEXT_RING_R}
-                fill="none"
-                className={cn(
-                  "transition-[stroke-dashoffset]",
-                  !known
-                    ? "stroke-muted-foreground/40"
-                    : percent >= 90
-                      ? "stroke-destructive"
-                      : percent >= 70
-                        ? "stroke-amber-500"
-                        : "stroke-primary"
-                )}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeDasharray={CONTEXT_RING_C}
-                strokeDashoffset={known ? offset : CONTEXT_RING_C * 0.92}
-              />
-            </svg>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {formatContextUsageTooltip(usage)}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
 }
 
 function WorkspacePicker({ onChanged }: { onChanged: () => void }) {
@@ -232,6 +174,9 @@ function isNearBottom(el: HTMLElement) {
 }
 
 export default function ChatRoute() {
+  const { pathname } = useLocation()
+  const isChatRoute = pathname === "/chat" || pathname === "/"
+
   const {
     activeSessionId,
     setActiveSessionId,
@@ -243,6 +188,12 @@ export default function ChatRoute() {
 
   const queryClient = useQueryClient()
   const messages = useAppStore((s) => s.conversationHistory)
+  const { main: mainMessages, queued: queuedMessages } =
+    partitionChatMessages(messages)
+  const lastMain = mainMessages.at(-1)
+  const scrollTailKey = lastMain
+    ? `${lastMain.id}:${lastMain.content.length}:${lastMain.thinking?.length ?? 0}:${lastMain.activity?.length ?? 0}:${lastMain.isStreaming ? 1 : 0}`
+    : ""
   const editorRef = useRef<ChatEditorHandle>(null)
   const [hasText, setHasText] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{
@@ -260,11 +211,34 @@ export default function ChatRoute() {
     if (el) stickToBottomRef.current = isNearBottom(el)
   }
 
+  const scrollToBottom = (force = false) => {
+    if (!force && !stickToBottomRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  }
+
+  useLayoutEffect(() => {
+    if (!isChatRoute || !sessionsReady || messages.length === 0) return
+    stickToBottomRef.current = true
+    scrollToBottom(true)
+  }, [isChatRoute, activeSessionId, sessionsReady])
+
   useLayoutEffect(() => {
     if (messages.length === 0) return
-    const el = scrollRef.current
-    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [messages])
+    scrollToBottom(false)
+  }, [scrollTailKey])
+
+  useEffect(() => {
+    if (!isChatRoute || !sessionsReady || messages.length === 0) return
+    const content = scrollRef.current?.querySelector("[data-chat-scroll-content]")
+    if (!(content instanceof HTMLElement)) return
+    const ro = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollToBottom(false)
+    })
+    ro.observe(content)
+    return () => ro.disconnect()
+  }, [isChatRoute, activeSessionId, sessionsReady])
 
   const { data: runtimeSettings } = useQuery({
     queryKey: ["runtime-settings"],
@@ -312,8 +286,15 @@ export default function ChatRoute() {
       if (!activeSessionId) throw new Error("no session")
       return getAgentContextUsage(activeSessionId)
     },
-    enabled: Boolean(activeSessionId && sessionsReady && !isGenerating),
+    enabled: Boolean(activeSessionId && sessionsReady),
+    refetchInterval: isGenerating ? 2000 : false,
   })
+
+  const contextUsageForRing: ContextUsageWire = contextUsage ?? {
+    tokens: null,
+    contextWindow: chatEntry?.contextWindow ?? 128_000,
+    percent: null,
+  }
 
   const { data: skillCommands = [] } = useQuery({
     queryKey: ["agent-skill-commands", activeSessionId],
@@ -379,8 +360,6 @@ export default function ChatRoute() {
   }
 
   const chatModelName = chatEntry ? entryDisplayName(chatEntry) : "未配置"
-  const { main: mainMessages, queued: queuedMessages } =
-    partitionChatMessages(messages)
   const lastAssistant = mainMessages.findLast((m) => m.role === "assistant")
 
   if (!sessionsReady) {
@@ -394,7 +373,8 @@ export default function ChatRoute() {
 
   return (
     <div className="flex h-full min-h-0">
-      <ShellHeaderActions>
+      {isChatRoute ? (
+        <ShellHeaderActions>
         <ChatSessionSidebar
           activeSessionId={activeSessionId}
           onSelectSession={async (id) => {
@@ -423,7 +403,6 @@ export default function ChatRoute() {
           }}
         />
         <div className="min-w-0 flex-1" />
-        {contextUsage ? <ContextUsageRing usage={contextUsage} /> : null}
         <Button
           variant="ghost"
           size="icon"
@@ -442,7 +421,8 @@ export default function ChatRoute() {
             />
           </Suspense>
         ) : null}
-      </ShellHeaderActions>
+        </ShellHeaderActions>
+      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
@@ -458,7 +438,10 @@ export default function ChatRoute() {
               </p>
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-5xl px-4 pb-8">
+            <div
+              data-chat-scroll-content
+              className="mx-auto flex min-h-full w-full max-w-5xl flex-col justify-end px-4 pb-8"
+            >
               <Suspense fallback={null}>
                 {mainMessages.map((m, i) => (
                   <ChatMessageBubble
@@ -536,6 +519,9 @@ export default function ChatRoute() {
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
+                  {activeSessionId ? (
+                    <ContextUsageRing usage={contextUsageForRing} />
+                  ) : null}
                   {isGenerating ? (
                     <Button
                       variant="outline"

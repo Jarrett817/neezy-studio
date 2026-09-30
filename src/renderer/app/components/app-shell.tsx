@@ -1,5 +1,6 @@
 import { motion } from "framer-motion"
 import {
+  CalendarClock,
   Cable,
   MessagesSquare,
   Settings,
@@ -20,11 +21,13 @@ import {
 
 const mainNavItems = [
   { href: "/chat", label: "对话", Icon: MessagesSquare, end: false },
+  { href: "/tasks", label: "定时", Icon: CalendarClock, end: false },
   { href: "/skills", label: "技能", Icon: SlidersHorizontal, end: false },
   { href: "/mcp", label: "MCP", Icon: Cable, end: false },
 ] as const
 
 const pageTitles: Record<string, string> = {
+  "/tasks": "定时任务",
   "/skills": "技能",
   "/mcp": "MCP",
   "/connect": "模型与连接",
@@ -68,12 +71,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })()
   }, [])
 
-  const isChatActive = pathname === "/chat" || pathname === "/"
-
   return (
-    <ShellHeaderActionsContext.Provider
-      value={isChatActive ? headerActionsEl : null}
-    >
+    <ShellHeaderActionsContext.Provider value={headerActionsEl}>
       <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside className="z-30 flex w-16 shrink-0 flex-col items-center border-r border-border/60 bg-card shadow-sm">
           <div className="flex h-14 shrink-0 items-center justify-center">

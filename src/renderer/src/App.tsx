@@ -59,6 +59,7 @@ const router = createHashRouter([
     children: [
       { index: true, element: <Navigate to="/chat" replace /> },
       { path: "chat", ...lazyPage(() => import("~/routes/chat")) },
+      { path: "tasks", ...lazyPage(() => import("~/routes/tasks")) },
       { path: "skills", ...lazyPage(() => import("~/routes/skills")) },
       { path: "mcp", ...lazyPage(() => import("~/routes/mcp")) },
       { path: "connect", ...lazyPage(() => import("~/routes/connect")) },

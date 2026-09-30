@@ -17,6 +17,7 @@ import {
 import { loadAppConfig } from "./app-config"
 import { applyAppConfig } from "./app-config-sync"
 import { registerCoreIpcHandlers } from "./core-ipc"
+import { startScheduler, stopScheduler } from "./scheduler"
 import { installCsp } from "./csp"
 import { registerIpcHandlers } from "./ipc-handlers"
 import { initMainLogger, log } from "./logger"
@@ -124,6 +125,7 @@ if (!app.requestSingleInstanceLock()) {
       applyAppConfig(app, appConfig)
 
       await createWindow()
+      startScheduler({ getMainWindow: () => mainWindow })
     } catch (error) {
       log.error("[main] startup failed:", error)
       dialog.showErrorBox(
@@ -143,6 +145,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on("window-all-closed", () => {
+    stopScheduler()
     if (process.platform !== "darwin") app.quit()
   })
 }

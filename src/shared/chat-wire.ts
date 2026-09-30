@@ -36,6 +36,9 @@ export interface ChatWireMessage {
   timestamp: number
 }
 
+export const AGENT_PRODUCT_SYSTEM_PROMPT =
+  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd。已导入的 skill 会自动加载可直接使用。需要时直接调用工具，勿声称工具不存在。`.trim()
+
 export interface ContextUsageWire {
   tokens: number | null
   contextWindow: number

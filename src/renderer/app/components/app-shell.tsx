@@ -10,6 +10,7 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { Link, NavLink, useLocation } from "react-router"
 
+import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
 import { NomiFace } from "~/components/nomi-face"
 import { ModelPill } from "~/components/shell/model-pill"
 import { queryClient } from "~/lib/query-client"
@@ -70,6 +71,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     })()
   }, [])
+
+  const permissionDialog = useAgentPermissionDialog()
 
   return (
     <ShellHeaderActionsContext.Provider value={headerActionsEl}>
@@ -147,6 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      {permissionDialog}
     </ShellHeaderActionsContext.Provider>
   )
 }

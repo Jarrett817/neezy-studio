@@ -1,5 +1,6 @@
 import { type BrowserWindow, Notification } from "electron"
 
+import { AGENT_PRODUCT_SYSTEM_PROMPT } from "../shared/chat-wire"
 import type { ScheduledTask, TaskSchedule } from "../shared/scheduled-tasks"
 import { log } from "./logger"
 import {
@@ -73,14 +74,18 @@ async function runTask(task: ScheduledTask): Promise<void> {
   try {
     const diskSessionId = await createAgentSession(window, { createNew: true })
     await renameAgentSession(diskSessionId, task.name)
-    if (task.systemPrompt?.trim()) {
-      await configureAgentSession(diskSessionId, {
-        systemPrompt: task.systemPrompt,
-      })
-    }
+    const systemPrompt = [task.systemPrompt?.trim(), AGENT_PRODUCT_SYSTEM_PROMPT]
+      .filter(Boolean)
+      .join("\n\n")
+    await configureAgentSession(diskSessionId, { systemPrompt })
     await patchTaskStatus(task.id, { lastSessionId: diskSessionId })
     broadcastTasksChanged()
     await promptAgent(diskSessionId, task.prompt)
+    if (!window.isDestroyed()) {
+      window.webContents.send("tasks:session-complete", {
+        sessionId: diskSessionId,
+      })
+    }
     await patchTaskStatus(task.id, {
       lastStatus: "success",
       lastRunAt: Date.now(),

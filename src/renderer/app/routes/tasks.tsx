@@ -24,7 +24,6 @@ import {
   subscribeTasksChanged,
   upsertScheduledTask,
 } from "~/services/scheduled-tasks"
-import { setActiveSessionId } from "~/services/pi-chat-sessions"
 import {
   describeSchedule,
   describeStatus,
@@ -262,7 +261,7 @@ export default function TasksRoute() {
 
   const runMutation = useMutation({
     mutationFn: runTaskNow,
-    onSuccess: () => toast.success("已开始执行"),
+    onSuccess: () => toast.success("执行完成"),
     onError: (err: Error) => toast.error(err.message || "执行失败"),
   })
 
@@ -285,9 +284,8 @@ export default function TasksRoute() {
     saveMutation.mutate({ ...draft, name, prompt: draft.prompt.trim() })
   }
 
-  const openLastSession = async (sessionId: string) => {
-    await setActiveSessionId(sessionId)
-    navigate("/chat")
+  const openLastSession = (sessionId: string) => {
+    navigate("/chat", { state: { selectSessionId: sessionId } })
   }
 
   return (

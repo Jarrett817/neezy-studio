@@ -20,10 +20,9 @@ import {
   useState,
 } from "react"
 import { flushSync } from "react-dom"
-import { useLocation } from "react-router"
+import { useLocation, useNavigate } from "react-router"
 import { toast } from "sonner"
 import { ShellHeaderActions } from "~/components/app-shell"
-import { useAgentPermissionDialog } from "~/components/chat/agent-permission-dialog"
 import {
   ChatEditor,
   type ChatEditorHandle,
@@ -52,7 +51,11 @@ import {
   getAgentContextUsage,
   listAgentSkillCommands,
 } from "~/services/pi-agent-client"
-import { startNewPiChatSession } from "~/services/pi-chat-sessions"
+import { getElectronApi } from "~/services/electron-client"
+import {
+  loadPiChatMessages,
+  startNewPiChatSession,
+} from "~/services/pi-chat-sessions"
 import { getRuntimeSettings, resolveChatModelEntry } from "~/services/settings"
 import {
   getStoragePaths,
@@ -60,7 +63,10 @@ import {
   saveWorkspaceDir,
 } from "~/services/storage-paths"
 import { useAppStore } from "~/stores/app-store"
-import type { ContextUsageWire } from "../../../shared/chat-wire"
+import {
+  AGENT_PRODUCT_SYSTEM_PROMPT,
+  type ContextUsageWire,
+} from "../../../shared/chat-wire"
 
 const ChatOptionsSheet = lazy(
   () => import("~/components/chat/chat-options-sheet")
@@ -71,9 +77,6 @@ const ChatMessageBubble = lazy(() =>
     default: m.ChatMessageBubble,
   }))
 )
-
-const SYSTEM_PROMPT =
-  `你是 Neezy 个人 Agent。回答用中文，语气清晰自然。工作区即当前 cwd。已导入的 skill 会自动加载可直接使用。需要时直接调用工具，勿声称工具不存在。`.trim()
 
 const SCROLL_NEAR_BOTTOM_PX = 80
 
@@ -174,7 +177,8 @@ function isNearBottom(el: HTMLElement) {
 }
 
 export default function ChatRoute() {
-  const { pathname } = useLocation()
+  const { pathname, state: locationState } = useLocation()
+  const navigate = useNavigate()
   const isChatRoute = pathname === "/chat" || pathname === "/"
 
   const {
@@ -187,6 +191,7 @@ export default function ChatRoute() {
   } = useChatSession()
 
   const queryClient = useQueryClient()
+  const setConversationHistory = useAppStore((s) => s.setConversationHistory)
   const messages = useAppStore((s) => s.conversationHistory)
   const { main: mainMessages, queued: queuedMessages } =
     partitionChatMessages(messages)
@@ -258,7 +263,7 @@ export default function ChatRoute() {
     cancelQueued,
     editQueued,
   } = useChatSend({
-    agentSystemPrompt: SYSTEM_PROMPT,
+    agentSystemPrompt: AGENT_PRODUCT_SYSTEM_PROMPT,
     activeSessionId,
     onSessionCreated: (sid) => flushSync(() => setActiveSessionId(sid)),
     chatEntry,
@@ -279,6 +284,30 @@ export default function ChatRoute() {
       })
       .catch(() => {})
   }, [activeSessionId, sessionsReady, resetAgent, queryClient])
+
+  useEffect(() => {
+    const selectSessionId = (
+      locationState as { selectSessionId?: string } | null
+    )?.selectSessionId
+    if (!selectSessionId || !sessionsReady) return
+    void handleSelectSession(selectSessionId).finally(() => {
+      navigate(pathname, { replace: true, state: null })
+    })
+  }, [locationState, sessionsReady, handleSelectSession, navigate, pathname])
+
+  useEffect(() => {
+    return getElectronApi().onTasksSessionComplete(({ sessionId }) => {
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] })
+      if (sessionId !== activeSessionId) return
+      void loadPiChatMessages(sessionId)
+        .then(setConversationHistory)
+        .catch(() => {})
+    })
+  }, [
+    activeSessionId,
+    queryClient,
+    setConversationHistory,
+  ])
 
   const { data: contextUsage } = useQuery({
     queryKey: ["agent-context-usage", activeSessionId],
@@ -304,8 +333,6 @@ export default function ChatRoute() {
     },
     enabled: Boolean(activeSessionId && sessionsReady),
   })
-
-  const permissionDialog = useAgentPermissionDialog(activeSessionId)
 
   const doSend = () => {
     const contentJson = editorRef.current?.getJSON() ?? null
@@ -550,7 +577,6 @@ export default function ChatRoute() {
           </div>
         </div>
       </div>
-      {permissionDialog}
     </div>
   )
 }

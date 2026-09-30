@@ -116,4 +116,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("tasks:changed", listener)
     return () => ipcRenderer.removeListener("tasks:changed", listener)
   },
+  onTasksSessionComplete: (
+    handler: (payload: { sessionId: string }) => void
+  ) => {
+    const listener = (_e: unknown, payload: { sessionId: string }) =>
+      handler(payload)
+    ipcRenderer.on("tasks:session-complete", listener)
+    return () =>
+      ipcRenderer.removeListener("tasks:session-complete", listener)
+  },
 })

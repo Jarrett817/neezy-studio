@@ -35,7 +35,7 @@ async function respondPermission(
   })
 }
 
-export function useAgentPermissionDialog(activeSessionId: string | null) {
+export function useAgentPermissionDialog() {
   const [prompt, setPrompt] = useState<AgentPermissionPrompt | null>(null)
 
   const dismiss = async (payload: {
@@ -50,11 +50,9 @@ export function useAgentPermissionDialog(activeSessionId: string | null) {
 
   useEffect(() => {
     return getElectronApi().onAgentPermissionPrompt((payload) => {
-      const p = payload as AgentPermissionPrompt
-      if (!activeSessionId || p.sessionId !== activeSessionId) return
-      setPrompt(p)
+      setPrompt(payload as AgentPermissionPrompt)
     })
-  }, [activeSessionId])
+  }, [])
 
   useEffect(() => {
     return getElectronApi().onAgentPermissionNotify((payload) => {
@@ -63,7 +61,6 @@ export function useAgentPermissionDialog(activeSessionId: string | null) {
         message: string
         type?: string
       }
-      if (!activeSessionId || p.sessionId !== activeSessionId) return
       const fn =
         p.type === "error"
           ? toast.error
@@ -72,7 +69,7 @@ export function useAgentPermissionDialog(activeSessionId: string | null) {
             : toast.info
       fn(p.message)
     })
-  }, [activeSessionId])
+  }, [])
 
   return prompt ? (
     <Suspense fallback={null}>

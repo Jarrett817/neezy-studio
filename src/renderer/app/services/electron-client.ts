@@ -252,6 +252,9 @@ type ElectronApi = {
   onAgentPermissionPrompt: (handler: (payload: unknown) => void) => () => void
   onAgentPermissionNotify: (handler: (payload: unknown) => void) => () => void
   onTasksChanged: (handler: () => void) => () => void
+  onTasksSessionComplete: (
+    handler: (payload: { sessionId: string }) => void
+  ) => () => void
 }
 
 declare global {

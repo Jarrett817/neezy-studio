@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileJson2 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
+import { JsonCodeEditor } from "~/components/json-code-editor"
 import { Button } from "~/components/ui/button"
-import { Textarea } from "~/components/ui/textarea"
 import { getElectronApi } from "~/services/electron-client"
 
 async function getMcpJson(): Promise<{ path: string; content: string }> {
@@ -14,6 +14,14 @@ async function saveMcpJson(content: string): Promise<{ ok: boolean }> {
   return getElectronApi().saveMcpJson(content)
 }
 
+function tryFormatJson(raw: string): string | null {
+  try {
+    return `${JSON.stringify(JSON.parse(raw), null, 2)}\n`
+  } catch {
+    return null
+  }
+}
+
 export default function McpRoute() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({
@@ -22,12 +30,46 @@ export default function McpRoute() {
   })
   const [draft, setDraft] = useState("")
   const [dirty, setDirty] = useState(false)
+  const formatTimerRef = useRef<number | null>(null)
+  const formattingRef = useRef(false)
+  const initialLoadRef = useRef(false)
 
   useEffect(() => {
-    if (data && !dirty) {
-      setDraft(data.content)
+    if (!data || dirty) return
+    initialLoadRef.current = true
+    setDraft(data.content)
+    const formatted = tryFormatJson(data.content)
+    if (formatted && formatted !== data.content) {
+      formattingRef.current = true
+      setDraft(formatted)
+      setDirty(true)
+      formattingRef.current = false
     }
-  }, [data, dirty])
+    initialLoadRef.current = false
+  }, [data, dirty]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const scheduleFormat = (value: string) => {
+    if (formattingRef.current) return
+    if (formatTimerRef.current) {
+      window.clearTimeout(formatTimerRef.current)
+    }
+    formatTimerRef.current = window.setTimeout(() => {
+      formatTimerRef.current = null
+      const formatted = tryFormatJson(value)
+      if (!formatted || formatted === value) return
+      formattingRef.current = true
+      setDraft(formatted)
+      formattingRef.current = false
+    }, 600)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (formatTimerRef.current) {
+        window.clearTimeout(formatTimerRef.current)
+      }
+    }
+  }, [])
 
   const saveMutation = useMutation({
     mutationFn: () => saveMcpJson(draft),
@@ -59,14 +101,18 @@ export default function McpRoute() {
         </div>
       </div>
 
-      <Textarea
+      <JsonCodeEditor
         value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value)
-          setDirty(true)
+        onChange={(value) => {
+          if (formattingRef.current) return
+          setDraft(value)
+          if (!initialLoadRef.current) {
+            setDirty(true)
+          }
+          scheduleFormat(value)
         }}
-        className="min-h-[min(420px,50vh)] flex-1 resize-y font-mono text-sm leading-relaxed"
-        placeholder={`{\n  "mcpServers": {\n    "playwright": {\n      "command": "npx",\n      "args": ["@playwright/mcp@latest"]\n    }\n  }\n}`}
+        className="flex-1 min-h-0"
+        minHeight="min(420px,50vh)"
       />
 
       <div className="flex shrink-0 items-center gap-2">
@@ -74,7 +120,7 @@ export default function McpRoute() {
           disabled={!dirty || saveMutation.isPending}
           onClick={() => saveMutation.mutate()}
         >
-          保存
+          {saveMutation.isPending ? "保存中…" : "保存"}
         </Button>
         {dirty ? (
           <span className="text-xs text-muted-foreground">有未保存修改</span>

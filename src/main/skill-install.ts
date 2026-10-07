@@ -117,9 +117,7 @@ async function listSkillsInRoot(
   return installed
 }
 
-export async function listInstalledSkills(
-  app: App
-): Promise<InstalledSkill[]> {
+export async function listInstalledSkills(app: App): Promise<InstalledSkill[]> {
   const batches = await Promise.all([
     listSkillsInRoot("agents", getAgentsSkillsRoot()),
     listSkillsInRoot("pi-agent", getPiAgentSkillsRoot(app)),

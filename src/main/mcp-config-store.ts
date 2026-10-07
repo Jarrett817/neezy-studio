@@ -143,3 +143,41 @@ export function ensureMcpConfigFiles(app: App): void {
     writeJsonFile(adapterPath, { mcpServers: {} })
   }
 }
+
+const DEFAULT_MCP_JSON = `{
+  "mcpServers": {}
+}
+`
+
+export function readMcpJson(app: App): { path: string; content: string } {
+  const agentDir = getPiAgentDir(app)
+  const adapterPath = getAdapterConfigPath(agentDir)
+  ensureMcpConfigFiles(app)
+  try {
+    const content = fs.readFileSync(adapterPath, "utf-8")
+    return { path: adapterPath, content }
+  } catch {
+    return { path: adapterPath, content: DEFAULT_MCP_JSON }
+  }
+}
+
+export async function writeMcpJson(app: App, content: string): Promise<void> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch (e) {
+    throw new Error(`JSON 格式错误：${e instanceof Error ? e.message : e}`)
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("顶层必须是对象")
+  }
+  const agentDir = getPiAgentDir(app)
+  const adapterPath = getAdapterConfigPath(agentDir)
+  const permissionPath = getPermissionMcpPath(agentDir)
+  writeJsonFile(adapterPath, parsed)
+  const mcpServers =
+    parsed && typeof parsed === "object" && "mcpServers" in parsed
+      ? (parsed as { mcpServers?: unknown }).mcpServers
+      : {}
+  writeJsonFile(permissionPath, { mcpServers })
+}

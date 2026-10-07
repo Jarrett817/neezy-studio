@@ -87,6 +87,8 @@ type ElectronApi = {
   }>
   getMcpConfig: () => Promise<McpConfigSnapshot>
   saveMcpConfig: (servers: McpServerDraft[]) => Promise<McpConfigSnapshot>
+  getMcpJson: () => Promise<{ path: string; content: string }>
+  saveMcpJson: (content: string) => Promise<{ ok: boolean }>
   tasksList: () => Promise<ScheduledTask[]>
   tasksUpsert: (task: ScheduledTask) => Promise<ScheduledTask[]>
   tasksRemove: (id: string) => Promise<ScheduledTask[]>

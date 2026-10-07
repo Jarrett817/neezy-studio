@@ -2,11 +2,7 @@ import { type BrowserWindow, Notification } from "electron"
 
 import type { ScheduledTask, TaskSchedule } from "../shared/scheduled-tasks"
 import { log } from "./logger"
-import {
-  createAgentSession,
-  promptAgent,
-  renameAgentSession,
-} from "./pi-agent"
+import { createAgentSession, promptAgent, renameAgentSession } from "./pi-agent"
 import {
   loadScheduledTasks,
   patchTaskStatus,

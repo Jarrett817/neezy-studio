@@ -233,7 +233,9 @@ export default function ChatRoute() {
 
   useEffect(() => {
     if (!isChatRoute || !sessionsReady || messages.length === 0) return
-    const content = scrollRef.current?.querySelector("[data-chat-scroll-content]")
+    const content = scrollRef.current?.querySelector(
+      "[data-chat-scroll-content]"
+    )
     if (!(content instanceof HTMLElement)) return
     const ro = new ResizeObserver(() => {
       if (stickToBottomRef.current) scrollToBottom(false)
@@ -299,11 +301,7 @@ export default function ChatRoute() {
         .then(setConversationHistory)
         .catch(() => {})
     })
-  }, [
-    activeSessionId,
-    queryClient,
-    setConversationHistory,
-  ])
+  }, [activeSessionId, queryClient, setConversationHistory])
 
   const { data: contextUsage } = useQuery({
     queryKey: ["agent-context-usage", activeSessionId],
@@ -398,52 +396,52 @@ export default function ChatRoute() {
     <div className="flex h-full min-h-0">
       {isChatRoute ? (
         <ShellHeaderActions>
-        <ChatSessionSidebar
-          activeSessionId={activeSessionId}
-          onSelectSession={async (id) => {
-            await handleSelectSession(id)
-            resetAgent([], id).catch(() => {})
-          }}
-          onSessionCreated={async (id) => {
-            await handleNewSession(id)
-            resetAgent([], id).catch(() => {})
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
-          aria-label="新对话"
-          title="新对话"
-          onClick={() => void doNewSession()}
-        >
-          <MessageSquarePlus className="size-4" />
-        </Button>
-        <WorkspacePicker
-          onChanged={() => {
-            if (!activeSessionId) return
-            resetAgent([], activeSessionId).catch(() => {})
-          }}
-        />
-        <div className="min-w-0 flex-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
-          aria-label="对话选项"
-          onClick={() => setOptionsOpen(true)}
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-        {optionsOpen ? (
-          <Suspense fallback={null}>
-            <ChatOptionsSheet
-              open
-              toolCalls={lastAssistant?.toolCalls}
-              onOpenChange={setOptionsOpen}
-            />
-          </Suspense>
-        ) : null}
+          <ChatSessionSidebar
+            activeSessionId={activeSessionId}
+            onSelectSession={async (id) => {
+              await handleSelectSession(id)
+              resetAgent([], id).catch(() => {})
+            }}
+            onSessionCreated={async (id) => {
+              await handleNewSession(id)
+              resetAgent([], id).catch(() => {})
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
+            aria-label="新对话"
+            title="新对话"
+            onClick={() => void doNewSession()}
+          >
+            <MessageSquarePlus className="size-4" />
+          </Button>
+          <WorkspacePicker
+            onChanged={() => {
+              if (!activeSessionId) return
+              resetAgent([], activeSessionId).catch(() => {})
+            }}
+          />
+          <div className="min-w-0 flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-lg text-muted-foreground/60 hover:bg-accent/30 hover:text-foreground"
+            aria-label="对话选项"
+            onClick={() => setOptionsOpen(true)}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+          {optionsOpen ? (
+            <Suspense fallback={null}>
+              <ChatOptionsSheet
+                open
+                toolCalls={lastAssistant?.toolCalls}
+                onOpenChange={setOptionsOpen}
+              />
+            </Suspense>
+          ) : null}
         </ShellHeaderActions>
       ) : null}
 

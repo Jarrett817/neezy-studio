@@ -45,10 +45,6 @@ export default function AgentsMdRoute() {
         <FileText className="mt-0.5 size-5 shrink-0 text-primary" />
         <div className="min-w-0 space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">AGENTS.md</h2>
-          <p className="text-sm text-muted-foreground">
-            Pi 跨会话持久说明，写入每轮 system 的
-            project_context（与单次对话无关）。
-          </p>
           <p className="font-mono text-xs break-all text-muted-foreground">
             {displayPath}
           </p>

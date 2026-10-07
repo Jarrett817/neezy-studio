@@ -11,7 +11,12 @@ import {
 import { loadAppConfig } from "./app-config"
 import { applyAppConfig } from "./app-config-sync"
 import { log } from "./logger"
-import { loadMcpConfig, saveMcpConfig } from "./mcp-config-store"
+import {
+  loadMcpConfig,
+  readMcpJson,
+  saveMcpConfig,
+  writeMcpJson,
+} from "./mcp-config-store"
 import { runTaskNow } from "./scheduler"
 import {
   loadScheduledTasks,
@@ -19,10 +24,7 @@ import {
   upsertScheduledTask,
 } from "./scheduled-tasks-store"
 import { broadcastTasksChanged } from "./tasks-broadcast"
-import {
-  readAgentDirAgentsMd,
-  writeAgentDirAgentsMd,
-} from "./agents-md"
+import { readAgentDirAgentsMd, writeAgentDirAgentsMd } from "./agents-md"
 import { assertPathAllowed } from "./path-guard"
 import {
   abortAgentSession,
@@ -349,6 +351,18 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return saved
     }
   )
+
+  ipcMain.handle("mcp:get-json", () => readMcpJson(app))
+
+  ipcMain.handle("mcp:save-json", async (_event, content: unknown) => {
+    if (typeof content !== "string") {
+      throw new Error("无效内容")
+    }
+    await writeMcpJson(app, content)
+    invalidatePiResourceLoaderCache()
+    await destroyAllAgentSessions()
+    return { ok: true }
+  })
 
   // ---- 定时任务 ----
   ipcMain.handle("tasks:list", () => loadScheduledTasks())

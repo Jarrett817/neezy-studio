@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getMcpConfig: () => ipcRenderer.invoke("mcp:get-config"),
   saveMcpConfig: (servers: unknown) =>
     ipcRenderer.invoke("mcp:save-config", servers),
+  getMcpJson: () => ipcRenderer.invoke("mcp:get-json"),
+  saveMcpJson: (content: string) =>
+    ipcRenderer.invoke("mcp:save-json", content),
 
   // ---- 定时任务 ----
   tasksList: () => ipcRenderer.invoke("tasks:list"),
@@ -122,7 +125,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const listener = (_e: unknown, payload: { sessionId: string }) =>
       handler(payload)
     ipcRenderer.on("tasks:session-complete", listener)
-    return () =>
-      ipcRenderer.removeListener("tasks:session-complete", listener)
+    return () => ipcRenderer.removeListener("tasks:session-complete", listener)
   },
 })

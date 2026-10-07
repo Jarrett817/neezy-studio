@@ -23,7 +23,10 @@ export function textFromAssistantMessage(
   return { content, thinking }
 }
 
-function mergeStreamSegment(prev: PiAgentStreamState, next: PiAgentStreamState) {
+function mergeStreamSegment(
+  prev: PiAgentStreamState,
+  next: PiAgentStreamState
+) {
   let { content, thinking } = prev
   if (next.thinking) {
     if (!thinking || next.thinking.length >= thinking.length) {

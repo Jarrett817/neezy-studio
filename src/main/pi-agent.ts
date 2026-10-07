@@ -101,7 +101,10 @@ async function getResourceLoader(
   settingsManager: SettingsManager
 ): Promise<ResourceLoader> {
   const skillRows = await listInstalledSkills(app)
-  const skillKey = skillRows.map((s) => s.installKey).sort().join(",")
+  const skillKey = skillRows
+    .map((s) => s.installKey)
+    .sort()
+    .join(",")
   const key = `${cwd}\0${agentDir}\0${skillKey}`
   if (resourceLoaderCache?.key === key) {
     return resourceLoaderCache.loader

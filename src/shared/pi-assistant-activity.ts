@@ -94,9 +94,7 @@ export function mergeAssistantActivity(
       const trimmed = item.text.trim()
       if (!trimmed) continue
       if (
-        merged.some(
-          (a) => a.kind === "thinking" && a.text.trim() === trimmed
-        )
+        merged.some((a) => a.kind === "thinking" && a.text.trim() === trimmed)
       ) {
         continue
       }

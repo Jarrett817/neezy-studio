@@ -1,266 +1,85 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2 } from "lucide-react"
+import { FileJson2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-
 import { Button } from "~/components/ui/button"
-import { Input } from "~/components/ui/input"
-import { Label } from "~/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select"
-import { Switch } from "~/components/ui/switch"
 import { Textarea } from "~/components/ui/textarea"
-import { cn } from "~/lib/utils"
-import {
-  getMcpConfig,
-  type McpServerDraft,
-  saveMcpConfig,
-} from "~/services/mcp-config"
+import { getElectronApi } from "~/services/electron-client"
 
-type McpDraftRow = McpServerDraft & { rowId: string }
-
-function newRowId(): string {
-  return crypto.randomUUID()
+async function getMcpJson(): Promise<{ path: string; content: string }> {
+  return getElectronApi().getMcpJson()
 }
 
-function toDraftRow(server: McpServerDraft): McpDraftRow {
-  return { ...server, rowId: newRowId() }
-}
-
-function toServerDraft(row: McpDraftRow): McpServerDraft {
-  const { rowId: _rowId, ...server } = row
-  return server
-}
-
-function emptyServer(): McpDraftRow {
-  return {
-    rowId: newRowId(),
-    name: "",
-    transport: "stdio",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
-    disabled: false,
-  }
-}
-
-function envToText(env?: Record<string, string>): string {
-  if (!env) return ""
-  return Object.entries(env)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n")
-}
-
-function textToEnv(text: string): Record<string, string> | undefined {
-  const out: Record<string, string> = {}
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("#")) continue
-    const i = trimmed.indexOf("=")
-    if (i <= 0) continue
-    out[trimmed.slice(0, i).trim()] = trimmed.slice(i + 1)
-  }
-  return Object.keys(out).length > 0 ? out : undefined
+async function saveMcpJson(content: string): Promise<{ ok: boolean }> {
+  return getElectronApi().saveMcpJson(content)
 }
 
 export default function McpRoute() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({
-    queryKey: ["mcp-config"],
-    queryFn: getMcpConfig,
+    queryKey: ["mcp-json"],
+    queryFn: getMcpJson,
   })
-  const [draft, setDraft] = useState<McpDraftRow[]>([])
+  const [draft, setDraft] = useState("")
+  const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    if (data) setDraft(data.servers.map(toDraftRow))
-  }, [data])
+    if (data && !dirty) {
+      setDraft(data.content)
+    }
+  }, [data, dirty])
 
   const saveMutation = useMutation({
-    mutationFn: () => saveMcpConfig(draft.map(toServerDraft)),
-    onSuccess: (saved) => {
-      queryClient.setQueryData(["mcp-config"], saved)
-      setDraft(saved.servers.map(toDraftRow))
-      toast.success("MCP 配置已保存", {
-        description: "已写入 mcp-adapter.json；新建对话后生效。",
+    mutationFn: () => saveMcpJson(draft),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["mcp-json"] })
+      setDirty(false)
+      toast.success("已保存", {
+        description: "新建对话后生效；已断开当前 Agent 会话以刷新。",
       })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "保存失败"),
   })
 
-  const updateAt = (index: number, patch: Partial<McpServerDraft>) => {
-    setDraft((prev) =>
-      prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
-    )
-  }
-
-  if (isLoading) {
+  if (isLoading || !data) {
     return <p className="pt-4 text-sm text-muted-foreground">加载中…</p>
   }
 
-  return (
-    <div className="w-full space-y-6 pt-4">
-      <h1 className="text-lg font-semibold">MCP</h1>
+  const displayPath = data.path.replace(/\\/g, "/")
 
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="rounded-xl"
-          onClick={() => setDraft((prev) => [...prev, emptyServer()])}
-        >
-          <Plus className="size-4" />
-          添加服务器
-        </Button>
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-4 pt-4">
+      <div className="flex items-start gap-2">
+        <FileJson2 className="mt-0.5 size-5 shrink-0 text-primary" />
+        <div className="min-w-0 space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight">mcp.json</h2>
+          <p className="font-mono text-xs break-all text-muted-foreground">
+            {displayPath}
+          </p>
+        </div>
       </div>
 
-      {draft.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border/70 py-10 text-center text-sm text-muted-foreground">
-          还没有 MCP 服务器。添加后 Agent 可通过 mcp 工具按需调用。
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {draft.map((server, index) => (
-            <li
-              key={server.rowId}
-              className={cn(
-                "space-y-3 rounded-2xl border border-border/60 bg-card p-4 shadow-sm",
-                server.disabled && "opacity-60"
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={!server.disabled}
-                    onCheckedChange={(on) => updateAt(index, { disabled: !on })}
-                  />
-                  <span className="text-xs text-muted-foreground">启用</span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() =>
-                    setDraft((prev) => prev.filter((_, i) => i !== index))
-                  }
-                  aria-label="删除"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
+      <Textarea
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setDirty(true)
+        }}
+        className="min-h-[min(420px,50vh)] flex-1 resize-y font-mono text-sm leading-relaxed"
+        placeholder={`{\n  "mcpServers": {\n    "playwright": {\n      "command": "npx",\n      "args": ["@playwright/mcp@latest"]\n    }\n  }\n}`}
+      />
 
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">名称</Label>
-                  <Input
-                    className="h-9 font-mono text-xs"
-                    value={server.name}
-                    placeholder="filesystem"
-                    onChange={(e) => updateAt(index, { name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">类型</Label>
-                  <Select
-                    value={server.transport}
-                    onValueChange={(v) =>
-                      updateAt(index, {
-                        transport: v as McpServerDraft["transport"],
-                        ...(v === "http"
-                          ? {
-                              command: undefined,
-                              args: undefined,
-                              url: server.url || "https://",
-                            }
-                          : {
-                              url: undefined,
-                              command: server.command || "npx",
-                              args: server.args ?? ["-y", "package"],
-                            }),
-                      })
-                    }
-                  >
-                    <SelectTrigger className="h-9 rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="stdio">stdio（本地命令）</SelectItem>
-                      <SelectItem value="http">HTTP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {server.transport === "http" ? (
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label className="text-xs">URL</Label>
-                    <Input
-                      className="h-9 font-mono text-xs"
-                      value={server.url ?? ""}
-                      placeholder="https://mcp.example.com/mcp"
-                      onChange={(e) => updateAt(index, { url: e.target.value })}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1 sm:col-span-2">
-                      <Label className="text-xs">Command</Label>
-                      <Input
-                        className="h-9 font-mono text-xs"
-                        value={server.command ?? ""}
-                        placeholder="npx"
-                        onChange={(e) =>
-                          updateAt(index, { command: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1 sm:col-span-2">
-                      <Label className="text-xs">Args（空格分隔）</Label>
-                      <Input
-                        className="h-9 font-mono text-xs"
-                        value={(server.args ?? []).join(" ")}
-                        placeholder="-y @modelcontextprotocol/server-filesystem ."
-                        onChange={(e) =>
-                          updateAt(index, {
-                            args: e.target.value.trim()
-                              ? e.target.value.trim().split(/\s+/)
-                              : [],
-                          })
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-xs">环境变量（每行 KEY=VALUE）</Label>
-                  <Textarea
-                    className="min-h-20 font-mono text-xs"
-                    value={envToText(server.env)}
-                    placeholder={"API_TOKEN=xxx"}
-                    onChange={(e) =>
-                      updateAt(index, { env: textToEnv(e.target.value) })
-                    }
-                  />
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <Button
-        type="button"
-        className="h-11 w-full rounded-2xl"
-        disabled={saveMutation.isPending}
-        onClick={() => saveMutation.mutate()}
-      >
-        {saveMutation.isPending ? "保存中…" : "保存 MCP 配置"}
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          disabled={!dirty || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          保存
+        </Button>
+        {dirty ? (
+          <span className="text-xs text-muted-foreground">有未保存修改</span>
+        ) : null}
+      </div>
     </div>
   )
 }

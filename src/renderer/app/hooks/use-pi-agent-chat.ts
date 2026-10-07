@@ -446,64 +446,64 @@ export function usePiAgentChat({
     onUsage?: (summary: string) => void
   }): Promise<{ content: string; thinking: string }> => {
     return withSessionLock(async () => {
-        const diskId = diskSessionIdRef.current
-        if (!diskId) throw new Error("请先选择或创建对话")
-        await openAgentForDisk(diskId)
-        const agentId = agentSessionId.current
-        if (!agentId) throw new Error("Agent 未就绪，请稍后重试")
+      const diskId = diskSessionIdRef.current
+      if (!diskId) throw new Error("请先选择或创建对话")
+      await openAgentForDisk(diskId)
+      const agentId = agentSessionId.current
+      if (!agentId) throw new Error("Agent 未就绪，请稍后重试")
 
-        params.onReady?.()
-        onStreamRef.current = params.onStream
-        onUsageRef.current = params.onUsage ?? null
-        activeAssistantId.current = params.assistantId
-        streamState.current = { content: "", thinking: "" }
-        activityRef.current = []
-        toolCallsRef.current = []
-        openThinkingIdRef.current = null
-        openTextIdRef.current = null
-        pendingToolArgsRef.current.clear()
-        agentErrorRef.current = null
-        abortedRef.current = false
+      params.onReady?.()
+      onStreamRef.current = params.onStream
+      onUsageRef.current = params.onUsage ?? null
+      activeAssistantId.current = params.assistantId
+      streamState.current = { content: "", thinking: "" }
+      activityRef.current = []
+      toolCallsRef.current = []
+      openThinkingIdRef.current = null
+      openTextIdRef.current = null
+      pendingToolArgsRef.current.clear()
+      agentErrorRef.current = null
+      abortedRef.current = false
+
+      try {
+        await pushRuntimeSettingsToMain()
+
+        const idle = new Promise<void>((resolve, reject) => {
+          agentEndResolve.current = () => {
+            if (abortedRef.current) {
+              resolve()
+              return
+            }
+            if (agentErrorRef.current) {
+              reject(new Error(agentErrorRef.current))
+              return
+            }
+            resolve()
+          }
+        })
 
         try {
-          await pushRuntimeSettingsToMain()
-
-          const idle = new Promise<void>((resolve, reject) => {
-            agentEndResolve.current = () => {
-              if (abortedRef.current) {
-                resolve()
-                return
-              }
-              if (agentErrorRef.current) {
-                reject(new Error(agentErrorRef.current))
-                return
-              }
-              resolve()
-            }
-          })
-
-          try {
-            await promptAgent(agentId, params.userMessage, params.images)
-          } catch (error) {
-            agentEndResolve.current = null
-            throw error
-          }
-
-          await idle
-
-          const display = mergeStreamThinking(
-            streamState.current.thinking,
-            streamState.current.content
-          )
-          return { content: display.visible, thinking: display.thinking }
-        } finally {
-          streamBatchRef.current.flush()
-          activeAssistantId.current = null
-          onStreamRef.current = null
-          onUsageRef.current = null
+          await promptAgent(agentId, params.userMessage, params.images)
+        } catch (error) {
           agentEndResolve.current = null
+          throw error
         }
-      })
+
+        await idle
+
+        const display = mergeStreamThinking(
+          streamState.current.thinking,
+          streamState.current.content
+        )
+        return { content: display.visible, thinking: display.thinking }
+      } finally {
+        streamBatchRef.current.flush()
+        activeAssistantId.current = null
+        onStreamRef.current = null
+        onUsageRef.current = null
+        agentEndResolve.current = null
+      }
+    })
   }
 
   const abort = () => {
@@ -522,23 +522,26 @@ export function usePiAgentChat({
     openTextIdRef.current = null
   }
 
-  const resetAgent = useCallback(async (_history = [], overrideDiskId?: string) => {
-    const diskId = overrideDiskId ?? diskSessionIdRef.current
-    await withSessionLock(async () => {
-      if (!diskId) {
+  const resetAgent = useCallback(
+    async (_history = [], overrideDiskId?: string) => {
+      const diskId = overrideDiskId ?? diskSessionIdRef.current
+      await withSessionLock(async () => {
+        if (!diskId) {
+          const prev = agentSessionId.current
+          if (prev) await destroyAgentSession(prev)
+          agentSessionId.current = null
+          return
+        }
         const prev = agentSessionId.current
-        if (prev) await destroyAgentSession(prev)
-        agentSessionId.current = null
-        return
-      }
-      const prev = agentSessionId.current
-      if (prev && prev !== diskId) {
-        await destroyAgentSession(prev)
-        agentSessionId.current = null
-      }
-      await openAgentForDisk(diskId)
-    })
-  }, [openAgentForDisk])
+        if (prev && prev !== diskId) {
+          await destroyAgentSession(prev)
+          agentSessionId.current = null
+        }
+        await openAgentForDisk(diskId)
+      })
+    },
+    [openAgentForDisk]
+  )
 
   return { runPrompt, abort, resetAgent }
 }

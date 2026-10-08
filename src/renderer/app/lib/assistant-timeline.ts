@@ -5,6 +5,10 @@ import {
   formatToolArgsSummary,
   toolLabel,
 } from "~/lib/agent-steps"
+import {
+  formatWireUsage,
+  type UsageSummaryWire,
+} from "../../../shared/chat-wire"
 
 export type TimelineItem =
   | { id: string; kind: "step"; step: AgentStep; tool?: ChatToolCall }
@@ -48,7 +52,7 @@ function workflowToStepItem(
 export function buildAssistantTimeline(input: {
   toolCalls?: ChatToolCall[]
   activity?: AssistantActivityItem[]
-  usageSummary?: string
+  usageSummary?: UsageSummaryWire
   isStreaming?: boolean
 }): TimelineItem[] {
   const items: TimelineItem[] = []
@@ -101,10 +105,21 @@ export function buildAssistantTimeline(input: {
         text: "",
         streaming: true,
       })
+    } else if (lastItem?.kind === "answer" && lastItem.streaming) {
+      // LLM 输出完文字后可能正在静默生成 tool call 参数
+      items.push({
+        id: "preparing-action",
+        kind: "step",
+        step: {
+          id: "preparing-action",
+          label: "处理中…",
+          status: "active",
+        },
+      })
     }
   }
 
-  const usage = input.usageSummary?.trim()
+  const usage = formatWireUsage(input.usageSummary)
   if (usage) {
     items.push({ id: "usage", kind: "usage", text: usage })
   }

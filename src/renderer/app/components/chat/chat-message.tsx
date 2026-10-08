@@ -38,7 +38,7 @@ export function ChatMessageBubble({
     Boolean(message.thinking?.trim()) ||
     (message.activity?.length ?? 0) > 0 ||
     (message.toolCalls?.length ?? 0) > 0 ||
-    Boolean(message.usageSummary?.trim())
+    Boolean(message.usageSummary)
 
   if (isUser) {
     const longText = !message.contentJson && message.content.length > 1200

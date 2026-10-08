@@ -3,8 +3,15 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { SessionManager } from "@earendil-works/pi-coding-agent"
 import type { App } from "electron"
-import { type ChatWireMessage, formatWireUsage } from "../shared/chat-wire"
-import { activityFromAssistantContent } from "../shared/pi-assistant-activity"
+import {
+  type ChatWireMessage,
+  createUsageSummary,
+  mergeUsageSummary,
+} from "../shared/chat-wire"
+import {
+  activityFromAssistantContent,
+  mergeAssistantActivity,
+} from "../shared/pi-assistant-activity"
 import type { AgentMessage } from "../shared/pi-sdk"
 import {
   type SessionInfoDto,
@@ -161,6 +168,34 @@ function applyToolResult(
   }
 }
 
+function mergeWireText(prev: string, next: string): string {
+  const a = prev.trim()
+  const b = next.trim()
+  if (!b) return prev
+  if (!a) return next
+  if (a === b) return prev
+  if (b.startsWith(a)) return next
+  if (a.includes(b)) return prev
+  return `${prev.trimEnd()}\n\n${next.trimStart()}`
+}
+
+function mergeAssistantToolCalls(
+  prev: NonNullable<ChatWireMessage["toolCalls"]>,
+  next: NonNullable<ChatWireMessage["toolCalls"]>
+) {
+  if (next.length === 0) return prev
+  const out = [...prev]
+  for (const t of next) {
+    const idx = out.findIndex((x) => x.toolCallId === t.toolCallId)
+    if (idx >= 0) {
+      out[idx] = { ...out[idx], ...t }
+    } else {
+      out.push(t)
+    }
+  }
+  return out
+}
+
 function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
   const out: ChatWireMessage[] = []
 
@@ -216,9 +251,27 @@ function agentMessagesToWire(messages: AgentMessage[]): ChatWireMessage[] {
         msg.timestamp
       )
       if (!text.trim() && !thinking.trim() && toolCalls.length === 0) continue
-      const usageSummary = formatWireUsage(
-        "usage" in msg ? msg.usage : undefined
-      )
+      const rawUsage = "usage" in msg ? msg.usage : undefined
+      const usageSummary = rawUsage ? createUsageSummary(rawUsage) : undefined
+      const last = out[out.length - 1]
+      if (last && last.role === "assistant") {
+        last.content = mergeWireText(last.content, text)
+        last.thinking = mergeWireText(last.thinking, thinking)
+        last.activity =
+          activity.length > 0
+            ? mergeAssistantActivity(last.activity ?? [], activity)
+            : last.activity
+        if (toolCalls.length > 0) {
+          last.toolCalls = mergeAssistantToolCalls(
+            last.toolCalls ?? [],
+            toolCalls
+          )
+        }
+        if (usageSummary) {
+          last.usageSummary = mergeUsageSummary(last.usageSummary, usageSummary)
+        }
+        continue
+      }
       out.push({
         id: `pi-${msg.timestamp}`,
         role: "assistant",

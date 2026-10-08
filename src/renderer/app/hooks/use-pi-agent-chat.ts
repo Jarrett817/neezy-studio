@@ -24,7 +24,11 @@ import {
 import { loadPiChatMessages } from "~/services/pi-chat-sessions"
 import { pushRuntimeSettingsToMain } from "~/services/settings"
 import type { useAppStore } from "~/stores/app-store"
-import { formatWireUsage } from "../../../shared/chat-wire"
+import {
+  createUsageSummary,
+  mergeUsageSummary,
+  type UsageSummaryWire,
+} from "../../../shared/chat-wire"
 import {
   activityFromAssistantContent,
   mergeAssistantActivity,
@@ -64,7 +68,8 @@ export function usePiAgentChat({
     | null
   >(null)
   const toolCallsRef = useRef<ChatToolCall[]>([])
-  const onUsageRef = useRef<((summary: string) => void) | null>(null)
+  const onUsageRef = useRef<((summary: UsageSummaryWire) => void) | null>(null)
+  const usageAccumulatorRef = useRef<UsageSummaryWire | undefined>(undefined)
   const pendingToolArgsRef = useRef(
     new Map<string, { name: string; args: Record<string, unknown> }>()
   )
@@ -232,6 +237,7 @@ export function usePiAgentChat({
         toolCallsRef.current = []
         openThinkingIdRef.current = null
         openTextIdRef.current = null
+        usageAccumulatorRef.current = undefined
       }
 
       if (ev.type === "message_update") {
@@ -362,8 +368,11 @@ export function usePiAgentChat({
         if (failure) agentErrorRef.current = failure
         if (ev.message.role === "assistant") {
           if ("usage" in ev.message && ev.message.usage) {
-            const summary = formatWireUsage(ev.message.usage)
-            if (summary) onUsageRef.current?.(summary)
+            usageAccumulatorRef.current = mergeUsageSummary(
+              usageAccumulatorRef.current,
+              createUsageSummary(ev.message.usage)
+            )
+            onUsageRef.current?.(usageAccumulatorRef.current)
           }
           if (activeAssistantId.current) {
             syncActivityFromPiAssistantRef.current(
@@ -443,7 +452,7 @@ export function usePiAgentChat({
       activity: AssistantActivityItem[]
       toolCalls: ChatToolCall[]
     }) => void
-    onUsage?: (summary: string) => void
+    onUsage?: (summary: UsageSummaryWire) => void
   }): Promise<{ content: string; thinking: string }> => {
     return withSessionLock(async () => {
       const diskId = diskSessionIdRef.current

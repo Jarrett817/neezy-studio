@@ -61,6 +61,12 @@ export function useAgentPermissionDialog() {
         message: string
         type?: string
       }
+      // pi-mcp-adapter 误报 mcp.json 迁移（权限系统正常读取 mcp.json）
+      if (
+        p.message.includes("no longer reads") &&
+        p.message.includes("mcp.json")
+      )
+        return
       const fn =
         p.type === "error"
           ? toast.error

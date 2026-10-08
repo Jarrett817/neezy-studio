@@ -31,9 +31,40 @@ export interface ChatWireMessage {
   thinking: string
   activity?: ChatWireActivityItem[]
   toolCalls?: ChatWireToolCall[]
-  /** 本条 assistant 的模型用量，随会话落盘恢复 */
-  usageSummary?: string
+  /** 本条 assistant 的模型用量（多轮 LLM 调用累加），随会话落盘恢复 */
+  usageSummary?: UsageSummaryWire
   timestamp: number
+}
+
+export interface UsageSummaryWire {
+  input: number
+  output: number
+  costTotal: number
+}
+
+export function createUsageSummary(
+  usage?: {
+    input?: number
+    output?: number
+    cost?: { total?: number }
+  } | null
+): UsageSummaryWire {
+  return {
+    input: usage?.input ?? 0,
+    output: usage?.output ?? 0,
+    costTotal: usage?.cost?.total ?? 0,
+  }
+}
+
+export function mergeUsageSummary(
+  base: UsageSummaryWire | undefined,
+  other: UsageSummaryWire
+): UsageSummaryWire {
+  return {
+    input: (base?.input ?? 0) + other.input,
+    output: (base?.output ?? 0) + other.output,
+    costTotal: (base?.costTotal ?? 0) + other.costTotal,
+  }
 }
 
 export interface ContextUsageWire {
@@ -59,21 +90,12 @@ export function formatContextUsageTooltip(usage: ContextUsageWire): string {
 }
 
 export function formatWireUsage(
-  usage:
-    | {
-        input?: number
-        output?: number
-        cost?: { total?: number }
-      }
-    | null
-    | undefined
+  usage: UsageSummaryWire | null | undefined
 ): string | undefined {
   if (!usage) return undefined
-  const input = usage.input ?? 0
-  const output = usage.output ?? 0
+  const { input, output, costTotal } = usage
   if (input === 0 && output === 0) return undefined
   const parts = [`输入 ${input}`, `输出 ${output}`]
-  const total = usage.cost?.total
-  if (total != null && total > 0) parts.push(`$${total.toFixed(4)}`)
+  if (costTotal > 0) parts.push(`$${costTotal.toFixed(4)}`)
   return parts.join(" · ")
 }

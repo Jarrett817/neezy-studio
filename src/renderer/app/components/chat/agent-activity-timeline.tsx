@@ -26,6 +26,7 @@ import {
   type TimelineItem,
 } from "~/lib/assistant-timeline"
 import { cn } from "~/lib/utils"
+import type { UsageSummaryWire } from "../../../../shared/chat-wire"
 
 function StreamCursor() {
   return (
@@ -205,13 +206,22 @@ function ToolInvocationBlock({ tool }: { tool: ChatToolCall }) {
         </span>
         <span
           className={cn(
-            "shrink-0",
+            "flex shrink-0 items-center gap-1",
             running && "text-muted-foreground",
             failed && "text-destructive",
             !running && !failed && "text-emerald-600 dark:text-emerald-400"
           )}
         >
-          {running ? "执行中" : failed ? "失败" : "已完成"}
+          {running ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              执行中
+            </>
+          ) : failed ? (
+            "失败"
+          ) : (
+            "已完成"
+          )}
         </span>
       </summary>
 
@@ -330,7 +340,7 @@ export function AgentActivityTimeline({
 }: {
   toolCalls?: ChatToolCall[]
   activity?: AssistantActivityItem[]
-  usageSummary?: string
+  usageSummary?: UsageSummaryWire
   isStreaming?: boolean
   className?: string
 }) {

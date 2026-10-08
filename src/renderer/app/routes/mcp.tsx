@@ -88,13 +88,14 @@ export default function McpRoute() {
   }
 
   const displayPath = data.path.replace(/\\/g, "/")
+  const fileName = displayPath.split("/").pop() ?? "mcp-adapter.json"
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 pt-4">
       <div className="flex items-start gap-2">
         <FileJson2 className="mt-0.5 size-5 shrink-0 text-primary" />
         <div className="min-w-0 space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">mcp.json</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">{fileName}</h2>
           <p className="font-mono text-xs break-all text-muted-foreground">
             {displayPath}
           </p>

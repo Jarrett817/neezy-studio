@@ -27,7 +27,8 @@ function getAdapterConfigPath(agentDir: string): string {
   return path.join(agentDir, "mcp-adapter.json")
 }
 
-function getPermissionMcpPath(agentDir: string): string {
+/** pi-permission-system 默认读 mcp.json，pi-mcp-adapter 读 mcp-adapter.json */
+function getMcpJsonPath(agentDir: string): string {
   return path.join(agentDir, "mcp.json")
 }
 
@@ -116,7 +117,6 @@ export function saveMcpConfig(
 ): McpConfigSnapshot {
   const agentDir = getPiAgentDir(app)
   const adapterPath = getAdapterConfigPath(agentDir)
-  const permissionPath = getPermissionMcpPath(agentDir)
 
   const mcpServers: Record<string, StoredServerEntry> = {}
   const seen = new Set<string>()
@@ -129,9 +129,10 @@ export function saveMcpConfig(
   }
 
   const existing = readJsonFile(adapterPath)
-  writeJsonFile(adapterPath, { ...existing, mcpServers })
-  // pi-permission-system 读 mcp.json 的服务器名做策略匹配；adapter 本身不读此文件
-  writeJsonFile(permissionPath, { mcpServers })
+  const data = { ...existing, mcpServers }
+  writeJsonFile(adapterPath, data)
+  // pi-permission-system 默认读 mcp.json，同步写入
+  writeJsonFile(getMcpJsonPath(agentDir), { mcpServers })
 
   return loadMcpConfig(app)
 }
@@ -139,8 +140,12 @@ export function saveMcpConfig(
 export function ensureMcpConfigFiles(app: App): void {
   const agentDir = getPiAgentDir(app)
   const adapterPath = getAdapterConfigPath(agentDir)
+  const mcpJsonPath = getMcpJsonPath(agentDir)
   if (!fs.existsSync(adapterPath)) {
     writeJsonFile(adapterPath, { mcpServers: {} })
+  }
+  if (!fs.existsSync(mcpJsonPath)) {
+    writeJsonFile(mcpJsonPath, { mcpServers: {} })
   }
 }
 
@@ -173,11 +178,7 @@ export async function writeMcpJson(app: App, content: string): Promise<void> {
   }
   const agentDir = getPiAgentDir(app)
   const adapterPath = getAdapterConfigPath(agentDir)
-  const permissionPath = getPermissionMcpPath(agentDir)
   writeJsonFile(adapterPath, parsed)
-  const mcpServers =
-    parsed && typeof parsed === "object" && "mcpServers" in parsed
-      ? (parsed as { mcpServers?: unknown }).mcpServers
-      : {}
-  writeJsonFile(permissionPath, { mcpServers })
+  // 同步 mcp.json 供 pi-permission-system 读取
+  writeJsonFile(getMcpJsonPath(agentDir), parsed)
 }

@@ -1,4 +1,4 @@
-﻿import type { JSONContent } from "@tiptap/react"
+import type { JSONContent } from "@tiptap/react"
 import { create } from "zustand"
 
 import type {
@@ -6,6 +6,7 @@ import type {
   AssistantActivityItem,
   ChatToolCall,
 } from "~/lib/agent-steps"
+import type { UsageSummaryWire } from "../../../shared/chat-wire"
 
 export type ChatMessage = {
   id: string
@@ -23,7 +24,7 @@ export type ChatMessage = {
   /** 失败原因；有正文时不覆盖 content，单独展示 */
   errorMessage?: string
   toolCalls?: ChatToolCall[]
-  usageSummary?: string
+  usageSummary?: UsageSummaryWire
   /** 已发送但 Agent 尚未开始处理（sessionLock 排队） */
   queued?: boolean
   timestamp: number
@@ -76,6 +77,27 @@ export const useAppStore = create<AppStoreState>()((set) => ({
     set((state) => ({
       conversationHistory: state.conversationHistory.filter((m) => m.id !== id),
     })),
-  setConversationHistory: (messages) => set({ conversationHistory: messages }),
+  setConversationHistory: (messages) =>
+    set((state) => {
+      if (state.conversationHistory.length === 0) {
+        return { conversationHistory: messages }
+      }
+      const overrides = new Map<string, Partial<ChatMessage>>()
+      for (const m of state.conversationHistory) {
+        const patch: Partial<ChatMessage> = {}
+        if (m.isStreaming === true) patch.isStreaming = true
+        if (m.queued === true) patch.queued = true
+        if (Object.keys(patch).length > 0) overrides.set(m.id, patch)
+      }
+      if (overrides.size === 0) {
+        return { conversationHistory: messages }
+      }
+      return {
+        conversationHistory: messages.map((m) => {
+          const patch = overrides.get(m.id)
+          return patch ? { ...m, ...patch } : m
+        }),
+      }
+    }),
   clearConversation: () => set({ conversationHistory: [] }),
 }))
